@@ -18,12 +18,6 @@ export default function Header({ mode, onChangeMode }) {
             <TabButton active={mode === "warehouses"} onClick={() => onChangeMode("warehouses")}>
               Мои склады
             </TabButton>
-            <TabButton active={mode === "logistics"} onClick={() => onChangeMode("logistics")}>
-              Мои логисты
-            </TabButton>
-            <TabButton active={mode === "consolidations"} onClick={() => onChangeMode("consolidations")}>
-              Мои консолидации
-            </TabButton>
           </nav>
         </div>
       </div>

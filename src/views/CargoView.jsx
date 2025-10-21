@@ -11,6 +11,7 @@ import LabelInput from "../components/ui/LabelInput.jsx";
 import ToggleChip from "../components/ui/ToggleChip.jsx";
 import KV from "../components/ui/KV.jsx";
 
+
 // Части карточки PL
 import DocsList from "../components/pl/DocsList.jsx";
 
@@ -733,7 +734,7 @@ export default function CargoView({
                   humanStatus,
                   badgeColorByStatus,
                 }}
-                parts={{ DocsList, CommentsCard, CostCalculatorCard }}
+                
               />
             ) : (
               <EmptySummary items={filtered} />

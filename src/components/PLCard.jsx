@@ -1,11 +1,9 @@
 // src/components/PLCard.jsx
-// Карточка PL — версия 2025-10-17
-// - вынос калькулятора в отдельный файл
-// - сохранение цены клиента в БД
-// - подтягивание сохранённой цены при загрузке
-
+// Карточка PL — версия 2025-10-17 (обновлено: прямой импорт CommentsCard)
 import React, { useState, useMemo } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
+import CommentsCard from "./CommentsCard.jsx";
+import DocsList from "./pl/DocsList.jsx";
 import {
   Package,
   X,
@@ -26,10 +24,8 @@ export default function PLCard({
   cons = [],
   ui,
   helpers,
-  parts,
 }) {
   const { Chip, ProgressBar, Card, LabelInput } = ui;
-  const { DocsList, CommentsCard } = parts ?? {};
   const {
     readinessForPL,
     canAllowToShip,
@@ -43,7 +39,6 @@ export default function PLCard({
   const [showMenu, setShowMenu] = useState(false);
   const [copiedCargo, setCopiedCargo] = useState(false);
 
-  // консолидация, куда входит PL
   const consOfPL = useMemo(
     () => (cons || []).find((c) => c.pl_ids?.includes(pl.id)) || null,
     [cons, pl.id]
@@ -54,7 +49,6 @@ export default function PLCard({
   const nextLabel = nextStageLabelOf(pl.status);
   const readiness = readinessForPL(pl);
 
-  // копирование краткой инфы
   const copyCargoInfo = () => {
     const text = [
       `${pl.pl_number ?? ""}`,
@@ -74,10 +68,8 @@ export default function PLCard({
       .catch((e) => console.error("Не удалось скопировать", e));
   };
 
-  // ✅ обработчик сохранения цены
   async function handleSaveQuote(calcCost, clientPrice) {
     try {
-      // обновляем данные PL в БД
       await onUpdate({
         quote: {
           calc_cost: Number(calcCost) || 0,
@@ -222,30 +214,27 @@ export default function PLCard({
 
       {/* === Калькулятор → Документы → Комментарии === */}
       <div className="p-4 bg-gray-200 space-y-5">
-        {/* ✅ калькулятор вынесен в отдельный файл */}
         <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
           <h3 className="font-semibold mb-3">Калькулятор себестоимости</h3>
           <CostCalculatorCard pl={pl} onSave={handleSaveQuote} />
         </div>
 
-        {DocsList && (
-          <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
-            <h3 className="font-semibold mb-3">Документы</h3>
-            <DocsList pl={pl} onUpdate={onUpdate} />
-          </div>
-        )}
 
-        {CommentsCard && (
-          <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
-            <h3 className="font-semibold mb-3">Комментарии</h3>
-            <CommentsCard
-              pl={pl}
-              onAdd={(c) =>
-                onUpdate({ comments: [...(pl.comments || []), c] })
-              }
-            />
-          </div>
-        )}
+        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
+   <h3 className="font-semibold mb-3">Документы</h3>
+   <DocsList pl={pl} onUpdate={onUpdate} />
+ </div>
+
+        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
+          <h3 className="font-semibold mb-3">Комментарии</h3>
+          <CommentsCard
+            pl={pl}
+            onAppend={(created) => {
+              const next = [...(pl.comments || []), created];
+              onUpdate({ comments: next });
+            }}
+          />
+        </div>
       </div>
 
       {/* === Действия === */}

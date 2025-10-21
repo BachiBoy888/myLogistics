@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import { eq, desc, and } from 'drizzle-orm';
-import { pl, clients, plDocuments, plDocStatusHistory } from '../db/schema.js';
+import { pl, clients, plDocuments, plDocStatusHistory, plComments } from '../db/schema.js';
 import { savePLFile, getUploadsRootAbs } from '../services/storage.js';
 
 // компактное представление клиента
@@ -323,6 +323,75 @@ export default async function plRoutes(fastify) {
       .where(and(eq(plDocuments.id, docId), eq(plDocuments.plId, Number(plId))))
       .returning();
     if (!deleted) return reply.notFound('Document not found');
+    reply.code(204).send();
+  });
+
+    /* =========================
+     PL: Комментарии
+  ========================== */
+
+  // Список комментариев по PL
+  fastify.get('/:id/comments', async (req, reply) => {
+    const { id } = req.params;
+    const rows = await db
+      .select()
+      .from(plComments)
+      .where(eq(plComments.plId, Number(id)))
+      .orderBy(plComments.createdAt); // по возрастанию времени
+    return rows;
+  });
+
+  // Добавить комментарий
+  // body: { author?: string, text: string }
+  fastify.post('/:id/comments', {
+    schema: {
+      params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          author: { type: 'string' },
+          text:   { type: 'string' },
+        },
+        required: ['text'],
+      }
+    }
+  }, async (req, reply) => {
+    const { id } = req.params;
+    const { author, text } = req.body || {};
+    const trimmed = String(text || '').trim();
+    if (!trimmed) return reply.badRequest('text is required');
+
+    const [row] = await db.insert(plComments).values({
+      plId: Number(id),
+      author: (author && String(author).trim()) || 'Логист',
+      body: trimmed,
+    }).returning();
+
+    reply.code(201);
+    return row;
+  });
+
+  // Удалить комментарий
+  fastify.delete('/:id/comments/:cid', {
+    schema: {
+      params: {
+        type: 'object',
+        properties: { id: { type: 'integer' }, cid: { type: 'string' } },
+        required: ['id', 'cid'],
+      }
+    }
+  }, async (req, reply) => {
+    const { id, cid } = req.params;
+    const { rowCount } = await db
+      .delete(plComments)
+      .where(
+        and(
+          eq(plComments.id, cid),
+          eq(plComments.plId, Number(id))
+        )
+      );
+    if (rowCount === 0) return reply.notFound('Comment not found');
     reply.code(204).send();
   });
 }

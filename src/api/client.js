@@ -327,6 +327,26 @@ export const listCons = listConsolidations;
 export const fetchCons = listConsolidations;
 
 /* -------------------
+   PL COMMENTS
+------------------- */
+export async function listPLComments(plId) {
+  const arr = await req(`/pl/${Number(plId)}/comments`);
+  return Array.isArray(arr) ? arr : [];
+}
+
+export async function addPLComment(plId, { author, text }) {
+  return req(`/pl/${Number(plId)}/comments`, {
+    method: "POST",
+    body: { author, text },
+  });
+}
+
+export async function deletePLComment(plId, commentId) {
+  await req(`/pl/${Number(plId)}/comments/${commentId}`, { method: "DELETE" });
+  return true;
+}
+
+/* -------------------
    DEFAULT EXPORT
 ------------------- */
 const api = {
@@ -363,6 +383,11 @@ const api = {
   addPLToConsolidation,
   removePLFromConsolidation,
   getConsolidationStatusHistory,
+
+  // pl comments
+  listPLComments,
+  addPLComment,
+  deletePLComment,
 };
 
 export default api;

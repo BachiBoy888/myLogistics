@@ -170,3 +170,21 @@ export const consolidationStatusHistory = pgTable(
     byToStatus: index("idx_consolidation_status_history_to").on(t.toStatus),
   })
 );
+
+// server/db/schema.js (добавь после блоков PL / Documents)
+export const plComments = pgTable(
+  "pl_comments",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    plId: integer("pl_id")
+      .notNull()
+      .references(() => pl.id, { onDelete: "cascade" }),
+    author: text("author").notNull().default("Логист"),
+    body: text("body").notNull(), // текст комментария
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byPl: index("idx_pl_comments_pl").on(t.plId),
+    byPlCreated: index("idx_pl_comments_pl_created").on(t.plId, t.createdAt),
+  })
+);

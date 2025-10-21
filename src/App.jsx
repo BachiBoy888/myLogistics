@@ -22,7 +22,6 @@ import CargoView from "./views/CargoView.jsx";
 import ClientsView from "./views/ClientsView.jsx";
 import WarehousesView from "./views/WarehousesView.jsx";
 import LogisticsView from "./views/LogisticsView.jsx";
-import ConsolidationsView from "./views/ConsolidationsView.jsx";
 
 // Константы/данные
 import { demoWarehouses } from "./constants/warehouses.js";
@@ -141,14 +140,6 @@ function MainApp() {
 
         {mode === "logistics" && <LogisticsView />}
 
-        {mode === "consolidations" && (
-          <ConsolidationsView
-            pls={pls}
-            setPls={setPls}
-            cons={cons}
-            setCons={setCons}
-          />
-        )}
       </main>
 
       <Footer />

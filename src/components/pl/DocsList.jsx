@@ -10,8 +10,8 @@ import {
   deletePLDoc,
 } from "../../api/client";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3000/api";
-const FILE_HOST = API_BASE.replace(/\/api$/, "");
+// В монолите фронт и бэк на одном домене → всегда относительный API
+const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
 // === Маппинги статусов ===
 function toUIStatus(serverStatus) {

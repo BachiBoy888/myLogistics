@@ -39,16 +39,10 @@ async function start() {
   // Плагины
   await app.register(sensible);
 
-  await app.register(cors, {
-    origin: true, // или ['http://localhost:5173']
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-user'],
-    exposedHeaders: ['Content-Type'],
-    credentials: true,
-    maxAge: 86400,
-  });
+  // Для монолита CORS не обязателен. Можно оставить, но безопаснее выключить.
+  // await app.register(cors, { origin: true, credentials: true });
 
-  // Важно: не ломаем превью файлов/страниц в <iframe>
+  // Не ломаем превью файлов/страниц в <iframe>
   await app.register(helmet, {
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
@@ -60,23 +54,39 @@ async function start() {
     limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
   });
 
-  // Раздача статики /uploads
-  await app.register(fastifyStatic, {
-    root: getUploadsRootAbs(),
-    prefix: '/uploads/',
-    decorateReply: false,
-  });
+ // Раздача /uploads (постоянное хранилище)
+await app.register(fastifyStatic, {
+  root: getUploadsRootAbs(),
+  prefix: '/uploads/',
+  decorateReply: false, // здесь ок, sendFile не нужен
+});
+
+// Раздача собранного фронта (Vite -> dist) с корня
+const distRoot = path.resolve(__dirname, '../dist');
+await app.register(fastifyStatic, {
+  root: distRoot,
+  prefix: '/',             // фронт доступен с корня
+  // ВАЖНО: НЕ выключаем decorateReply, чтобы работал reply.sendFile
+  // decorateReply: true (по умолчанию)
+});
 
   // Health / ping
   app.get('/ping', async () => ({ message: 'pong' }));
   app.get('/healthz', async () => ({ ok: true }));
 
   // Маршруты API
-  await app.register(clientsRoutes, { prefix: '/api' });          // /api/clients
-  await app.register(plRoutes, { prefix: '/api/pl' });            // /api/pl/...
-  await app.register(consolidationsRoutes, { prefix: '/api/consolidations' }); // /api/consolidations/...
+  // ВАЖНО: префиксы не конфликтуют с фронтом
+  await app.register(clientsRoutes, { prefix: '/api' });                     // /api/clients...
+  await app.register(plRoutes, { prefix: '/api/pl' });                       // /api/pl/...
+  await app.register(consolidationsRoutes, { prefix: '/api/consolidations' });// /api/consolidations/...
 
-  // Глобальный обработчик ошибок (чтобы видеть контекст)
+  // SPA fallback: всё не-API отдаем index.html
+  app.setNotFoundHandler((req, reply) => {
+    if (req.raw.url.startsWith('/api')) return reply.notFound();
+    return reply.sendFile('index.html'); // из distRoot
+  });
+
+  // Глобальный обработчик ошибок
   app.setErrorHandler((error, request, reply) => {
     request.log.error(
       {

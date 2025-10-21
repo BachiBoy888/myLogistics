@@ -64,6 +64,13 @@
       "when": 1760891468230,
       "tag": "0008_eminent_pixie",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1761063447080,
+      "tag": "0009_jittery_energizer",
+      "breakpoints": true
     }
   ]
 }

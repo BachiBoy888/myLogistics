@@ -104,7 +104,7 @@ export default function ConsolidationDetailsModal({
                     <div className="font-medium truncate">
                       {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
                     </div>
-                    <div className="text-xs text-gray-600">Вес: {p.weight_kg} кг • Объём: {p.volume_cbм} м³</div>
+                    <div className="text-xs text-gray-600">Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³</div>
                   </div>
                   <button className="text-xs underline" onClick={() => setPickedIds(prev => [...prev, p.id])}>
                     Добавить

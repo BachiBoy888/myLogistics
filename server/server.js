@@ -54,21 +54,20 @@ async function start() {
     limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
   });
 
- // Раздача /uploads (постоянное хранилище)
-await app.register(fastifyStatic, {
-  root: getUploadsRootAbs(),
-  prefix: '/uploads/',
-  decorateReply: false, // здесь ок, sendFile не нужен
-});
+  // Раздача /uploads (постоянное хранилище)
+  await app.register(fastifyStatic, {
+    root: getUploadsRootAbs(),
+    prefix: '/uploads/',
+    decorateReply: false,
+  });
 
-// Раздача собранного фронта (Vite -> dist) с корня
-const distRoot = path.resolve(__dirname, '../dist');
-await app.register(fastifyStatic, {
-  root: distRoot,
-  prefix: '/',             // фронт доступен с корня
-  // ВАЖНО: НЕ выключаем decorateReply, чтобы работал reply.sendFile
-  // decorateReply: true (по умолчанию)
-});
+  // Раздача собранного фронта (Vite -> dist) с корня
+  const distRoot = path.resolve(__dirname, '../dist');
+  await app.register(fastifyStatic, {
+    root: distRoot,
+    prefix: '/', // фронт доступен с корня
+    decorateReply: false,
+  });
 
   // Health / ping
   app.get('/ping', async () => ({ message: 'pong' }));

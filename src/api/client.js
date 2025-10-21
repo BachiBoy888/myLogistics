@@ -1,7 +1,5 @@
 // src/api/client.js
-// Тонкий клиент к API: нормализует ответы и даёт безопасные фолбэки.
-
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000/api";
+const BASE = import.meta.env.VITE_API_BASE || "/api";
 
 /* -------------------
    ВСПОМОГАТЕЛЬНЫЕ

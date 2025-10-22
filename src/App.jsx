@@ -29,6 +29,7 @@ import LogisticsView from "./views/LogisticsView.jsx";
 import { demoWarehouses } from "./constants/warehouses.js";
 
 function App() {
+  console.log("BOOT:", boot);
   const [boot, setBoot] = useState({ loading: true, user: null });
 
   // Проверяем сессию при запуске

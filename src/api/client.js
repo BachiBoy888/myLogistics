@@ -4,7 +4,6 @@ const BASE = import.meta.env.VITE_API_BASE || "/api";
 /* -------------------
    ВСПОМОГАТЕЛЬНЫЕ
 ------------------- */
-
 function isFormData(v) {
   return typeof FormData !== "undefined" && v instanceof FormData;
 }
@@ -56,9 +55,16 @@ export function normalizePL(s) {
       ? s.client
       : typeof s.client === "string"
       ? { name: s.client }
-      : s.client_name
+      : typeof s.client_name === "string"
       ? { name: s.client_name }
       : { name: "—" };
+
+  const responsible =
+    s.responsible ||
+    (s.responsible_user_id && {
+      id: s.responsible_user_id,
+      name: s.responsible_name || "Логист",
+    });
 
   const serverClientPrice =
     s.clientPrice ??
@@ -74,6 +80,7 @@ export function normalizePL(s) {
     pl_number,
     client_id: s.client_id ?? s.clientId ?? null,
     client,
+    responsible,
 
     title: s.title ?? s.name ?? s.cargoTitle ?? "",
     weight_kg: toNum(s.weight_kg ?? s.weightKg ?? s.weight),
@@ -124,12 +131,10 @@ export function normalizeCons(s) {
 /* -------------------
    CLIENTS
 ------------------- */
-
 export async function getClients() {
   const json = await req("/clients");
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
-
 export async function createClient(data) {
   return req("/clients", { method: "POST", body: data });
 }
@@ -137,13 +142,12 @@ export async function createClient(data) {
 /* -------------------
    PL
 ------------------- */
-
 export async function listPLs() {
   const json = await req("/pl");
   const arr = Array.isArray(json) ? json : json.items ?? json.data ?? [];
   return arr.map(normalizePL);
 }
-export const getPL = listPLs; // back-compat
+export const getPL = listPLs;
 
 export async function createPL(data) {
   if (!data.client_id) throw new Error("client_id обязателен при создании PL");
@@ -170,16 +174,25 @@ function buildUpdatePayload(data = {}) {
 
 export async function updatePL(id, data) {
   const nId = toNumericId(id);
-  if (nId === null) throw new Error("Некорректный идентификатор PL: нужен числовой id");
+  if (nId === null) throw new Error("Некорректный идентификатор PL");
   const payload = buildUpdatePayload(data);
   const json = await req(`/pl/${nId}`, { method: "PUT", body: payload });
+  return normalizePL(json);
+}
+
+export async function assignPLResponsible(id, responsible_user_id) {
+  const nId = toNumericId(id);
+  if (nId === null) throw new Error("Некорректный идентификатор PL");
+  const json = await req(`/pl/${nId}`, {
+    method: "PUT",
+    body: { responsible_user_id },
+  });
   return normalizePL(json);
 }
 
 export async function updateClientPrice(id, clientPrice) {
   return updatePL(id, { clientPrice });
 }
-
 export async function deletePL(id) {
   const nId = toNumericId(id);
   if (nId === null) throw new Error("Некорректный id для удаления PL");
@@ -190,11 +203,9 @@ export async function deletePL(id) {
 /* -------------------
    PL DOCUMENTS
 ------------------- */
-
 export async function listPLDocs(plId) {
   return req(`/pl/${plId}/docs`);
 }
-
 export async function uploadPLDoc(plId, { file, doc_type, name }) {
   const form = new FormData();
   if (file && file.name) form.append("file", file, file.name);
@@ -203,25 +214,56 @@ export async function uploadPLDoc(plId, { file, doc_type, name }) {
   if (name) form.append("name", name);
   return req(`/pl/${plId}/docs`, { method: "POST", body: form });
 }
-
 export async function updatePLDoc(plId, docId, patch) {
   return req(`/pl/${plId}/docs/${docId}`, { method: "PATCH", body: patch });
 }
-
 export async function deletePLDoc(plId, docId) {
   await req(`/pl/${plId}/docs/${docId}`, { method: "DELETE" });
   return true;
 }
-
 export async function getPLDocHistory(plId, docId) {
   return req(`/pl/${plId}/docs/${docId}/history`);
 }
 
 /* -------------------
+   PL EVENTS
+------------------- */
+export async function listPLEvents(plId) {
+  const arr = await req(`/pl/${plId}/events`);
+  return Array.isArray(arr) ? arr : [];
+}
+
+/* -------------------
+   PL COMMENTS
+------------------- */
+export async function listPLComments(plId) {
+  const arr = await req(`/pl/${Number(plId)}/comments`);
+  return Array.isArray(arr) ? arr : [];
+}
+export async function addPLComment(plId, { text }) {
+  return req(`/pl/${Number(plId)}/comments`, { method: "POST", body: { text } });
+}
+export async function deletePLComment(plId, commentId) {
+  await req(`/pl/${Number(plId)}/comments/${commentId}`, { method: "DELETE" });
+  return true;
+}
+
+/* -------------------
+   AUTH
+------------------- */
+export async function login({ login, password }) {
+  return req(`/auth/login`, { method: "POST", body: { login, password } });
+}
+export async function logout() {
+  return req(`/auth/logout`, { method: "POST" });
+}
+export async function me() {
+  return req(`/auth/me`);
+}
+
+/* -------------------
    CONSOLIDATIONS
 ------------------- */
-
-// список (c доборкой plIds из /:id при необходимости)
 export async function listConsolidations(params = {}) {
   const q = new URLSearchParams(params).toString();
   const base = await req(`/consolidations${q ? `?${q}` : ""}`);
@@ -239,123 +281,56 @@ export async function listConsolidations(params = {}) {
       }
     })
   );
-
   return detailed.map(normalizeCons);
 }
-
 export async function getConsolidation(id) {
   const json = await req(`/consolidations/${id}`);
   return normalizeCons(json);
 }
-
 export async function createConsolidation({ title, plIds = [] } = {}) {
-  const cons = await req("/consolidations", {
-    method: "POST",
-    body: { title, plIds },
-  });
-
-  // Если бэк проигнорировал plIds — привяжем отдельным шагом.
+  const cons = await req("/consolidations", { method: "POST", body: { title, plIds } });
   if (plIds.length) {
     try {
       await setConsolidationPLs(cons.id, plIds);
-    } catch {
-      /* ignore */
-    }
+    } catch {}
   }
   return normalizeCons(cons);
 }
-
 export async function updateConsolidation(id, patch = {}) {
   const json = await req(`/consolidations/${id}`, { method: "PATCH", body: patch });
   return normalizeCons(json);
 }
-
 export async function deleteConsolidation(id) {
   await req(`/consolidations/${id}`, { method: "DELETE" });
   return true;
 }
-
-// точечные операции
 export async function addPLToConsolidation(id, plId) {
   return req(`/consolidations/${id}/pl`, { method: "POST", body: { plId } });
 }
-
 export async function removePLFromConsolidation(id, plId) {
   return req(`/consolidations/${id}/pl/${plId}`, { method: "DELETE" });
 }
-
 export async function getConsolidationStatusHistory(id) {
   const json = await req(`/consolidations/${id}/status-history`);
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
-
-/**
- * Установить точный состав PL в консолидации.
- * 1) Пытаемся bulk-обновлением: PUT /consolidations/:id/pl { plIds }
- * 2) Если такого эндпойнта нет — делаем diff через add/remove.
- */
 export async function setConsolidationPLs(id, targetIds = []) {
   const target = Array.from(new Set((targetIds || []).map(Number))).filter(Boolean);
   try {
-    // основной путь (без 404, в отличие от /set-pls)
     const res = await req(`/consolidations/${id}/pl`, {
       method: "PUT",
       body: { plIds: target },
     });
-    // некоторые бэки возвращают { ok:true } или сам объект
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
-  } catch (e) {
-    // фолбэк: руками доводим состав
+  } catch {
     const current = await getConsolidation(id);
     const currentIds = Array.isArray(current?.pl_ids) ? current.pl_ids.map(Number) : [];
     const toAdd = target.filter((x) => !currentIds.includes(x));
     const toRemove = currentIds.filter((x) => !target.includes(x));
-
     for (const pid of toAdd) await addPLToConsolidation(id, pid);
     for (const pid of toRemove) await removePLFromConsolidation(id, pid);
-
     return getConsolidation(id);
   }
-}
-
-/* -------------------
-   BACK-COMPAT АЛИАСЫ
-------------------- */
-export const getPLs = listPLs;
-export const fetchPLs = listPLs;
-export const listCons = listConsolidations;
-export const fetchCons = listConsolidations;
-
-/* -------------------
-   PL COMMENTS
-------------------- */
-export async function listPLComments(plId) {
-  const arr = await req(`/pl/${Number(plId)}/comments`);
-  return Array.isArray(arr) ? arr : [];
-}
-
-export async function addPLComment(plId, { text }) {
-  return req(`/pl/${Number(plId)}/comments`, {
-    method: "POST",
-    body: { text },
-  });
-}
-
-export async function deletePLComment(plId, commentId) {
-  await req(`/pl/${Number(plId)}/comments/${commentId}`, { method: "DELETE" });
-  return true;
-}
-
-export async function login({ login, password }) {
-  return req(`/auth/login`, { method: 'POST', body: { login, password } });
-}
-
-export async function logout() {
-  return req(`/auth/logout`, { method: 'POST' });
-}
-
-export async function me() {
-  return req(`/auth/me`);
 }
 
 /* -------------------
@@ -369,12 +344,11 @@ const api = {
   // pl
   listPLs,
   getPL,
-  getPLs,
-  fetchPLs,
   createPL,
   updatePL,
   deletePL,
   updateClientPrice,
+  assignPLResponsible,
 
   // pl docs
   listPLDocs,
@@ -383,10 +357,21 @@ const api = {
   deletePLDoc,
   getPLDocHistory,
 
+  // pl events
+  listPLEvents,
+
+  // pl comments
+  listPLComments,
+  addPLComment,
+  deletePLComment,
+
+  // auth
+  login,
+  logout,
+  me,
+
   // consolidations
   listConsolidations,
-  listCons,
-  fetchCons,
   getConsolidation,
   createConsolidation,
   updateConsolidation,
@@ -395,11 +380,6 @@ const api = {
   addPLToConsolidation,
   removePLFromConsolidation,
   getConsolidationStatusHistory,
-
-  // pl comments
-  listPLComments,
-  addPLComment,
-  deletePLComment,
 };
 
 export default api;

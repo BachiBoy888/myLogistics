@@ -1,6 +1,6 @@
 // src/components/PLCard.jsx
-// Карточка PL — версия 2025-10-17 (обновлено: прямой импорт CommentsCard)
-import React, { useState, useMemo } from "react";
+// Карточка PL — версия 2025-10-22
+import React, { useState, useMemo, useEffect } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
 import CommentsCard from "./CommentsCard.jsx";
 import DocsList from "./pl/DocsList.jsx";
@@ -12,7 +12,10 @@ import {
   CheckCircle,
   ClipboardCopy,
   ChevronRight,
+  UserCheck,
+  Clock,
 } from "lucide-react";
+import { listPLEvents, assignPLResponsible } from "../api/client.js";
 
 export default function PLCard({
   pl,
@@ -24,6 +27,7 @@ export default function PLCard({
   cons = [],
   ui,
   helpers,
+  currentUser = null, // ← опционально передай {id, name, role}
 }) {
   const { Chip, ProgressBar, Card, LabelInput } = ui;
   const {
@@ -39,16 +43,74 @@ export default function PLCard({
   const [showMenu, setShowMenu] = useState(false);
   const [copiedCargo, setCopiedCargo] = useState(false);
 
+  // ===== Консолидация для PL
   const consOfPL = useMemo(
     () => (cons || []).find((c) => c.pl_ids?.includes(pl.id)) || null,
     [cons, pl.id]
   );
 
+  // ===== Валидации / прогресс
   const { ok: canGoNext, need } = requirementsResult(pl);
   const nextStatus = nextStatusOf(pl.status);
   const nextLabel = nextStageLabelOf(pl.status);
   const readiness = readinessForPL(pl);
 
+  // ===== Хронология событий
+  const [events, setEvents] = useState([]);
+  const [evLoading, setEvLoading] = useState(true);
+  const [evError, setEvError] = useState("");
+
+  async function refreshEvents() {
+    try {
+      setEvError("");
+      setEvLoading(true);
+      const rows = await listPLEvents(pl.id);
+      setEvents(Array.isArray(rows) ? rows : []);
+    } catch (e) {
+      setEvError("Не удалось загрузить события");
+    } finally {
+      setEvLoading(false);
+    }
+  }
+  useEffect(() => {
+    if (pl?.id) refreshEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pl?.id]);
+
+  // ===== Ответственный
+  const responsibleName =
+    typeof pl?.responsible === "object"
+      ? pl.responsible?.name || "Логист"
+      : pl?.responsible_name || null;
+
+  const canSelfAssign =
+    !!currentUser &&
+    (currentUser.role === "admin" ||
+      currentUser.role === "logist" ||
+      currentUser.role === "логист");
+
+  async function handleSelfAssign() {
+    if (!currentUser?.id) return;
+    try {
+      const saved = await assignPLResponsible(pl.id, currentUser.id);
+      // нормализованный ответ уже содержит responsible; но на всякий случай пробросим вверх
+      onUpdate?.({
+        responsible: saved?.responsible ?? { id: currentUser.id, name: currentUser.name },
+      });
+      // событие «смена ответственного» попадёт в ленту на бэке — обновим хронологию
+      refreshEvents();
+    } catch (e) {
+      // если бэк ещё не умеет responsible_user_id, сделаем мягкий фолбэк:
+      try {
+        await onUpdate?.({ responsible_user_id: currentUser.id });
+        refreshEvents();
+      } catch {
+        alert("Не удалось назначить ответственного");
+      }
+    }
+  }
+
+  // ===== Копирование инфо
   const copyCargoInfo = () => {
     const text = [
       `${pl.pl_number ?? ""}`,
@@ -145,7 +207,7 @@ export default function PLCard({
         </div>
       )}
 
-      {/* === Груз === */}
+      {/* === Груз + Ответственный === */}
       <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card title="Груз" className="bg-gray-50">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -191,8 +253,30 @@ export default function PLCard({
           </div>
         </Card>
 
-        <Card title="Забор / Отправитель" className="bg-gray-50">
+        <Card title="Ответственный / Забор" className="bg-gray-50">
           <div className="grid grid-cols-1 gap-3 text-sm">
+            {/* Ответственный логист */}
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-xs text-gray-500">Ответственный</div>
+                <div className="font-medium truncate">
+                  {responsibleName || "— не назначен —"}
+                </div>
+              </div>
+              {canSelfAssign && (
+                <button
+                  type="button"
+                  onClick={handleSelfAssign}
+                  className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 hover:bg-gray-50 text-sm"
+                  title="Назначить себя ответственным"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  Назначить меня
+                </button>
+              )}
+            </div>
+
+            {/* Забор / отправитель */}
             <LabelInput
               label="Адрес забора"
               value={pl.pickup_address ?? ""}
@@ -212,18 +296,17 @@ export default function PLCard({
         </Card>
       </div>
 
-      {/* === Калькулятор → Документы → Комментарии === */}
+      {/* === Калькулятор → Документы → Комментарии → События === */}
       <div className="p-4 bg-gray-200 space-y-5">
         <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
           <h3 className="font-semibold mb-3">Калькулятор себестоимости</h3>
           <CostCalculatorCard pl={pl} onSave={handleSaveQuote} />
         </div>
 
-
         <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
-   <h3 className="font-semibold mb-3">Документы</h3>
-   <DocsList pl={pl} onUpdate={onUpdate} />
- </div>
+          <h3 className="font-semibold mb-3">Документы</h3>
+          <DocsList pl={pl} onUpdate={onUpdate} />
+        </div>
 
         <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
           <h3 className="font-semibold mb-3">Комментарии</h3>
@@ -232,8 +315,50 @@ export default function PLCard({
             onAppend={(created) => {
               const next = [...(pl.comments || []), created];
               onUpdate({ comments: next });
+              // часто рядом с комментами добавляют операции — обновим хронологию
+              refreshEvents();
             }}
           />
+        </div>
+
+        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-4">
+          <h3 className="font-semibold mb-3 flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            События (хронология)
+          </h3>
+
+          {evLoading ? (
+            <div className="text-sm text-gray-500">Загрузка…</div>
+          ) : evError ? (
+            <div className="text-sm text-rose-600">{evError}</div>
+          ) : events.length === 0 ? (
+            <div className="text-sm text-gray-500">Пока событий нет</div>
+          ) : (
+            <ul className="divide-y text-[13px]">
+              {events.map((e) => (
+                <li key={e.id} className="py-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium break-words">
+                      {e.title || e.type || "Событие"}
+                    </div>
+                    {e.details && (
+                      <div className="text-gray-600 whitespace-pre-wrap break-words">
+                        {e.details}
+                      </div>
+                    )}
+                    {e.user && (
+                      <div className="text-xs text-gray-500 mt-0.5">
+                        {e.user.name || e.user}
+                      </div>
+                    )}
+                  </div>
+                  <div className="shrink-0 text-xs text-gray-500">
+                    {new Date(e.createdAt || e.created_at).toLocaleString()}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </div>
 
@@ -252,6 +377,8 @@ export default function PLCard({
             onClick={() => {
               if (!canGoNext || !nextStatus) return;
               onNext(nextStatus);
+              // переход по статусу — хорошее событие, попробуем обновить ленту
+              setTimeout(refreshEvents, 50);
             }}
             disabled={!canGoNext || !nextStatus}
             className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg text-sm min-h-[44px] ${

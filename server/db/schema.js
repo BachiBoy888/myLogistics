@@ -11,6 +11,7 @@ import {
   uuid,
   bigint,
   pgEnum,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
@@ -25,6 +26,23 @@ export const clients = pgTable("clients", {
   company: text("company"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    login: text("login").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    email: text("email"),
+    role: text("role").notNull().default("user"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqLogin: uniqueIndex("uq_users_login").on(t.login),
+  })
+);
 
 export const pl = pgTable(
   "pl",
@@ -48,29 +66,15 @@ export const pl = pgTable(
     // Цена для клиента
     clientPrice: numeric("client_price", { precision: 12, scale: 2 }).default("0"),
 
+    // Ответственный: user с ролью «логист» (nullable)
+    responsibleUserId: uuid("responsible_user_id").references(() => users.id, { onDelete: "set null" }),
+
     createdAt: timestamp("created_at").defaultNow(),
   },
-  (table) => ({
-    plNumberIdx: index("pl_number_idx").on(table.plNumber),
-    plNumberUq: uniqueIndex("pl_number_unique").on(table.plNumber),
-  })
-);
-
-// === NEW: users
-export const users = pgTable(
-  "users",
-  {
-   id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-    login: text("login").notNull(),
-    passwordHash: text("password_hash").notNull(),
-    name: text("name").notNull(),
-    phone: text("phone"),
-    email: text("email"),
-    role: text("role").notNull().default("user"), // ← NEW: роль по умолчанию
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
   (t) => ({
-    uqLogin: uniqueIndex("uq_users_login").on(t.login),
+    plNumberIdx: index("pl_number_idx").on(t.plNumber),
+    plNumberUq: uniqueIndex("pl_number_unique").on(t.plNumber),
+    responsibleIdx: index("idx_pl_responsible").on(t.responsibleUserId),
   })
 );
 
@@ -82,7 +86,7 @@ export const plDocuments = pgTable(
   "pl_documents",
   {
     id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(), // UUID PK
-    plId: integer("pl_id") // <-- INTEGER pl.id
+    plId: integer("pl_id")
       .notNull()
       .references(() => pl.id, { onDelete: "cascade" }),
 
@@ -102,7 +106,6 @@ export const plDocuments = pgTable(
     byPlId: index("idx_pl_documents_pl_id").on(t.plId),
     byType: index("idx_pl_documents_doc_type").on(t.docType),
     byStatus: index("idx_pl_documents_status").on(t.status),
-    // 🔐 один документ типа на один PL (важно для UPSERT и чтобы не трогать чужие PL)
     uqDocPerType: uniqueIndex("uq_pl_doc_type").on(t.plId, t.docType),
   })
 );
@@ -122,8 +125,6 @@ export const plDocStatusHistory = pgTable("pl_doc_status_history", {
 
 /* =======================
    Консолидации
-   - Создаются из PL только в статусе "to_load" (валидируем в роуте)
-   - Пайплайн: loaded → to_customs → released → kg_customs → delivered → closed
 ======================= */
 
 export const consolidationStatusEnum = pgEnum("consolidation_status_v2", [
@@ -138,8 +139,8 @@ export const consolidationStatusEnum = pgEnum("consolidation_status_v2", [
 export const consolidations = pgTable(
   "consolidations",
   {
-    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(), // UUID PK
-    consNumber: text("cons_number").notNull(),                   // CONS-YYYY-N
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    consNumber: text("cons_number").notNull(),  // CONS-YYYY-N
     title: text("title"),
     status: consolidationStatusEnum("status").notNull().default("loaded"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -189,7 +190,10 @@ export const consolidationStatusHistory = pgTable(
   })
 );
 
-// PL комментарии
+/* =======================
+   Комментарии PL
+======================= */
+
 export const plComments = pgTable(
   "pl_comments",
   {
@@ -197,7 +201,7 @@ export const plComments = pgTable(
     plId: integer("pl_id")
       .notNull()
       .references(() => pl.id, { onDelete: "cascade" }),
-    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }), // ← NEW
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     author: text("author").notNull().default("Логист"),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -205,5 +209,29 @@ export const plComments = pgTable(
   (t) => ({
     byPl: index("idx_pl_comments_pl").on(t.plId),
     byPlCreated: index("idx_pl_comments_pl_created").on(t.plId, t.createdAt),
+  })
+);
+
+/* =======================
+   Процессные события PL
+======================= */
+
+export const plEvents = pgTable(
+  "pl_events",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    plId: integer("pl_id")
+      .notNull()
+      .references(() => pl.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),         // 'pl.created' | 'pl.status_changed' | ...
+    message: text("message").notNull(),
+    meta: jsonb("meta").default(sql`'{}'::jsonb`), // ← JS-совместимый дефолт
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byPl: index("idx_pl_events_pl").on(t.plId),
+    byPlCreated: index("idx_pl_events_created").on(t.plId, t.createdAt),
+    byActor: index("idx_pl_events_actor").on(t.actorUserId),
   })
 );

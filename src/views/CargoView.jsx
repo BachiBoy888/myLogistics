@@ -12,7 +12,6 @@ import ToggleChip from "../components/ui/ToggleChip.jsx";
 import KV from "../components/ui/KV.jsx";
 import NewPLModal from "../components/pl/NewPLModal.jsx";
 
-
 // Части карточки PL
 import DocsList from "../components/pl/DocsList.jsx";
 
@@ -315,6 +314,7 @@ export default function CargoView({
     [safePLs, selectedId]
   );
 
+  // локальное обновление в стейте
   function updatePLLocal(id, patch) {
     setPls((prev) =>
       (Array.isArray(prev) ? prev : []).map((p) =>
@@ -325,13 +325,30 @@ export default function CargoView({
     );
   }
 
+  // серверное сохранение + синк локального стейта
+  async function savePLPatch(id, patch) {
+    try {
+      const updated = await API.updatePL(id, patch);
+      setPls((prev) =>
+        (Array.isArray(prev) ? prev : []).map((p) =>
+          p?.id === id ? updated : p
+        )
+      );
+    } catch (e) {
+      console.error("Ошибка при сохранении PL:", e);
+      alert("Не удалось сохранить изменения");
+      // откатим локальные правки (перечитаем с сервера)
+      await refreshPLs({ keepSelected: true });
+    }
+  }
+
   // ===== Модалки =====
   const [showNew, setShowNew] = useState(false);
   const [showCreateCons, setShowCreateCons] = useState(false);
   const [openConsId, setOpenConsId] = useState(null);
 
   // Создание PL
-  async function handleCreatePLFromModal(payload) { /* …без изменений… */ 
+  async function handleCreatePLFromModal(payload) {
     const {
       client,
       title,
@@ -720,7 +737,7 @@ export default function CargoView({
               <PLCard
                 pl={selected}
                 warehouses={warehouses}
-                onUpdate={(patch) => updatePLLocal(selected.id, patch)}
+                onUpdate={(patch) => savePLPatch(selected.id, patch)}
                 onNext={(newStatus) => handleUpdateStatus(selected.id, newStatus)}
                 onDelete={() => handleDeletePL(selected.id)}
                 onClose={() => setSelectedId(null)}
@@ -735,7 +752,6 @@ export default function CargoView({
                   humanStatus,
                   badgeColorByStatus,
                 }}
-                
               />
             ) : (
               <EmptySummary items={filtered} />

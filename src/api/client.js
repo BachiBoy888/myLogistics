@@ -226,11 +226,38 @@ export async function getPLDocHistory(plId, docId) {
 }
 
 /* -------------------
-   PL EVENTS
+   PL EVENTS (timeline)
 ------------------- */
+function normalizeEvent(plId, e, idx = 0) {
+  const at =
+    e?.at ??
+    e?.createdAt ??
+    e?.created_at ??
+    e?.timestamp ??
+    new Date().toISOString();
+
+  const type = e?.type ?? 'event';
+  const meta = e?.meta ?? {};
+  const id =
+    e?.id ??
+    e?._id ??
+    `${type}-${plId}-${idx}`;
+
+  return {
+    id,
+    type,
+    title: e?.title ?? '',
+    details: e?.details ?? e?.message ?? '',
+    user: e?.user ?? e?.author ?? null,
+    createdAt: at,
+    meta,
+  };
+}
+
 export async function listPLEvents(plId) {
-  const arr = await req(`/pl/${plId}/events`);
-  return Array.isArray(arr) ? arr : [];
+  const json = await req(`/pl/${plId}/events`);
+  const arr = Array.isArray(json) ? json : json?.items ?? json?.data ?? [];
+  return (arr || []).filter(Boolean).map((e, i) => normalizeEvent(plId, e, i));
 }
 
 /* -------------------

@@ -1,5 +1,5 @@
 // src/components/PLCard.jsx
-// Карточка PL — версия 2025-10-22
+// Карточка PL — версия 2025-10-22 (fixed: safe events render, no duplicate default export)
 import React, { useState, useMemo, useEffect } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
 import CommentsCard from "./CommentsCard.jsx";
@@ -65,7 +65,7 @@ export default function PLCard({
       setEvError("");
       setEvLoading(true);
       const rows = await listPLEvents(pl.id);
-      setEvents(Array.isArray(rows) ? rows : []);
+      setEvents(Array.isArray(rows) ? rows.filter(Boolean) : []);
     } catch (e) {
       setEvError("Не удалось загрузить события");
     } finally {
@@ -93,14 +93,14 @@ export default function PLCard({
     if (!currentUser?.id) return;
     try {
       const saved = await assignPLResponsible(pl.id, currentUser.id);
-      // нормализованный ответ уже содержит responsible; но на всякий случай пробросим вверх
       onUpdate?.({
-        responsible: saved?.responsible ?? { id: currentUser.id, name: currentUser.name },
+        responsible: saved?.responsible ?? {
+          id: currentUser.id,
+          name: currentUser.name,
+        },
       });
-      // событие «смена ответственного» попадёт в ленту на бэке — обновим хронологию
       refreshEvents();
     } catch (e) {
-      // если бэк ещё не умеет responsible_user_id, сделаем мягкий фолбэк:
       try {
         await onUpdate?.({ responsible_user_id: currentUser.id });
         refreshEvents();
@@ -315,7 +315,6 @@ export default function PLCard({
             onAppend={(created) => {
               const next = [...(pl.comments || []), created];
               onUpdate({ comments: next });
-              // часто рядом с комментами добавляют операции — обновим хронологию
               refreshEvents();
             }}
           />
@@ -331,32 +330,36 @@ export default function PLCard({
             <div className="text-sm text-gray-500">Загрузка…</div>
           ) : evError ? (
             <div className="text-sm text-rose-600">{evError}</div>
-          ) : events.length === 0 ? (
+          ) : (events || []).filter(Boolean).length === 0 ? (
             <div className="text-sm text-gray-500">Пока событий нет</div>
           ) : (
             <ul className="divide-y text-[13px]">
-              {events.map((e) => (
-                <li key={e.id} className="py-2 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="font-medium break-words">
-                      {e.title || e.type || "Событие"}
+              {(events || []).filter(Boolean).map((e, i) => {
+                const key = e.id ?? `${e.type || "evt"}-${pl.id}-${i}`;
+                const when = e.createdAt || e.created_at || e.at;
+                return (
+                  <li key={key} className="py-2 flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium break-words">
+                        {e.title || e.type || "Событие"}
+                      </div>
+                      {e.details && (
+                        <div className="text-gray-600 whitespace-pre-wrap break-words">
+                          {e.details}
+                        </div>
+                      )}
+                      {e.user && (
+                        <div className="text-xs text-gray-500 mt-0.5">
+                          {e.user.name || e.user}
+                        </div>
+                      )}
                     </div>
-                    {e.details && (
-                      <div className="text-gray-600 whitespace-pre-wrap break-words">
-                        {e.details}
-                      </div>
-                    )}
-                    {e.user && (
-                      <div className="text-xs text-gray-500 mt-0.5">
-                        {e.user.name || e.user}
-                      </div>
-                    )}
-                  </div>
-                  <div className="shrink-0 text-xs text-gray-500">
-                    {new Date(e.createdAt || e.created_at).toLocaleString()}
-                  </div>
-                </li>
-              ))}
+                    <div className="shrink-0 text-xs text-gray-500">
+                      {when ? new Date(when).toLocaleString() : ""}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -377,7 +380,6 @@ export default function PLCard({
             onClick={() => {
               if (!canGoNext || !nextStatus) return;
               onNext(nextStatus);
-              // переход по статусу — хорошее событие, попробуем обновить ленту
               setTimeout(refreshEvents, 50);
             }}
             disabled={!canGoNext || !nextStatus}

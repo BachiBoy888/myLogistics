@@ -15,8 +15,8 @@ export default function LoginScreen({ onLogin }) {
     setErr("");
     setLoading(true);
     try {
-      await apiLogin({ login, password }); // установит cookie token
-      onLogin?.(); // App вызовет me() и войдёт
+      await apiLogin({ login, password }); // сервер выставит httpOnly cookie
+      onLogin?.();                         // App переключит экран и дернет me()
     } catch (e) {
       setErr("Неверный логин или пароль");
     } finally {
@@ -30,7 +30,7 @@ export default function LoginScreen({ onLogin }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canProceed]); // хватит этой зависимости
+  }, [canProceed]); // зависимость только от возможности войти
 
   return (
     <main className="min-h-[100svh] grid place-items-center bg-[#FAF3DD] p-4">

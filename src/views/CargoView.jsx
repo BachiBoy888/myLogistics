@@ -10,6 +10,7 @@ import Label from "../components/ui/Label.jsx";
 import LabelInput from "../components/ui/LabelInput.jsx";
 import ToggleChip from "../components/ui/ToggleChip.jsx";
 import KV from "../components/ui/KV.jsx";
+import NewPLModal from "../components/pl/NewPLModal.jsx";
 
 
 // Части карточки PL

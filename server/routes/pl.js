@@ -1,7 +1,7 @@
 // server/routes/pl.js
 import fs from 'fs';
 import path from 'path';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   pl,
   clients,
@@ -472,33 +472,9 @@ export default async function plRoutes(fastify) {
     if (!row) return reply.notFound('PL not found');
 
     // источники
-    const [docs, docHist, comments, consLinks] = await Promise.all([
-      db
-        .select()
-        .from(plDocuments)
-        .where(eq(plDocuments.plId, plId)),
-      db
-        .select()
-        .from(plDocStatusHistory)
-        .where(
-          // присоединим только по docId, сами docs принадлежат этому PL
-          // (фильтр по plId не нужен — docId уникален)
-          // но порядок выдачи отсортируем позже
-          // здесь просто получаем всё для docIds
-          // чтобы не делать IN, можно получить все и отфильтровать по docId наборам
-          // однако набор небольшой — оставим так:
-          // eq(plDocStatusHistory.docId, any(docIds)) — нет хелпера any, сделаем после
-          // упростим: заберём ВСЮ историю и отфильтруем в памяти (их обычно немного)
-          // см. ниже
-          // временно: просто заберём всё, потом сузим
-          // eslint-disable-next-line no-unsafe-finally
-          eq(plDocStatusHistory.docId, '00000000-0000-0000-0000-000000000000')
-        )
-        .catch(() => []), // защитный фолбэк; ниже заменим реальным фильтром
-      db
-        .select()
-        .from(plComments)
-        .where(eq(plComments.plId, plId)),
+    const [docs, comments, consLinks] = await Promise.all([
+      db.select().from(plDocuments).where(eq(plDocuments.plId, plId)),
+      db.select().from(plComments).where(eq(plComments.plId, plId)),
       db
         .select({ link: consolidationPl, cons: consolidations })
         .from(consolidationPl)
@@ -506,15 +482,19 @@ export default async function plRoutes(fastify) {
         .where(eq(consolidationPl.plId, plId)),
     ]);
 
-    // поскольку удобно — дособираем историю статусов документов через docIds
-    const docIds = docs.map((d) => d.id);
+    // история статусов документов по docIds
     let docHistory = [];
-    if (docIds.length) {
+    const docIds = docs.map((d) => d.id);
+    if (docIds.length > 0) {
       docHistory = await db
         .select()
         .from(plDocStatusHistory)
-        .where(plDocStatusHistory.docId.in(docIds));
+        .where(inArray(plDocStatusHistory.docId, docIds));
     }
+
+    // helper для id события (чтобы фронт не падал)
+    let cnt = 0;
+    const eid = (type) => `${type}-${plId}-${Date.now()}-${cnt++}`;
 
     // строим события
     const events = [];
@@ -522,18 +502,20 @@ export default async function plRoutes(fastify) {
     // Создание PL
     if (row.createdAt) {
       events.push({
+        id: eid('pl_created'),
         type: 'pl_created',
         at: row.createdAt,
         title: 'Создан PL',
-        meta: { pl_number: row.plNumber },
+        meta: { pl_number: row.plNumber ?? null },
       });
     }
 
     // Документы: загрузки
-    docs.forEach((d) => {
+    for (const d of docs) {
       events.push({
+        id: eid('doc_uploaded'),
         type: 'doc_uploaded',
-        at: d.uploadedAt || d.updatedAt,
+        at: d.uploadedAt || d.updatedAt || d.createdAt || row.createdAt,
         title: 'Загружен документ',
         meta: {
           doc_id: d.id,
@@ -542,11 +524,12 @@ export default async function plRoutes(fastify) {
           by: d.uploadedBy || null,
         },
       });
-    });
+    }
 
     // Документы: смены статусов
-    docHistory.forEach((h) => {
+    for (const h of docHistory) {
       events.push({
+        id: eid('doc_status'),
         type: 'doc_status',
         at: h.changedAt,
         title: 'Статус документа',
@@ -558,11 +541,12 @@ export default async function plRoutes(fastify) {
           by: h.changedBy || null,
         },
       });
-    });
+    }
 
     // Комментарии
-    comments.forEach((c) => {
+    for (const c of comments) {
       events.push({
+        id: eid('comment'),
         type: 'comment',
         at: c.createdAt,
         title: 'Комментарий',
@@ -572,11 +556,12 @@ export default async function plRoutes(fastify) {
           user_id: c.userId || null,
         },
       });
-    });
+    }
 
     // Включение в консолидации
-    consLinks.forEach(({ link, cons }) => {
+    for (const { link, cons } of consLinks) {
       events.push({
+        id: eid('cons_add'),
         type: 'cons_add',
         at: link.addedAt,
         title: 'Добавлен в консолидацию',
@@ -586,7 +571,7 @@ export default async function plRoutes(fastify) {
           cons_status: cons?.status || null,
         },
       });
-    });
+    }
 
     // сортировка по времени (по возрастанию)
     events.sort((a, b) => new Date(a.at) - new Date(b.at));

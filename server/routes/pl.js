@@ -686,11 +686,50 @@ export default async function plRoutes(fastify) {
       });
     }
 
-    const events = [...sysEvents, ...derived].sort(
-      (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
-    );
+    const events = [...sysEvents, ...derived]
+      .map((ev, idx) => {
+        if (!ev || typeof ev !== 'object') return null;
+        const createdAt =
+          ev.createdAt ??
+          ev.created_at ??
+          ev.at ??
+          row.createdAt ??
+          new Date().toISOString();
+        const type = ev.type ?? 'event';
+        const baseId = ev.id ?? ev._id ?? `${type || 'event'}-${plId}-${idx}`;
+        const meta = ev.meta && typeof ev.meta === 'object' ? ev.meta : {};
+        return {
+          id: String(baseId),
+          type,
+          title: ev.title ?? ev.message ?? type,
+          details: ev.details ?? ev.message ?? '',
+          message: ev.message ?? ev.details ?? '',
+          user:
+            typeof ev.user === 'string' || ev.user === null
+              ? ev.user
+              : typeof ev.user === 'object'
+              ? ev.user
+              : ev.user
+              ? { name: String(ev.user) }
+              : null,
+          createdAt,
+          meta,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
-    req.log.info({ plId, events: events.length }, 'PL_EVENTS built');
+    req.log.info(
+      {
+        plId,
+        sysEvents: sysEvents.length,
+        derivedEvents: derived.length,
+        totalEvents: events.length,
+        firstAt: events[0]?.createdAt ?? null,
+        lastAt: events.at(-1)?.createdAt ?? null,
+      },
+      'PL_EVENTS built'
+    );
     return { items: events };
   });
 }

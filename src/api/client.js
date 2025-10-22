@@ -145,7 +145,14 @@ export async function createClient(data) {
 export async function listPLs() {
   const json = await req("/pl");
   const arr = Array.isArray(json) ? json : json.items ?? json.data ?? [];
-  return arr.map(normalizePL);
+  // отбрасываем мусор и гарантируем структуру quote
+  return arr
+    .map(normalizePL)
+    .filter(Boolean)
+    .map((p) => ({
+      ...p,
+      quote: p?.quote ?? { calc_cost: null, client_price: null },
+    }));
 }
 export const getPL = listPLs;
 

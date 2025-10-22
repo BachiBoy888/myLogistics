@@ -71,6 +71,20 @@
       "when": 1761063447080,
       "tag": "0009_jittery_energizer",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1761148684970,
+      "tag": "0010_jazzy_nemesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1761148819725,
+      "tag": "0011_nappy_cannonball",
+      "breakpoints": true
     }
   ]
 }

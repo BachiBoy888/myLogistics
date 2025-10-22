@@ -56,6 +56,24 @@ export const pl = pgTable(
   })
 );
 
+// === NEW: users
+export const users = pgTable(
+  "users",
+  {
+   id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    login: text("login").notNull(),
+    passwordHash: text("password_hash").notNull(),
+    name: text("name").notNull(),
+    phone: text("phone"),
+    email: text("email"),
+    role: text("role").notNull().default("user"), // ← NEW: роль по умолчанию
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqLogin: uniqueIndex("uq_users_login").on(t.login),
+  })
+);
+
 /* =======================
    Документы PL
 ======================= */
@@ -171,7 +189,7 @@ export const consolidationStatusHistory = pgTable(
   })
 );
 
-// server/db/schema.js (добавь после блоков PL / Documents)
+// PL комментарии
 export const plComments = pgTable(
   "pl_comments",
   {
@@ -179,8 +197,9 @@ export const plComments = pgTable(
     plId: integer("pl_id")
       .notNull()
       .references(() => pl.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }), // ← NEW
     author: text("author").notNull().default("Логист"),
-    body: text("body").notNull(), // текст комментария
+    body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({

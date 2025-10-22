@@ -334,16 +334,28 @@ export async function listPLComments(plId) {
   return Array.isArray(arr) ? arr : [];
 }
 
-export async function addPLComment(plId, { author, text }) {
+export async function addPLComment(plId, { text }) {
   return req(`/pl/${Number(plId)}/comments`, {
     method: "POST",
-    body: { author, text },
+    body: { text },
   });
 }
 
 export async function deletePLComment(plId, commentId) {
   await req(`/pl/${Number(plId)}/comments/${commentId}`, { method: "DELETE" });
   return true;
+}
+
+export async function login({ login, password }) {
+  return req(`/auth/login`, { method: 'POST', body: { login, password } });
+}
+
+export async function logout() {
+  return req(`/auth/logout`, { method: 'POST' });
+}
+
+export async function me() {
+  return req(`/auth/me`);
 }
 
 /* -------------------

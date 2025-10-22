@@ -194,7 +194,6 @@ export default async function plRoutes(fastify) {
     req.log.info({ plId: plIdNum, docType, filename, size: fileBuf.length }, "DOC_UPLOAD file received");
 
     // Безопасный UPSERT строго по (plId, docType)
-    // Требует уникального индекса uq_pl_doc_type (pl_id, doc_type) — он добавлен в schema.js
     const now = new Date();
     const [row] = await db
       .insert(plDocuments)
@@ -207,7 +206,7 @@ export default async function plRoutes(fastify) {
         sizeBytes: fileBuf.length,
         storagePath,
         status: 'pending',
-        uploadedBy: 'ui',
+        uploadedBy: (req.user?.name || 'ui'),    // ← привязываем к учётке
         uploadedAt: now,
         updatedAt: now,
       })
@@ -254,7 +253,7 @@ export default async function plRoutes(fastify) {
         oldStatus: current.status,
         newStatus: status,
         note: note ?? null,
-        changedBy: (req.headers['x-user'] && String(req.headers['x-user'])) || 'system',
+        changedBy: (req.user?.name || 'system'),  // ← имя из учётки
       });
     }
     return updated;
@@ -326,12 +325,12 @@ export default async function plRoutes(fastify) {
     reply.code(204).send();
   });
 
-    /* =========================
+  /* =========================
      PL: Комментарии
   ========================== */
 
-  // Список комментариев по PL
-  fastify.get('/:id/comments', async (req, reply) => {
+  // Список комментариев по PL (закрыт под авторизацию)
+  fastify.get('/:id/comments', { preHandler: fastify.authGuard }, async (req, reply) => {
     const { id } = req.params;
     const rows = await db
       .select()
@@ -342,29 +341,33 @@ export default async function plRoutes(fastify) {
   });
 
   // Добавить комментарий
-  // body: { author?: string, text: string }
+  // body: { text: string }  (author игнорируется, берём из учётки)
   fastify.post('/:id/comments', {
+    preHandler: fastify.authGuard,
     schema: {
       params: { type: 'object', properties: { id: { type: 'integer' } }, required: ['id'] },
       body: {
         type: 'object',
-        additionalProperties: false,
+        additionalProperties: true,          // разрешаем прислать author, но игнорируем
         properties: {
-          author: { type: 'string' },
-          text:   { type: 'string' },
+          text: { type: 'string' },
         },
         required: ['text'],
       }
     }
   }, async (req, reply) => {
     const { id } = req.params;
-    const { author, text } = req.body || {};
+    const { text } = req.body || {};
     const trimmed = String(text || '').trim();
     if (!trimmed) return reply.badRequest('text is required');
 
+    const displayName = req.user?.name || 'Логист';
+    const userId = req.user?.id || null;
+
     const [row] = await db.insert(plComments).values({
       plId: Number(id),
-      author: (author && String(author).trim()) || 'Логист',
+      userId,
+      author: displayName,
       body: trimmed,
     }).returning();
 
@@ -374,6 +377,7 @@ export default async function plRoutes(fastify) {
 
   // Удалить комментарий
   fastify.delete('/:id/comments/:cid', {
+    preHandler: fastify.authGuard,
     schema: {
       params: {
         type: 'object',

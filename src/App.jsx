@@ -9,6 +9,8 @@ import {
   deletePL,
   getClients,
   createClient,
+  me,
+  logout as apiLogout,
 } from "./api/client.js";
 
 // UI / каркас
@@ -26,16 +28,47 @@ import LogisticsView from "./views/LogisticsView.jsx";
 // Константы/данные
 import { demoWarehouses } from "./constants/warehouses.js";
 
-export default function App() {
-  const [route, setRoute] = useState("login");
-  return route === "login" ? (
-    <LoginScreen onLogin={() => setRoute("app")} />
-  ) : (
-    <MainApp />
-  );
+function App() {
+  const [boot, setBoot] = useState({ loading: true, user: null });
+
+  // Проверяем сессию при запуске
+  useEffect(() => {
+    (async () => {
+      try {
+        const u = await me();
+        setBoot({ loading: false, user: u });
+      } catch {
+        setBoot({ loading: false, user: null });
+      }
+    })();
+  }, []);
+
+  if (boot.loading) return <LoadingScreen />;
+
+  // Пока не залогинен — экран входа
+  if (!boot.user) {
+    return (
+      <LoginScreen
+        onLogin={async () => {
+          const u = await me().catch(() => null);
+          setBoot({ loading: false, user: u });
+        }}
+      />
+    );
+  }
+
+  // Выход
+  async function handleLogout() {
+    await apiLogout().catch(() => {});
+    setBoot({ loading: false, user: null });
+  }
+
+  return <MainApp user={boot.user} onLogout={handleLogout} />;
 }
 
-function MainApp() {
+export default App;
+
+function MainApp({ user, onLogout }) {
   const [pls, setPls] = useState([]);
   const [clients, setClients] = useState([]);
   const [cons, setCons] = useState([]);
@@ -55,12 +88,16 @@ function MainApp() {
         setClients(clientData || []);
       } catch (e) {
         console.error("Ошибка загрузки с API:", e);
+        // Необязательно, но если получили 401 — разлогинимся
+        if (String(e?.message || "").includes("401")) {
+          onLogout?.();
+        }
       } finally {
         setLoading(false);
       }
     }
     loadData();
-  }, []);
+  }, [onLogout]);
 
   // добавление клиента (кнопка в ClientsView)
   async function handleAddClient(newClient) {
@@ -99,7 +136,7 @@ function MainApp() {
 
   return (
     <div className="min-h-screen bg-[#FAF3DD] flex flex-col">
-      <Header mode={mode} onChangeMode={setMode} />
+      <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} />
 
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">
         {mode === "cargo" && (
@@ -139,7 +176,6 @@ function MainApp() {
         )}
 
         {mode === "logistics" && <LogisticsView />}
-
       </main>
 
       <Footer />

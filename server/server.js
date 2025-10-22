@@ -7,6 +7,8 @@ import helmet from '@fastify/helmet';
 import sensible from '@fastify/sensible';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
+import cookie from '@fastify/cookie';            // ← NEW
+import jwtLib from 'jsonwebtoken';               // ← NEW
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -18,6 +20,7 @@ import { getUploadsRootAbs } from './services/storage.js';
 import clientsRoutes from './routes/clients.js';
 import plRoutes from './routes/pl.js';
 import consolidationsRoutes from './routes/consolidations.js';
+import authRoutes from './routes/auth.js';       // ← NEW
 
 // --- вычислим текущую папку (для статики)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +43,7 @@ async function start() {
   await app.register(sensible);
 
   // Для монолита CORS не обязателен. Можно оставить, но безопаснее выключить.
+  // Если будешь выносить фронт на другой домен — раскомментируй и настрой origin:
   // await app.register(cors, { origin: true, credentials: true });
 
   // Не ломаем превью файлов/страниц в <iframe>
@@ -52,6 +56,46 @@ async function start() {
   // multipart без attachFieldsToBody — нужны filename/mimetype
   await app.register(multipart, {
     limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB
+  });
+
+  // Cookies (для httpOnly JWT cookie)
+  await app.register(cookie, {
+    secret: process.env.JWT_SECRET || 'dev-secret',
+  });
+
+  // === JWT helpers & auth guard ===
+  const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
+  const JWT_EXPIRES = process.env.JWT_EXPIRES || '30d';
+
+  // user на запрос
+  app.decorateRequest('user', null);
+
+  // Попытка прочитать токен из cookie и верифицировать
+  app.addHook('preHandler', async (req, _reply) => {
+    const token = req.cookies?.token;
+    if (!token) return;
+    try {
+      const payload = jwtLib.verify(token, JWT_SECRET);
+      // payload: { id, login, name, role?, iat, exp }
+      req.user = payload;
+    } catch {
+      // невалидный/протухший токен — молча игнорируем
+    }
+  });
+
+  // Метод для выдачи JWT
+  app.decorate('issueJwt', (user) => {
+    // user: { id, login, name, role? }
+    return jwtLib.sign(
+      { id: user.id, login: user.login, name: user.name, role: user.role },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES }
+    );
+  });
+
+  // Guard для закрытых эндпоинтов
+  app.decorate('authGuard', async (req, reply) => {
+    if (!req.user) return reply.unauthorized('Unauthorized');
   });
 
   // Раздача /uploads (постоянное хранилище)
@@ -73,13 +117,13 @@ async function start() {
   app.get('/ping', async () => ({ message: 'pong' }));
   app.get('/healthz', async () => ({ ok: true }));
 
-  // Маршруты API
-  // ВАЖНО: префиксы не конфликтуют с фронтом
+  // Маршруты API (важно: не конфликтуют с фронтом)
+  await app.register(authRoutes, { prefix: '/api/auth' });                   // ← NEW: /api/auth/...
   await app.register(clientsRoutes, { prefix: '/api' });                     // /api/clients...
   await app.register(plRoutes, { prefix: '/api/pl' });                       // /api/pl/...
   await app.register(consolidationsRoutes, { prefix: '/api/consolidations' });// /api/consolidations/...
 
-  // SPA fallback: всё не-API отдаем index.html
+  // SPA fallback: всё не-API отдаём index.html
   app.setNotFoundHandler((req, reply) => {
     if (req.raw.url.startsWith('/api')) return reply.notFound();
     return reply.sendFile('index.html'); // из distRoot

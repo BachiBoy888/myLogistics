@@ -16,6 +16,7 @@ import {
   Clock,
 } from "lucide-react";
 import { listPLEvents, assignPLResponsible } from "../api/client.js";
+import { safeEvents } from "../utils/events.js";
 
 export default function PLCard({
   pl,
@@ -65,8 +66,17 @@ export default function PLCard({
       setEvError("");
       setEvLoading(true);
       const rows = await listPLEvents(pl.id);
-      console.log("[PLCard] events fetched for PL", pl.id, rows); // лог
-      setEvents(Array.isArray(rows) ? rows.filter(Boolean) : []);
+      const sanitized = safeEvents(rows, {
+        plId: pl.id,
+        logger: (stats) =>
+          stats.dropped > 0 &&
+          console.warn("[PLCard] dropped invalid events", pl.id, stats),
+      });
+      console.log("[PLCard] events fetched for PL", pl.id, {
+        total: rows?.length ?? 0,
+        sanitized: sanitized.length,
+      });
+      setEvents(sanitized);
     } catch (e) {
       setEvError("Не удалось загрузить события");
       console.error("[PLCard] events fetch error", e); // лог

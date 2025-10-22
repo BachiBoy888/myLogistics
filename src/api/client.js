@@ -1,4 +1,6 @@
 // src/api/client.js
+import { safeEvents } from "../utils/events.js";
+
 const BASE = import.meta.env.VITE_API_BASE || "/api";
 
 /* -------------------
@@ -264,7 +266,15 @@ function normalizeEvent(plId, e, idx = 0) {
 export async function listPLEvents(plId) {
   const json = await req(`/pl/${plId}/events`);
   const arr = Array.isArray(json) ? json : json?.items ?? json?.data ?? [];
-  return (arr || []).filter(Boolean).map((e, i) => normalizeEvent(plId, e, i));
+  const sanitized = safeEvents(arr, {
+    plId,
+    logger: (stats) => {
+      if (stats.dropped > 0) {
+        console.warn("[listPLEvents] dropped invalid items", stats);
+      }
+    },
+  });
+  return sanitized.map((e, i) => normalizeEvent(plId, e, i));
 }
 
 /* -------------------

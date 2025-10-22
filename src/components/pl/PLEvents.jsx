@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { listPLEvents } from "../../api/client.js";
+import { safeEvents } from "../../utils/events.js";
 
 export default function PLEvents({ plId }) {
   const [items, setItems] = useState([]);
@@ -11,7 +12,13 @@ export default function PLEvents({ plId }) {
       setLoading(true);
       try {
         const rows = await listPLEvents(plId);
-        if (!ignore) setItems(rows);
+        const sanitized = safeEvents(rows, {
+          plId,
+          logger: (stats) =>
+            stats.dropped > 0 &&
+            console.warn("[PLEvents] dropped invalid events", plId, stats),
+        });
+        if (!ignore) setItems(sanitized);
       } finally {
         setLoading(false);
       }

@@ -726,7 +726,7 @@ export default async function plRoutes(fastify) {
         derivedEvents: derived.length,
         totalEvents: events.length,
         firstAt: events[0]?.createdAt ?? null,
-        lastAt: events.at(-1)?.createdAt ?? null,
+        lastAt: events.length ? events[events.length - 1].createdAt : null,
       },
       'PL_EVENTS built'
     );

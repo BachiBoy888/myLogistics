@@ -1,59 +1,98 @@
-// src/components/LoadingScreen.jsx
-import React from "react";
-import truckImg from "../assets/truck2.png"; // <- картинка из src/assets
+// src/components/auth/LoginScreen.jsx
+import React, { useState, useEffect } from "react";
+import { login as apiLogin } from "../../api/client.js";
 
-/**
- * Лоадер с статичным PNG-грузовиком и «бегущей» дорогой справа-налево.
- * Никаких внешних стилей не требуется — keyframes внутри.
- */
-export default function LoadingScreen({ label = "Загрузка данных…" }) {
+export default function LoginScreen({ onLogin }) {
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const canProceed = login.trim() && password.trim();
+
+  async function doSubmit() {
+    if (!canProceed || loading) return;
+    setErr("");
+    setLoading(true);
+    try {
+      await apiLogin({ login, password }); // установит cookie token
+      onLogin?.();                         // App вызовет me() и войдёт
+    } catch (e) {
+      setErr("Неверный логин или пароль");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === "Enter" && canProceed) doSubmit();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canProceed, login, password, loading]);
+
   return (
-    <div className="min-h-screen grid place-items-center bg-[#FAF3DD] px-4">
-      <div className="w-full max-w-[680px]">
-        {/* Сцена */}
-        <div
-          className="relative h-[540px] rounded-2xl overflow-hidden"
-          style={{ background: "#FAF3DD" }} 
-        >
-          {/* Дорога */}
-          <div className="absolute bottom-16 left-0 right-0 h-14">
-            <div className="absolute inset-0 bg-black/85 rounded-t-[14px]" />
-            {/* Бегущая разметка */}
-            <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-[4px] overflow-hidden">
-              <div
-                className="w-[200%] h-full animate-ml-road"
-                style={{
-                  backgroundImage:
-                    "repeating-linear-gradient(90deg, white 0 40px, transparent 40px 80px)",
-                  backgroundSize: "80px 4px",
-                }}
-              />
-            </div>
+    <main className="min-h-[100svh] grid place-items-center bg-[#FAF3DD] p-4">
+      <div className="w-full max-w-[380px] rounded-2xl bg-white shadow-xl p-8">
+        {/* Шапка */}
+        <div className="flex flex-col items-center gap-2 mb-8">
+          <div className="w-14 h-14 rounded-xl bg-black text-white grid place-items-center text-xl font-bold">
+            PL
           </div>
-
-          {/* Статичный PNG грузовика */}
-          <img
-            src={truckImg}
-            alt="PROLIFE truck"
-            className="absolute bottom-[40px] left-1/2 -translate-x-1/2 select-none pointer-events-none"
-            style={{
-              width: "min(520px, 90vw)", // не растягиваем шире исходника
-              imageRendering: "auto",
-            }}
-          />
+          <div className="text-xs tracking-wider text-neutral-500">
+            Торгово-логистическая компания
+          </div>
         </div>
 
-        <p className="mt-4 text-center text-gray-700 font-medium">{label}</p>
-      </div>
+        {/* Форма */}
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            doSubmit();
+          }}
+        >
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Логин</span>
+            <input
+              type="text"
+              autoFocus
+              className="h-11 rounded-xl border border-neutral-300 px-4 outline-none focus:border-black"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              placeholder="Введите логин"
+              autoComplete="username"
+            />
+          </label>
 
-      {/* Локальные keyframes */}
-      <style>{`
-        @keyframes ml-road {
-          from { transform: translateX(0); }
-          to   { transform: translateX(-50%); }
-        }
-        .animate-ml-road { animation: ml-road 1.1s linear infinite; }
-      `}</style>
-    </div>
+          <label className="flex flex-col gap-1">
+            <span className="text-sm text-neutral-700">Пароль</span>
+            <input
+              type="password"
+              className="h-11 rounded-xl border border-neutral-300 px-4 outline-none focus:border-black"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Введите пароль"
+              autoComplete="current-password"
+            />
+          </label>
+
+          <button
+            className="h-11 rounded-xl bg-black text-white font-medium disabled:opacity-50"
+            disabled={!canProceed || loading}
+          >
+            {loading ? "Входим…" : "Войти"}
+          </button>
+
+          {err && <div className="text-sm text-rose-600">{err}</div>}
+        </form>
+
+        <p className="mt-6 text-center text-xs text-neutral-500">
+          Нажимая «Войти», вы соглашаетесь с правилами использования.
+        </p>
+      </div>
+    </main>
   );
 }

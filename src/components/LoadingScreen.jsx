@@ -16,7 +16,7 @@ export default function LoginScreen({ onLogin }) {
     setLoading(true);
     try {
       await apiLogin({ login, password }); // установит cookie token
-      onLogin?.();                         // App вызовет me() и войдёт
+      onLogin?.(); // App вызовет me() и войдёт
     } catch (e) {
       setErr("Неверный логин или пароль");
     } finally {
@@ -30,8 +30,7 @@ export default function LoginScreen({ onLogin }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canProceed, login, password, loading]);
+  }, [canProceed]); // хватит этой зависимости
 
   return (
     <main className="min-h-[100svh] grid place-items-center bg-[#FAF3DD] p-4">

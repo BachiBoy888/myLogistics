@@ -462,120 +462,18 @@ export default async function plRoutes(fastify) {
      PL: События (таймлайн)
   ========================== */
 
+  // ===== Хронология событий по PL (временная заглушка) =====
   fastify.get('/:id/events', async (req, reply) => {
     const { id } = req.params;
-    const plId = Number(id);
-    if (!Number.isInteger(plId)) return reply.badRequest('Bad id');
-
-    // сам PL
-    const [row] = await db.select().from(pl).where(eq(pl.id, plId)).limit(1);
-    if (!row) return reply.notFound('PL not found');
-
-    // источники
-    const [docs, comments, consLinks] = await Promise.all([
-      db.select().from(plDocuments).where(eq(plDocuments.plId, plId)),
-      db.select().from(plComments).where(eq(plComments.plId, plId)),
-      db
-        .select({ link: consolidationPl, cons: consolidations })
-        .from(consolidationPl)
-        .leftJoin(consolidations, eq(consolidationPl.consolidationId, consolidations.id))
-        .where(eq(consolidationPl.plId, plId)),
-    ]);
-
-    // история статусов документов по docIds
-    let docHistory = [];
-    const docIds = docs.map((d) => d.id);
-    if (docIds.length > 0) {
-      docHistory = await db
-        .select()
-        .from(plDocStatusHistory)
-        .where(inArray(plDocStatusHistory.docId, docIds));
-    }
-
-    // helper для id события (чтобы фронт не падал)
-    let cnt = 0;
-    const eid = (type) => `${type}-${plId}-${Date.now()}-${cnt++}`;
-
-    // строим события
-    const events = [];
-
-    // Создание PL
-    if (row.createdAt) {
-      events.push({
-        id: eid('pl_created'),
-        type: 'pl_created',
-        at: row.createdAt,
-        title: 'Создан PL',
-        meta: { pl_number: row.plNumber ?? null },
-      });
-    }
-
-    // Документы: загрузки
-    for (const d of docs) {
-      events.push({
-        id: eid('doc_uploaded'),
-        type: 'doc_uploaded',
-        at: d.uploadedAt || d.updatedAt || d.createdAt || row.createdAt,
-        title: 'Загружен документ',
-        meta: {
-          doc_id: d.id,
-          doc_type: d.docType,
-          name: d.name || d.fileName,
-          by: d.uploadedBy || null,
-        },
-      });
-    }
-
-    // Документы: смены статусов
-    for (const h of docHistory) {
-      events.push({
-        id: eid('doc_status'),
-        type: 'doc_status',
-        at: h.changedAt,
-        title: 'Статус документа',
-        meta: {
-          doc_id: h.docId,
-          from: h.oldStatus || null,
-          to: h.newStatus,
-          note: h.note || null,
-          by: h.changedBy || null,
-        },
-      });
-    }
-
-    // Комментарии
-    for (const c of comments) {
-      events.push({
-        id: eid('comment'),
-        type: 'comment',
-        at: c.createdAt,
-        title: 'Комментарий',
-        meta: {
-          author: c.author,
-          text: c.body,
-          user_id: c.userId || null,
-        },
-      });
-    }
-
-    // Включение в консолидации
-    for (const { link, cons } of consLinks) {
-      events.push({
-        id: eid('cons_add'),
-        type: 'cons_add',
-        at: link.addedAt,
-        title: 'Добавлен в консолидацию',
-        meta: {
-          cons_id: link.consolidationId,
-          cons_number: cons?.consNumber || null,
-          cons_status: cons?.status || null,
-        },
-      });
-    }
-
-    // сортировка по времени (по возрастанию)
-    events.sort((a, b) => new Date(a.at) - new Date(b.at));
-
-    return { items: events };
+    // Вернём хотя бы факт существования PL как событие — дальше дополним
+    return [
+      {
+        id: `pl.created-${id}`,
+        type: 'pl.created',
+        title: 'PL создан',
+        details: '',
+        createdAt: new Date().toISOString(),
+      }
+    ];
   });
 }

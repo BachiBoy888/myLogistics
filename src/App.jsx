@@ -29,8 +29,8 @@ import LogisticsView from "./views/LogisticsView.jsx";
 import { demoWarehouses } from "./constants/warehouses.js";
 
 function App() {
-  console.log("BOOT:", boot);
   const [boot, setBoot] = useState({ loading: true, user: null });
+  console.log("BOOT:", boot);
 
   // Проверяем сессию при запуске
   useEffect(() => {
@@ -89,10 +89,7 @@ function MainApp({ user, onLogout }) {
         setClients(clientData || []);
       } catch (e) {
         console.error("Ошибка загрузки с API:", e);
-        // Необязательно, но если получили 401 — разлогинимся
-        if (String(e?.message || "").includes("401")) {
-          onLogout?.();
-        }
+        if (String(e?.message || "").includes("401")) onLogout?.();
       } finally {
         setLoading(false);
       }

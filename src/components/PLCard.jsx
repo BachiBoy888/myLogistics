@@ -1,5 +1,5 @@
 // src/components/PLCard.jsx
-// Карточка PL — версия 2025-10-22 (fixed: safe events render, no duplicate default export)
+// Карточка PL — версия 2025-10-22 (fixed: safe events render, logging)
 import React, { useState, useMemo, useEffect } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
 import CommentsCard from "./CommentsCard.jsx";
@@ -65,9 +65,11 @@ export default function PLCard({
       setEvError("");
       setEvLoading(true);
       const rows = await listPLEvents(pl.id);
+      console.log("[PLCard] events fetched for PL", pl.id, rows); // лог
       setEvents(Array.isArray(rows) ? rows.filter(Boolean) : []);
     } catch (e) {
       setEvError("Не удалось загрузить события");
+      console.error("[PLCard] events fetch error", e); // лог
     } finally {
       setEvLoading(false);
     }
@@ -333,34 +335,44 @@ export default function PLCard({
           ) : (events || []).filter(Boolean).length === 0 ? (
             <div className="text-sm text-gray-500">Пока событий нет</div>
           ) : (
-            <ul className="divide-y text-[13px]">
-              {(events || []).filter(Boolean).map((e, i) => {
-                const key = e.id ?? `${e.type || "evt"}-${pl.id}-${i}`;
-                const when = e.createdAt || e.created_at || e.at;
-                return (
-                  <li key={key} className="py-2 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium break-words">
-                        {e.title || e.type || "Событие"}
-                      </div>
-                      {e.details && (
-                        <div className="text-gray-600 whitespace-pre-wrap break-words">
-                          {e.details}
+            <>
+              {console.log("[PLCard] render events", pl?.id, events)}
+              <ul className="divide-y text-[13px]">
+                {(events || [])
+                  .filter((e) => e && (e.id != null || e.type))
+                  .map((e, i) => {
+                    const key = e.id ?? `${e.type || "evt"}-${pl?.id ?? "x"}-${i}`;
+                    const when = e.createdAt || e.created_at || e.at;
+                    const userName =
+                      typeof e.user === "object" ? e.user?.name ?? "" : e.user ?? "";
+                    return (
+                      <li
+                        key={key}
+                        className="py-2 flex items-start justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium break-words">
+                            {e.title || e.type || "Событие"}
+                          </div>
+                          {e.details && (
+                            <div className="text-gray-600 whitespace-pre-wrap break-words">
+                              {e.details}
+                            </div>
+                          )}
+                          {userName && (
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {userName}
+                            </div>
+                          )}
                         </div>
-                      )}
-                      {e.user && (
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {e.user.name || e.user}
+                        <div className="shrink-0 text-xs text-gray-500">
+                          {when ? new Date(when).toLocaleString() : ""}
                         </div>
-                      )}
-                    </div>
-                    <div className="shrink-0 text-xs text-gray-500">
-                      {when ? new Date(when).toLocaleString() : ""}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </>
           )}
         </div>
       </div>

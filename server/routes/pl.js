@@ -1,15 +1,17 @@
 // server/routes/pl.js
 import fs from 'fs';
 import path from 'path';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import {
   pl,
   clients,
+  users,
   plDocuments,
   plDocStatusHistory,
   plComments,
   consolidations,
   consolidationPl,
+  plEvents,
 } from '../db/schema.js';
 import { savePLFile, getUploadsRootAbs } from '../services/storage.js';
 
@@ -30,12 +32,28 @@ function contentDispositionInline(filename) {
   return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
+// обогащение PL именем ответственного (snake-case поля для фронта)
+async function hydrateResponsible(db, row) {
+  if (!row) return row;
+  let responsibleName = null;
+  if (row.responsibleUserId) {
+    const [u] = await db.select().from(users).where(eq(users.id, row.responsibleUserId)).limit(1);
+    responsibleName = u?.name ?? null;
+  }
+  return {
+    ...row,
+    clientPrice: row.clientPrice ?? row.client_price ?? null,
+    responsible_user_id: row.responsibleUserId ?? null,
+    responsible_name: responsibleName,
+  };
+}
+
 export default async function plRoutes(fastify) {
   const db = fastify.drizzle;
 
   /* =========================
      PL: список / создание / обновление / удаление
-     (путь без /pl, т.к. в server.js префикс '/api/pl')
+     (префикс '/api/pl' навешан в server.js)
   ========================== */
 
   // ===== Список PL (с клиентами) =====
@@ -45,7 +63,12 @@ export default async function plRoutes(fastify) {
       .from(pl)
       .leftJoin(clients, eq(pl.clientId, clients.id))
       .orderBy(desc(pl.createdAt));
-    return rows.map(({ p, c }) => ({ ...p, client: toClientShape(c) }));
+    return Promise.all(
+      rows.map(async ({ p, c }) => ({
+        ...(await hydrateResponsible(db, p)),
+        client: toClientShape(c),
+      }))
+    );
   });
 
   // ===== Создать PL =====
@@ -111,8 +134,17 @@ export default async function plRoutes(fastify) {
           .where(eq(pl.id, inserted.id))
           .returning();
 
+        // системное событие «создан»
+        await db.insert(plEvents).values({
+          plId: saved.id,
+          type: 'pl.created',
+          message: 'PL создан',
+          meta: { pl_number: plNumber },
+          actorUserId: req.user?.id ?? null,
+        });
+
         const [c] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
-        return { ...saved, client: toClientShape(c) };
+        return { ...(await hydrateResponsible(db, saved)), client: toClientShape(c) };
       } catch (err) {
         req.log.error({ tag: 'POST_PL_ERROR', err }, 'POST / (create PL) failed');
         return reply.code(500).send({ error: 'create_pl_failed', detail: err?.message || String(err), code: err?.code });
@@ -134,6 +166,10 @@ export default async function plRoutes(fastify) {
       const b = req.body || {};
       const toNumMaybe = (v) => (v === '' || v === null || v === undefined ? undefined : v);
 
+      // прочитаем текущий для сравнения (события)
+      const [current] = await db.select().from(pl).where(eq(pl.id, Number(id))).limit(1);
+      if (!current) return reply.notFound(`PL ${id} not found`);
+
       const payload = {
         ...(b.name != null && { name: b.name ?? b.title }),
         ...(b.title != null && b.name == null && { name: b.title }),
@@ -149,21 +185,59 @@ export default async function plRoutes(fastify) {
         ...(b.status != null && { status: b.status }),
         ...(b.clientPrice != null && { clientPrice: toNumMaybe(b.clientPrice) }),
         ...(b.client_price != null && b.clientPrice == null && { clientPrice: toNumMaybe(b.client_price) }),
+        // ответственный
+        ...(b.responsible_user_id != null && { responsibleUserId: b.responsible_user_id || null }),
       };
 
-      // ⬇️ Раньше тут было 400 — теперь делаем no-op и возвращаем текущий PL
+      // если действительно нечего обновлять — вернуть текущий
       if (Object.keys(payload).length === 0) {
-        const [current] = await db.select().from(pl).where(eq(pl.id, Number(id))).limit(1);
-        if (!current) return reply.notFound(`PL ${id} not found`);
         const [c] = await db.select().from(clients).where(eq(clients.id, current.clientId)).limit(1);
-        return { ...current, clientPrice: current.clientPrice ?? current.client_price ?? null, client: toClientShape(c) };
+        return { ...(await hydrateResponsible(db, current)), client: toClientShape(c) };
       }
 
       const [updated] = await db.update(pl).set(payload).where(eq(pl.id, Number(id))).returning();
-      if (!updated) return reply.notFound(`PL ${id} not found`);
-
       const [c] = await db.select().from(clients).where(eq(clients.id, updated.clientId)).limit(1);
-      return { ...updated, clientPrice: updated.clientPrice ?? updated.client_price ?? null, client: toClientShape(c) };
+
+      // события: статус изменился?
+      if (b.status != null && b.status !== current.status) {
+        await db.insert(plEvents).values({
+          plId: updated.id,
+          type: 'pl.status_changed',
+          message: `Статус: ${current.status ?? '-'} → ${b.status}`,
+          meta: { from: current.status ?? null, to: b.status },
+          actorUserId: req.user?.id ?? null,
+        });
+      }
+
+      // события: ответственный изменился?
+      if (b.responsible_user_id !== undefined && b.responsible_user_id !== current.responsibleUserId) {
+        // имена
+        let fromName = null;
+        let toName = null;
+        if (current.responsibleUserId) {
+          const [uFrom] = await db.select().from(users).where(eq(users.id, current.responsibleUserId)).limit(1);
+          fromName = uFrom?.name ?? null;
+        }
+        if (updated.responsibleUserId) {
+          const [uTo] = await db.select().from(users).where(eq(users.id, updated.responsibleUserId)).limit(1);
+          toName = uTo?.name ?? null;
+        }
+
+        await db.insert(plEvents).values({
+          plId: updated.id,
+          type: 'pl.responsible_changed',
+          message: `Ответственный: ${fromName ?? '—'} → ${toName ?? '—'}`,
+          meta: {
+            from_user_id: current.responsibleUserId ?? null,
+            from_user_name: fromName,
+            to_user_id: updated.responsibleUserId ?? null,
+            to_user_name: toName,
+          },
+          actorUserId: req.user?.id ?? null,
+        });
+      }
+
+      return { ...(await hydrateResponsible(db, updated)), client: toClientShape(c) };
     }
   );
 
@@ -231,11 +305,9 @@ export default async function plRoutes(fastify) {
     if (!fileBuf) return reply.badRequest('No file uploaded');
     if (!docType) return reply.badRequest('doc_type is required');
 
-    // Сохраняем физически (имя — исходное)
     const { relative: storagePath } = await savePLFile(plIdNum, filename, fileBuf);
     req.log.info({ plId: plIdNum, docType, filename, size: fileBuf.length }, 'DOC_UPLOAD file received');
 
-    // Безопасный UPSERT строго по (plId, docType)
     const now = new Date();
     const [row] = await db
       .insert(plDocuments)
@@ -248,7 +320,7 @@ export default async function plRoutes(fastify) {
         sizeBytes: fileBuf.length,
         storagePath,
         status: 'pending',
-        uploadedBy: req.user?.name || 'ui', // ← привязываем к учётке
+        uploadedBy: req.user?.name || 'ui',
         uploadedAt: now,
         updatedAt: now,
       })
@@ -260,11 +332,20 @@ export default async function plRoutes(fastify) {
           mimeType: mimetype,
           sizeBytes: fileBuf.length,
           storagePath,
-          status: 'pending', // новая версия → обратно на проверку
+          status: 'pending',
           updatedAt: now,
         },
       })
       .returning();
+
+    // событие «загружен документ»
+    await db.insert(plEvents).values({
+      plId: plIdNum,
+      type: 'pl.doc_uploaded',
+      message: `Загружен документ ${row.docType}`,
+      meta: { doc_id: row.id, doc_type: row.docType, name: row.name || row.fileName },
+      actorUserId: req.user?.id ?? null,
+    });
 
     req.log.info({ docId: row.id }, 'DOC_UPLOAD ok');
     return reply.code(201).send(row);
@@ -299,7 +380,16 @@ export default async function plRoutes(fastify) {
         oldStatus: current.status,
         newStatus: status,
         note: note ?? null,
-        changedBy: req.user?.name || 'system', // ← имя из учётки
+        changedBy: req.user?.name || 'system',
+      });
+
+      // событие «смена статуса документа»
+      await db.insert(plEvents).values({
+        plId: Number(plId),
+        type: 'pl.doc_status_changed',
+        message: `Статус документа ${updated.docType}: ${current.status} → ${status}`,
+        meta: { doc_id: current.id, from: current.status, to: status, note: note ?? null },
+        actorUserId: req.user?.id ?? null,
       });
     }
     return updated;
@@ -385,18 +475,16 @@ export default async function plRoutes(fastify) {
      PL: Комментарии
   ========================== */
 
-  // Список комментариев по PL (закрыт под авторизацию)
   fastify.get('/:id/comments', { preHandler: fastify.authGuard }, async (req, reply) => {
     const { id } = req.params;
     const rows = await db
       .select()
       .from(plComments)
       .where(eq(plComments.plId, Number(id)))
-      .orderBy(plComments.createdAt); // по возрастанию времени
+      .orderBy(plComments.createdAt);
     return rows;
   });
 
-  // Добавить комментарий
   fastify.post(
     '/:id/comments',
     {
@@ -430,12 +518,20 @@ export default async function plRoutes(fastify) {
         })
         .returning();
 
+      // событие «комментарий»
+      await db.insert(plEvents).values({
+        plId: Number(id),
+        type: 'pl.comment',
+        message: displayName + ': ' + trimmed,
+        meta: { author: displayName, user_id: userId },
+        actorUserId: userId,
+      });
+
       reply.code(201);
       return row;
     }
   );
 
-  // Удалить комментарий
   fastify.delete(
     '/:id/comments/:cid',
     {
@@ -462,18 +558,139 @@ export default async function plRoutes(fastify) {
      PL: События (таймлайн)
   ========================== */
 
-  // ===== Хронология событий по PL (временная заглушка) =====
   fastify.get('/:id/events', async (req, reply) => {
     const { id } = req.params;
-    // Вернём хотя бы факт существования PL как событие — дальше дополним
-    return [
-      {
-        id: `pl.created-${id}`,
-        type: 'pl.created',
-        title: 'PL создан',
-        details: '',
-        createdAt: new Date().toISOString(),
+    const plId = Number(id);
+    if (!Number.isInteger(plId)) return reply.badRequest('Bad id');
+
+    const [row] = await db.select().from(pl).where(eq(pl.id, plId)).limit(1);
+    if (!row) return reply.notFound('PL not found');
+
+    // 1) Системные события из pl_events (+ имя актёра)
+    const rawEvents = await db
+      .select({
+        id: plEvents.id,
+        type: plEvents.type,
+        message: plEvents.message,
+        meta: plEvents.meta,
+        createdAt: plEvents.createdAt,
+        actorUserId: plEvents.actorUserId,
+        actorName: users.name,
+      })
+      .from(plEvents)
+      .leftJoin(users, eq(plEvents.actorUserId, users.id))
+      .where(eq(plEvents.plId, plId))
+      .orderBy(plEvents.createdAt);
+
+    const sysEvents = rawEvents.map((e) => ({
+      id: e.id,
+      type: e.type,
+      title: e.message || e.type,
+      details: '',
+      user: e.actorName ? { name: e.actorName } : null,
+      createdAt: e.createdAt,
+      meta: e.meta || {},
+    }));
+
+    // 2) Производные события из документов / истории / комментариев / консолидаций
+    const [docs, comments, consLinks] = await Promise.all([
+      db.select().from(plDocuments).where(eq(plDocuments.plId, plId)),
+      db.select().from(plComments).where(eq(plComments.plId, plId)),
+      db
+        .select({ link: consolidationPl, cons: consolidations })
+        .from(consolidationPl)
+        .leftJoin(consolidations, eq(consolidationPl.consolidationId, consolidations.id))
+        .where(eq(consolidationPl.plId, plId)),
+    ]);
+
+    // история статусов документов
+    let docHistory = [];
+    const docIds = docs.map((d) => d.id);
+    if (docIds.length > 0) {
+      docHistory = await db
+        .select()
+        .from(plDocStatusHistory)
+        .where(inArray(plDocStatusHistory.docId, docIds));
+    }
+
+    let cnt = 0;
+    const eid = (type) => `${type}-${plId}-${Date.now()}-${cnt++}`;
+
+    const derived = [];
+
+    // Создание PL (если нет в системных)
+    if (row.createdAt) {
+      const alreadyHasCreated = sysEvents.some((e) => e.type === 'pl.created');
+      if (!alreadyHasCreated) {
+        derived.push({
+          id: eid('pl.created'),
+          type: 'pl.created',
+          title: 'PL создан',
+          details: '',
+          user: null,
+          createdAt: row.createdAt,
+          meta: { pl_number: row.plNumber ?? null },
+        });
       }
-    ];
+    }
+
+    for (const d of docs) {
+      derived.push({
+        id: eid('pl.doc_uploaded'),
+        type: 'pl.doc_uploaded',
+        title: 'Загружен документ',
+        details: d.name || d.fileName || '',
+        user: d.uploadedBy ? { name: d.uploadedBy } : null,
+        createdAt: d.uploadedAt || d.updatedAt || d.createdAt || row.createdAt,
+        meta: { doc_id: d.id, doc_type: d.docType },
+      });
+    }
+
+    for (const h of docHistory) {
+      derived.push({
+        id: eid('pl.doc_status_changed'),
+        type: 'pl.doc_status_changed',
+        title: 'Статус документа',
+        details: `${h.oldStatus ?? '—'} → ${h.newStatus}`,
+        user: h.changedBy ? { name: h.changedBy } : null,
+        createdAt: h.changedAt,
+        meta: { doc_id: h.docId, from: h.oldStatus ?? null, to: h.newStatus },
+      });
+    }
+
+    for (const c of comments) {
+      derived.push({
+        id: eid('pl.comment'),
+        type: 'pl.comment',
+        title: 'Комментарий',
+        details: c.body,
+        user: c.author ? { name: c.author } : null,
+        createdAt: c.createdAt,
+        meta: { user_id: c.userId ?? null },
+      });
+    }
+
+    for (const { link, cons } of consLinks) {
+      derived.push({
+        id: eid('pl.added_to_consolidation'),
+        type: 'pl.added_to_consolidation',
+        title: 'Добавлен в консолидацию',
+        details: cons?.consNumber || '',
+        user: null,
+        createdAt: link.addedAt,
+        meta: {
+          cons_id: link.consolidationId,
+          cons_number: cons?.consNumber || null,
+          cons_status: cons?.status || null,
+        },
+      });
+    }
+
+    const events = [...sysEvents, ...derived].sort(
+      (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+    );
+
+    req.log.info({ plId, events: events.length }, 'PL_EVENTS built');
+    return { items: events };
   });
 }

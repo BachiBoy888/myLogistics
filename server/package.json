@@ -5,11 +5,22 @@
   "main": "server.js",
   "type": "module",
   "scripts": {
+    "// ====== Development ======": "",
     "dev": "node --watch server.js",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev:proddb": "dotenv -e .env.local.prod-db -- node --watch server.js",
     "start": "node server.js",
+
+    "// ====== Drizzle ======": "",
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate"
+    "migrate": "drizzle-kit migrate",
+
+    "// ====== Migrations by env ======": "",
+    "migrate:local": "dotenv -e .env.local -- drizzle-kit migrate",
+    "migrate:staging": "dotenv -e .env.staging -- drizzle-kit migrate",
+    "migrate:production": "node ./scripts/migrate-prod-safe.js",
+
+    "// ====== Utilities ======": "",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +41,9 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "cross-env": "^7.0.3",
+    "dotenv-cli": "^7.4.4",
+    "dotenv-flow": "^4.1.0",
     "drizzle-kit": "^0.31.5",
     "pino-pretty": "^13.1.2"
   }

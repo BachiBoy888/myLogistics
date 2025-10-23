@@ -28,6 +28,14 @@ import LogisticsView from "./views/LogisticsView.jsx";
 // Константы/данные
 import { demoWarehouses } from "./constants/warehouses.js";
 
+/* ---------------------------
+   Вспомогательные утилиты
+----------------------------*/
+function sanitizePls(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.filter((p) => p && p.id !== null && p.id !== undefined);
+}
+
 function App() {
   const [boot, setBoot] = useState({ loading: true, user: null });
   console.log("BOOT:", boot);
@@ -75,18 +83,20 @@ function MainApp({ user, onLogout }) {
   const [cons, setCons] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // active таб
+  // активная вкладка
   const [mode, setMode] = useState("cargo");
-  // если нужно открыть конкретный PL из ClientsView
+
+  // для открытия конкретных сущностей из других вьюх
   const [openPLId, setOpenPLId] = useState(null);
+  const [openClientId, setOpenClientId] = useState(null);
 
   // первичная загрузка
   useEffect(() => {
     async function loadData() {
       try {
         const [plData, clientData] = await Promise.all([getPL(), getClients()]);
-        setPls(plData || []);
-        setClients(clientData || []);
+        setPls(sanitizePls(plData));
+        setClients(Array.isArray(clientData) ? clientData : []);
       } catch (e) {
         console.error("Ошибка загрузки с API:", e);
         if (String(e?.message || "").includes("401")) onLogout?.();
@@ -97,7 +107,7 @@ function MainApp({ user, onLogout }) {
     loadData();
   }, [onLogout]);
 
-  // добавление клиента (кнопка в ClientsView)
+  // добавление клиента
   async function handleAddClient(newClient) {
     try {
       const saved = await createClient(newClient);
@@ -108,22 +118,38 @@ function MainApp({ user, onLogout }) {
     }
   }
 
-  // обновление PL через API
+  // обновление PL — оптимистично + роллбэк
   async function handleUpdatePL(id, patch) {
+    const snapshot = pls;
+
+    // оптимистичное применение
+    setPls((prev) => {
+      const next = Array.isArray(prev) ? [...prev] : [];
+      const i = next.findIndex((p) => p && p.id === id);
+      if (i !== -1) next[i] = { ...next[i], ...patch };
+      return sanitizePls(next);
+    });
+
     try {
       const updated = await updatePL(id, patch);
-      setPls((prev) => prev.map((p) => (p.id === id ? updated : p)));
+      setPls((prev) => {
+        const next = Array.isArray(prev) ? [...prev] : [];
+        const i = next.findIndex((p) => p && p.id === id);
+        if (i !== -1) next[i] = updated;
+        return sanitizePls(next);
+      });
     } catch (err) {
       console.error("Ошибка при обновлении PL:", err);
+      setPls(sanitizePls(snapshot)); // роллбэк
       alert("Не удалось обновить PL");
     }
   }
 
-  // удаление PL через API
+  // удаление PL
   async function handleDeletePL(id) {
     try {
       await deletePL(id);
-      setPls((prev) => prev.filter((p) => p.id !== id));
+      setPls((prev) => sanitizePls(prev).filter((p) => p.id !== id));
     } catch (err) {
       console.error("Ошибка при удалении PL:", err);
       alert("Не удалось удалить PL");
@@ -132,6 +158,8 @@ function MainApp({ user, onLogout }) {
 
   if (loading) return <LoadingScreen />;
 
+  const safePls = sanitizePls(pls);
+
   return (
     <div className="min-h-screen bg-[#FAF3DD] flex flex-col">
       <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} />
@@ -139,14 +167,19 @@ function MainApp({ user, onLogout }) {
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">
         {mode === "cargo" && (
           <CargoView
-            pls={pls}
-            setPls={setPls}
+            pls={safePls}
+            setPls={(updater) =>
+              setPls((prev) =>
+                sanitizePls(typeof updater === "function" ? updater(prev) : updater)
+              )
+            }
             cons={cons}
             setCons={setCons}
             warehouses={demoWarehouses}
             openPLId={openPLId}
             onConsumeOpenPL={() => setOpenPLId(null)}
             clients={clients}
+            currentUser={user}
             setClients={setClients}
             api={{
               createClient,
@@ -154,13 +187,23 @@ function MainApp({ user, onLogout }) {
               updatePL: handleUpdatePL,
               deletePL: handleDeletePL,
             }}
+            // ← пробрасываем переход к конкретному клиенту
+            goToClients={(clientId /*, clientName */) => {
+              setMode("clients");
+              // даём рендеру переключить вкладку и только потом передаём id
+              setTimeout(() => {
+                setOpenClientId(clientId || null);
+              }, 50);
+            }}
           />
         )}
 
         {mode === "clients" && (
           <ClientsView
-            pls={pls}
+            pls={safePls}
             clients={clients}
+            openClientId={openClientId}                 // ← передаём id клиента для авто-открытия
+            onConsumeOpenClient={() => setOpenClientId(null)} // ← сбрасываем после использования
             onOpenPL={(id) => {
               setMode("cargo");
               setOpenPLId(id);
@@ -170,7 +213,7 @@ function MainApp({ user, onLogout }) {
         )}
 
         {mode === "warehouses" && (
-          <WarehousesView pls={pls} warehouses={demoWarehouses} />
+          <WarehousesView pls={safePls} warehouses={demoWarehouses} />
         )}
 
         {mode === "logistics" && <LogisticsView />}

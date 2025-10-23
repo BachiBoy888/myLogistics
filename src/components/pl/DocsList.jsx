@@ -10,8 +10,9 @@ import {
   deletePLDoc,
 } from "../../api/client";
 
-// В монолите фронт и бэк на одном домене → всегда относительный API
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+// База API
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const API = API_BASE_URL ? `${API_BASE_URL}/api` : "/api";
 
 // === Маппинги статусов ===
 function toUIStatus(serverStatus) {
@@ -33,19 +34,9 @@ function toServerStatus(uiStatus) {
   }
 }
 
-// Сводка для PL
-function buildSummary(docs = []) {
-  return docs.map((d) => ({
-    id: d.id,
-    type: d.docType,
-    status: toUIStatus(d.status),
-    fileName: d.fileName,
-  }));
-}
-
-export default function DocsList({ pl, onUpdate }) {
+export default function DocsList({ pl /*, onUpdate*/ }) {
   const [docs, setDocs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [uploadType, setUploadType] = useState("invoice");
 
@@ -53,25 +44,63 @@ export default function DocsList({ pl, onUpdate }) {
   const [previewDoc, setPreviewDoc] = useState(null);
 
   const fileInputRef = useRef(null);
-  const currentPLId = pl?.id;
+  const abortRef = useRef(null);
+  const inFlight = useRef(false);
+  const mounted = useRef(true);
+  const lastLoadAt = useRef(0); // кулдаун
 
-  async function refresh() {
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      abortRef.current?.abort();
+    };
+  }, []);
+
+  const currentPLId = pl?.id ?? null;
+
+  async function refresh(force = false) {
     if (!currentPLId) return;
-    setLoading(true);
+
+    const now = Date.now();
+    if (!force && now - lastLoadAt.current < 1500) return; // 1.5s кулдаун
+    lastLoadAt.current = now;
+
+    if (inFlight.current) return;
+    inFlight.current = true;
+
     setErr("");
+    setLoading(true);
+
+    // отмена предыдущего запроса
+    if (abortRef.current) abortRef.current.abort();
+    const ac = new AbortController();
+    abortRef.current = ac;
+
     try {
       const list = await listPLDocs(currentPLId);
-      const safe = Array.isArray(list) ? list : [];
-      setDocs(safe);
-      onUpdate?.({ docs: buildSummary(safe) });
+      if (!mounted.current) return;
+      setDocs(Array.isArray(list) ? list : []);
     } catch (e) {
-      setErr(e.message || "Не удалось загрузить документы");
+      if (e?.name !== "AbortError") {
+        console.warn("[DocsList] load error", e);
+        if (mounted.current) setErr(e.message || "Не удалось загрузить документы");
+      }
     } finally {
-      setLoading(false);
+      if (mounted.current) setLoading(false);
+      inFlight.current = false;
     }
   }
 
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [currentPLId]);
+  // Загружаем ТОЛЬКО при изменении pl.id
+  useEffect(() => {
+    if (currentPLId) {
+      lastLoadAt.current = 0;
+      refresh(true); // первая загрузка для этого PL
+    }
+    return () => abortRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPLId]);
 
   const byType = useMemo(() => {
     const map = new Map();
@@ -86,17 +115,15 @@ export default function DocsList({ pl, onUpdate }) {
 
   const onPickFile = async (e) => {
     const f = e.target.files?.[0];
+    e.target.value = ""; // сброс
     if (!f || !currentPLId) return;
+
     try {
-      await uploadPLDoc(currentPLId, {
-        file: f,
-        doc_type: uploadType,
-      });
-      await refresh();
+      await uploadPLDoc(currentPLId, { file: f, doc_type: uploadType });
+      await refresh(true); // просто перечитать список
     } catch (e) {
+      console.error("[DocsList] upload error", e);
       setErr(e.message || "Ошибка загрузки файла");
-    } finally {
-      e.target.value = "";
     }
   };
 
@@ -104,8 +131,9 @@ export default function DocsList({ pl, onUpdate }) {
     if (!currentPLId) return;
     try {
       await updatePLDoc(currentPLId, docId, { status: toServerStatus(uiStatus) });
-      await refresh();
+      await refresh(true);
     } catch (e) {
+      console.error("[DocsList] update error", e);
       setErr(e.message || "Ошибка обновления статуса");
     }
   };
@@ -115,26 +143,23 @@ export default function DocsList({ pl, onUpdate }) {
     if (!confirm("Удалить документ?")) return;
     try {
       await deletePLDoc(currentPLId, docId);
-      await refresh();
+      // локально выкидываем без дополнительного запроса
+      setDocs((prev) => (Array.isArray(prev) ? prev.filter((d) => d.id !== docId) : []));
     } catch (e) {
+      console.error("[DocsList] delete error", e);
       setErr(e.message || "Ошибка удаления документа");
     }
   };
 
   const downloadDoc = (doc) => {
-    const url = `${API_BASE}/pl/${pl.id}/docs/${doc.id}/download`;
+    const url = `${API}/pl/${pl.id}/docs/${doc.id}/download`;
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
     <div className="space-y-3">
-      {/* скрытый file input */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        className="hidden"
-        onChange={onPickFile}
-      />
+      {/* file input */}
+      <input ref={fileInputRef} type="file" className="hidden" onChange={onPickFile} />
 
       {err && <div className="text-sm text-rose-600">{err}</div>}
       {loading && <div className="text-sm text-gray-500">Загрузка…</div>}
@@ -143,14 +168,12 @@ export default function DocsList({ pl, onUpdate }) {
         const doc = byType.get(type) || null;
         const uiStatus = doc ? toUIStatus(doc.status) : null;
 
-        // URL для превью и для скачивания
-        const previewUrl = doc ? `${API_BASE}/pl/${pl.id}/docs/${doc.id}/preview` : "";
+        const previewUrl = doc ? `${API}/pl/${pl.id}/docs/${doc.id}/preview` : "";
         const sizeKb =
           doc && Number.isFinite(Number(doc.sizeBytes))
             ? `${Math.round(Number(doc.sizeBytes) / 1024)} KB`
             : "";
 
-        // последовательность кнопок:
         const showUploadBtn = !doc;
         const showCheckedBtn = uiStatus === "uploaded";
         const showRecheckBtn = uiStatus === "checked_by_logistic";
@@ -187,18 +210,11 @@ export default function DocsList({ pl, onUpdate }) {
 
               {doc && (
                 <div className="flex items-center gap-2">
-                  <DocStatusBadge
-                    doc={{ id: doc.id, type, status: uiStatus }}
-                    plStatus={pl.status}
-                  />
-
-                  {/* Меню троеточие */}
+                  <DocStatusBadge doc={{ id: doc.id, type, status: uiStatus }} plStatus={pl.status} />
                   <div className="relative">
                     <button
                       className="px-2 py-1 border rounded-lg hover:bg-gray-50"
-                      onClick={() =>
-                        setMenuOpenId((v) => (v === doc.id ? null : doc.id))
-                      }
+                      onClick={() => setMenuOpenId((v) => (v === doc.id ? null : doc.id))}
                     >
                       ⋯
                     </button>
@@ -279,7 +295,7 @@ export default function DocsList({ pl, onUpdate }) {
               <div className="font-semibold truncate">{previewDoc.name}</div>
               <div className="flex items-center gap-2">
                 <a
-                  href={`${API_BASE}/pl/${pl.id}/docs/${previewDoc.id}/download`}
+                  href={`${API}/pl/${pl.id}/docs/${previewDoc.id}/download`}
                   className="text-sm underline"
                   target="_blank"
                   rel="noreferrer"

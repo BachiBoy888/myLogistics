@@ -23,6 +23,7 @@ import {
   deleteConsolidation as apiDeleteCons,
   setConsolidationPLs as apiSetConsPLs,
   listPLDocs as apiListPLDocs,
+  assignPLResponsible,     
 } from "../api/client";
 
 // Вынесенные модалки консолидаций
@@ -56,10 +57,6 @@ import {
   Search,
   PlusCircle,
   ChevronRight,
-  X,
-  AlertCircle,
-  MapPin,
-  Building2,
 } from "lucide-react";
 
 // Локальный uid
@@ -82,6 +79,8 @@ export default function CargoView({
   clients,
   setClients,
   api,
+  currentUser,              
+  goToClients
 }) {
   // --- API c фолбэками ---
   const API = {
@@ -103,7 +102,7 @@ export default function CargoView({
   // --- UI состояния
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [consOnly, setConsOnly] = useState(false); // ✅ новый тумблер
+  const [consOnly, setConsOnly] = useState(false);
   const [selectedId, setSelectedId] = useState(
     (Array.isArray(pls) ? pls.filter(Boolean) : []).find(
       (p) => (p?.status ?? "draft") !== "closed"
@@ -143,7 +142,7 @@ export default function CargoView({
       ...p,
       status: p?.status ?? "draft",
       id: p?.id ?? null,
-      pl_number: String(p?.pl_number ?? p?.plNumber ?? "" ?? ""), // ✅ строка
+      pl_number: String(p?.pl_number ?? p?.plNumber ?? "" ?? ""), // строка
       title: p?.title ?? p?.name ?? "Без названия",
     }));
   }, [pls]);
@@ -187,12 +186,11 @@ export default function CargoView({
     return Array.from(s).sort((a, b) => a.localeCompare(b, "ru"));
   }, [safePLs]);
 
-  // === Поиск/фильтр (починено) ===
+  // === Поиск/фильтр ===
   function norm(str = "") {
     return String(str).toLowerCase().trim();
   }
   function normCompact(str = "") {
-    // без пробелов/дефисов для номеров типа "PL-001 23"
     return norm(str).replace(/[\s-_/\\.]+/g, "");
   }
 
@@ -203,7 +201,6 @@ export default function CargoView({
     return safePLs
       .filter((p) => (p?.status ?? "draft") !== "closed")
       .filter((p) => {
-        // поиск по номеру + клиент + заголовок
         const name = clientNameOf(p);
         const num = p.pl_number || "";
         const haystack = norm(`${num} ${name} ${p.title}`);
@@ -325,20 +322,38 @@ export default function CargoView({
     );
   }
 
+  // === Патчи, не требующие PUT на сервер ===
+  const isLocalOnlyPatch = (patch) =>
+    patch && (Object.prototype.hasOwnProperty.call(patch, "comments")
+           || Object.prototype.hasOwnProperty.call(patch, "docs"));
+
   // серверное сохранение + синк локального стейта
   async function savePLPatch(id, patch) {
+    // 1) Локальные патчи (comments/docs) — без запроса к серверу
+    if (isLocalOnlyPatch(patch)) {
+      updatePLLocal(id, patch);
+      setSelectedId(id); // держим карточку открытой
+      return;
+    }
+
+    // 2) Остальное — шлём на сервер
     try {
       const updated = await API.updatePL(id, patch);
       setPls((prev) =>
         (Array.isArray(prev) ? prev : []).map((p) =>
-          p?.id === id ? updated : p
+          p?.id === id
+            // если сервер вернул пусто (204) — не удаляем PL, а мержим локальный патч
+            ? (updated ?? { ...p, ...patch, updated_at: new Date().toISOString() })
+            : p
         )
       );
+      setSelectedId(id); // оставляем карточку открытой
     } catch (e) {
       console.error("Ошибка при сохранении PL:", e);
       alert("Не удалось сохранить изменения");
-      // откатим локальные правки (перечитаем с сервера)
+      // Подстрахуемся перечиткой (если вдруг что-то разъехалось)
       await refreshPLs({ keepSelected: true });
+      setSelectedId(id);
     }
   }
 
@@ -410,6 +425,23 @@ export default function CargoView({
 
     try {
       const saved = await API.createPL(body);
+
+      // ← авто-назначение создателя ответственным
+  if (currentUser?.id) {
+    try {
+      await assignPLResponsible(saved.id, currentUser.id);
+      // подправим локальный стейт, чтобы имя ответственного появилось сразу
+      setPls((prev) =>
+        (Array.isArray(prev) ? prev : []).map((p) =>
+          p?.id === saved.id
+            ? { ...p, responsible: { id: currentUser.id, name: currentUser.name } }
+            : p
+        )
+      );
+    } catch (e) {
+      console.debug("self-assign failed (non-blocking):", e);
+    }
+  }
       setPls((prev) => [saved, ...(Array.isArray(prev) ? prev : [])]);
       setSelectedId(saved.id);
       setShowNew(false);
@@ -467,7 +499,7 @@ export default function CargoView({
               className="border rounded-lg text-sm py-2 px-2 min-h-[44px]"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              disabled={consOnly} // статусы применимы к PL
+              disabled={consOnly}
               title={consOnly ? "Фильтр по статусам скрыт при консолидациях" : ""}
             >
               <option value="all">Все статусы</option>
@@ -478,7 +510,7 @@ export default function CargoView({
               ))}
             </select>
 
-            {/* ✅ Переключатель «только консолидации» */}
+            {/* Переключатель «только консолидации» */}
             <label className="inline-flex items-center gap-2 text-sm border rounded-lg px-3 py-2 min-h-[44px] cursor-pointer">
               <input
                 type="checkbox"
@@ -752,6 +784,10 @@ export default function CargoView({
                   humanStatus,
                   badgeColorByStatus,
                 }}
+                // ↓↓↓ добавляем переход к клиенту
+  navigateToClient={(clientId, clientName) => {
+    goToClients?.(clientId, clientName);
+  }}
               />
             ) : (
               <EmptySummary items={filtered} />
@@ -855,7 +891,6 @@ export default function CargoView({
    Вспомогательные компоненты
 =========================== */
 
-// Вью пустой сводки
 function EmptySummary({ items = [] }) {
   return (
     <div>
@@ -877,7 +912,6 @@ function OnlyConsHint() {
   );
 }
 
-// Сводка по этапам
 function StageSummary({ items }) {
   const counts = useMemo(() => {
     const map = OrderedStages.reduce((acc, k) => {
@@ -925,6 +959,3 @@ function StageSummary({ items }) {
     </div>
   );
 }
-
-/* ===== Локальные карточки для PLCard.parts ===== */
-// (оставляю без изменений твои CommentsCard / useCostCalculator / CostCalculatorCard)

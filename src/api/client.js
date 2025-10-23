@@ -1,7 +1,18 @@
-// src/api/client.js
 import { safeEvents } from "../utils/events.js";
 
-const BASE = import.meta.env.VITE_API_BASE || "/api";
+// === БАЗА API ===
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const BASE = API_BASE_URL ? `${API_BASE_URL}/api` : "/api";
+
+// === ДЕДУПЛИКАЦИЯ И МИКРОКЭШ ДЛЯ GET ===
+const inflight = new Map(); // key -> Promise
+const microcache = new Map(); // key -> { ts, data }
+const TTL_MS = 2000;
+
+function cacheKey(method, path) {
+  if (method !== "GET") return null;
+  return `GET ${path}`;
+}
 
 /* -------------------
    ВСПОМОГАТЕЛЬНЫЕ
@@ -14,21 +25,55 @@ async function req(path, { method = "GET", body, headers } = {}) {
   const isFD = isFormData(body);
   const hasBody = body !== undefined && body !== null;
 
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      ...(hasBody && !isFD ? { "Content-Type": "application/json" } : {}),
-      ...(headers || {}),
-    },
-    body: hasBody ? (isFD ? body : JSON.stringify(body)) : undefined,
-    credentials: "include",
-  });
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${method} ${path} failed: ${res.status} ${text}`);
+  // дедуп + микрокэш только для GET
+  const key = cacheKey(method, path);
+  if (key) {
+    const cached = microcache.get(key);
+    if (cached && Date.now() - cached.ts < TTL_MS) {
+      return cached.data;
+    }
+    const inProg = inflight.get(key);
+    if (inProg) return inProg;
   }
-  return res.status === 204 ? null : res.json();
+
+  const p = (async () => {
+    const res = await fetch(`${BASE}${path}`, {
+      method,
+      headers: {
+        ...(hasBody && !isFD ? { "Content-Type": "application/json" } : {}),
+        ...(headers || {}),
+      },
+      body: hasBody ? (isFD ? body : JSON.stringify(body)) : undefined,
+      credentials: "include",
+    });
+
+    // 204 → вернём null (обработаем выше)
+    if (res.status === 204) return null;
+
+    if (!res.ok) {
+      let msg = `${method} ${path} failed: ${res.status}`;
+      try {
+        const text = await res.text();
+        if (text) msg += ` ${text}`;
+      } catch {}
+      throw new Error(msg);
+    }
+    return res.json();
+  })();
+
+  if (key) inflight.set(key, p);
+
+  try {
+    const data = await p;
+    if (key) {
+      inflight.delete(key);
+      microcache.set(key, { ts: Date.now(), data });
+    }
+    return data;
+  } catch (e) {
+    if (key) inflight.delete(key);
+    throw e;
+  }
 }
 
 // безопасно приводим к числу
@@ -147,7 +192,6 @@ export async function createClient(data) {
 export async function listPLs() {
   const json = await req("/pl");
   const arr = Array.isArray(json) ? json : json.items ?? json.data ?? [];
-  // отбрасываем мусор и гарантируем структуру quote
   return arr
     .map(normalizePL)
     .filter(Boolean)
@@ -157,6 +201,14 @@ export async function listPLs() {
     }));
 }
 export const getPL = listPLs;
+
+// ← NEW: получить один PL по id
+export async function getPLById(id) {
+  const nId = toNumericId(id);
+  if (nId === null) throw new Error("Некорректный идентификатор PL");
+  const json = await req(`/pl/${nId}`);
+  return normalizePL(json);
+}
 
 export async function createPL(data) {
   if (!data.client_id) throw new Error("client_id обязателен при создании PL");
@@ -186,6 +238,15 @@ export async function updatePL(id, data) {
   if (nId === null) throw new Error("Некорректный идентификатор PL");
   const payload = buildUpdatePayload(data);
   const json = await req(`/pl/${nId}`, { method: "PUT", body: payload });
+
+  // если сервер вернул 204/пусто — добираем свежие данные GET'ом
+  if (json === null || json === undefined) {
+    try {
+      return await getPLById(nId);
+    } catch {
+      return null;
+    }
+  }
   return normalizePL(json);
 }
 
@@ -196,6 +257,13 @@ export async function assignPLResponsible(id, responsible_user_id) {
     method: "PUT",
     body: { responsible_user_id },
   });
+  if (json === null || json === undefined) {
+    try {
+      return await getPLById(nId);
+    } catch {
+      return null;
+    }
+  }
   return normalizePL(json);
 }
 
@@ -245,18 +313,15 @@ function normalizeEvent(plId, e, idx = 0) {
     e?.timestamp ??
     new Date().toISOString();
 
-  const type = e?.type ?? 'event';
+  const type = e?.type ?? "event";
   const meta = e?.meta ?? {};
-  const id =
-    e?.id ??
-    e?._id ??
-    `${type}-${plId}-${idx}`;
+  const id = e?.id ?? e?._id ?? `${type}-${plId}-${idx}`;
 
   return {
     id,
     type,
-    title: e?.title ?? '',
-    details: e?.details ?? e?.message ?? '',
+    title: e?.title ?? "",
+    details: e?.details ?? e?.message ?? "",
     user: e?.user ?? e?.author ?? null,
     createdAt: at,
     meta,
@@ -377,6 +442,18 @@ export async function setConsolidationPLs(id, targetIds = []) {
   }
 }
 
+export async function listUsers(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return req(`/users${query ? `?${query}` : ""}`, { method: "GET" });
+}
+
+export async function updateClient(id, data) {
+  return req(`/clients/${id}`, {
+    method: "PATCH",
+    body: data,
+  });
+}
+
 /* -------------------
    DEFAULT EXPORT
 ------------------- */
@@ -388,6 +465,7 @@ const api = {
   // pl
   listPLs,
   getPL,
+  getPLById,
   createPL,
   updatePL,
   deletePL,
@@ -413,6 +491,7 @@ const api = {
   login,
   logout,
   me,
+  listUsers,              
 
   // consolidations
   listConsolidations,
@@ -427,3 +506,4 @@ const api = {
 };
 
 export default api;
+

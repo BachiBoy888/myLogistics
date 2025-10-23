@@ -23,6 +23,9 @@ export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   phone: text("phone"),
+  phone2: text("phone2"),
+email: text("email"),
+notes: text("notes"),
   company: text("company"),
   createdAt: timestamp("created_at").defaultNow(),
 });

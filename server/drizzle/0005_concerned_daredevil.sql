@@ -1,0 +1,1 @@
+ALTER TABLE "pl" ADD COLUMN "client_price" numeric(12, 2) DEFAULT '0';

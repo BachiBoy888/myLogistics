@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_pl_doc_type" ON "pl_documents" USING btree ("pl_id","doc_type");

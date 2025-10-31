@@ -1,7 +1,7 @@
 // server/routes/pl.js
 import fs from 'fs';
 import path from 'path';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import {
   pl,
   clients,
@@ -52,7 +52,7 @@ export default async function plRoutes(fastify) {
   const db = fastify.drizzle;
 
   /* =========================
-     PL: список / создание / обновление / удаление
+     PL: список / один / создание / обновление / удаление
      (префикс '/api/pl' навешан в server.js)
   ========================== */
 
@@ -69,6 +69,27 @@ export default async function plRoutes(fastify) {
         client: toClientShape(c),
       }))
     );
+  });
+
+  // ===== Получить один PL по id =====
+  fastify.get('/:id', async (req, reply) => {
+    const { id } = req.params;
+    const plId = Number(id);
+    if (!Number.isInteger(plId)) return reply.badRequest('Bad id');
+
+    const rows = await db
+      .select({ p: pl, c: clients })
+      .from(pl)
+      .leftJoin(clients, eq(pl.clientId, clients.id))
+      .where(eq(pl.id, plId))
+      .limit(1);
+
+    const row = rows?.[0];
+    if (!row) return reply.notFound('PL not found');
+
+    const p = row.p ?? row.pl ?? row;
+    const c = row.c ?? null;
+    return { ...(await hydrateResponsible(db, p)), client: toClientShape(c) };
   });
 
   // ===== Создать PL =====
@@ -92,6 +113,10 @@ export default async function plRoutes(fastify) {
             shipper_name: { type: ['string', 'null'] },
             shipper_contacts: { type: ['string', 'null'] },
             status: { type: ['string', 'null'] },
+            // позволим прислать снэпшот калькулятора при создании
+            calculator: { type: ['object', 'null'] },
+            clientPrice: { type: ['number', 'string', 'null'] },
+            client_price: { type: ['number', 'string', 'null'] },
           },
           required: ['client_id'],
         },
@@ -104,6 +129,8 @@ export default async function plRoutes(fastify) {
           if (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) return null;
           return Number(v).toFixed(3);
         };
+        const toNumMaybe = (v) => (v === '' || v === null || v === undefined ? null : v);
+
         const name = b.name ?? b.title ?? 'Без названия';
         const weight = toNumStr(b.weight ?? b.weight_kg);
         const volume = toNumStr(b.volume ?? b.volume_cbm);
@@ -121,6 +148,14 @@ export default async function plRoutes(fastify) {
             shipperName: b.shipper_name ?? null,
             shipperContacts: b.shipper_contacts ?? null,
             status: b.status ?? 'draft',
+            clientPrice:
+              b.clientPrice != null
+                ? toNumMaybe(b.clientPrice)
+                : b.client_price != null
+                ? toNumMaybe(b.client_price)
+                : undefined,
+            // если прислан calculator — сохраним
+            ...(b.calculator && typeof b.calculator === 'object' ? { calculator: b.calculator } : {}),
           })
           .returning({ id: pl.id, createdAt: pl.createdAt });
 
@@ -166,6 +201,11 @@ export default async function plRoutes(fastify) {
       const b = req.body || {};
       const toNumMaybe = (v) => (v === '' || v === null || v === undefined ? undefined : v);
 
+      // валидация calculator
+      if (b.calculator != null && typeof b.calculator !== 'object') {
+        return reply.badRequest('calculator must be an object');
+      }
+
       // прочитаем текущий для сравнения (события)
       const [current] = await db.select().from(pl).where(eq(pl.id, Number(id))).limit(1);
       if (!current) return reply.notFound(`PL ${id} not found`);
@@ -185,6 +225,8 @@ export default async function plRoutes(fastify) {
         ...(b.status != null && { status: b.status }),
         ...(b.clientPrice != null && { clientPrice: toNumMaybe(b.clientPrice) }),
         ...(b.client_price != null && b.clientPrice == null && { clientPrice: toNumMaybe(b.client_price) }),
+        // ⬇️ calculator JSONB
+        ...(b.calculator != null && { calculator: b.calculator }),
         // ответственный
         ...(b.responsible_user_id != null && { responsibleUserId: b.responsible_user_id || null }),
       };

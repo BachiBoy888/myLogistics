@@ -14,6 +14,19 @@ function cacheKey(method, path) {
   return `GET ${path}`;
 }
 
+function invalidateCacheByPrefix(prefixes = []) {
+  if (!prefixes.length) return;
+  for (const key of microcache.keys()) {
+    for (const pref of prefixes) {
+      if (key.startsWith(`GET ${pref}`)) {
+        microcache.delete(key);
+        inflight.delete(key);
+        break;
+      }
+    }
+  }
+}
+
 /* -------------------
    ВСПОМОГАТЕЛЬНЫЕ
 ------------------- */
@@ -74,6 +87,13 @@ async function req(path, { method = "GET", body, headers } = {}) {
     if (key) inflight.delete(key);
     throw e;
   }
+}
+
+async function mutate(path, init, invalidatePrefixes = []) {
+  const res = await req(path, init);
+  // Инвалидация микрокэша после мутаций
+  invalidateCacheByPrefix(invalidatePrefixes);
+  return res;
 }
 
 // безопасно приводим к числу
@@ -140,6 +160,12 @@ export function normalizePL(s) {
     fob_warehouse_id: s.fob_warehouse_id ?? s.fobWarehouseId ?? null,
     status: s.status ?? "draft",
 
+    // калькулятор (если сервер начал отдавать jsonb)
+    calculator:
+      typeof s.calculator === "object" && s.calculator
+        ? s.calculator
+        : undefined,
+
     docs: Array.isArray(s.docs) ? s.docs : [],
     comments: Array.isArray(s.comments) ? s.comments : [],
 
@@ -162,7 +188,7 @@ export function normalizeCons(s) {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
     title: s.title ?? s.cons_number ?? s.consNumber ?? "",
-    status: s.status ?? "to_load",
+    status: s.status ?? "loaded", // синхронизировано с enum consolidation_status_v2
     pl_ids: Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
@@ -183,7 +209,11 @@ export async function getClients() {
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
 export async function createClient(data) {
-  return req("/clients", { method: "POST", body: data });
+  const res = await mutate("/clients", { method: "POST", body: data }, ["/clients"]);
+  return res;
+}
+export async function updateClient(id, data) {
+  return mutate(`/clients/${id}`, { method: "PATCH", body: data }, ["/clients"]);
 }
 
 /* -------------------
@@ -202,7 +232,7 @@ export async function listPLs() {
 }
 export const getPL = listPLs;
 
-// ← NEW: получить один PL по id
+// ← GET один PL по id
 export async function getPLById(id) {
   const nId = toNumericId(id);
   if (nId === null) throw new Error("Некорректный идентификатор PL");
@@ -212,7 +242,11 @@ export async function getPLById(id) {
 
 export async function createPL(data) {
   if (!data.client_id) throw new Error("client_id обязателен при создании PL");
-  const json = await req("/pl", { method: "POST", body: data });
+  const json = await mutate(
+    "/pl",
+    { method: "POST", body: data },
+    ["/pl"] // список и потенциально конкретные
+  );
   return normalizePL(json);
 }
 
@@ -230,6 +264,12 @@ function buildUpdatePayload(data = {}) {
     return rest;
   }
 
+  // прозрачная передача calculator (jsonb)
+  if (payload.calculator != null && typeof payload.calculator !== "object") {
+    // если пришла строка — не отправляем, чтобы не ломать сервер
+    delete payload.calculator;
+  }
+
   return payload;
 }
 
@@ -237,7 +277,11 @@ export async function updatePL(id, data) {
   const nId = toNumericId(id);
   if (nId === null) throw new Error("Некорректный идентификатор PL");
   const payload = buildUpdatePayload(data);
-  const json = await req(`/pl/${nId}`, { method: "PUT", body: payload });
+  const json = await mutate(
+    `/pl/${nId}`,
+    { method: "PUT", body: payload },
+    ["/pl", `/pl/${nId}`]
+  );
 
   // если сервер вернул 204/пусто — добираем свежие данные GET'ом
   if (json === null || json === undefined) {
@@ -253,10 +297,11 @@ export async function updatePL(id, data) {
 export async function assignPLResponsible(id, responsible_user_id) {
   const nId = toNumericId(id);
   if (nId === null) throw new Error("Некорректный идентификатор PL");
-  const json = await req(`/pl/${nId}`, {
-    method: "PUT",
-    body: { responsible_user_id },
-  });
+  const json = await mutate(
+    `/pl/${nId}`,
+    { method: "PUT", body: { responsible_user_id } },
+    ["/pl", `/pl/${nId}`]
+  );
   if (json === null || json === undefined) {
     try {
       return await getPLById(nId);
@@ -273,7 +318,7 @@ export async function updateClientPrice(id, clientPrice) {
 export async function deletePL(id) {
   const nId = toNumericId(id);
   if (nId === null) throw new Error("Некорректный id для удаления PL");
-  await req(`/pl/${nId}`, { method: "DELETE" });
+  await mutate(`/pl/${nId}`, { method: "DELETE" }, ["/pl", `/pl/${nId}`]);
   return true;
 }
 
@@ -289,13 +334,26 @@ export async function uploadPLDoc(plId, { file, doc_type, name }) {
   else form.append("file", file);
   form.append("doc_type", doc_type);
   if (name) form.append("name", name);
-  return req(`/pl/${plId}/docs`, { method: "POST", body: form });
+  const res = await mutate(
+    `/pl/${plId}/docs`,
+    { method: "POST", body: form },
+    ["/pl", `/pl/${plId}`, `/pl/${plId}/docs`, `/pl/${plId}/events`]
+  );
+  return res;
 }
 export async function updatePLDoc(plId, docId, patch) {
-  return req(`/pl/${plId}/docs/${docId}`, { method: "PATCH", body: patch });
+  return mutate(
+    `/pl/${plId}/docs/${docId}`,
+    { method: "PATCH", body: patch },
+    ["/pl", `/pl/${plId}`, `/pl/${plId}/docs`, `/pl/${plId}/events`]
+  );
 }
 export async function deletePLDoc(plId, docId) {
-  await req(`/pl/${plId}/docs/${docId}`, { method: "DELETE" });
+  await mutate(
+    `/pl/${plId}/docs/${docId}`,
+    { method: "DELETE" },
+    ["/pl", `/pl/${plId}`, `/pl/${plId}/docs`, `/pl/${plId}/events`]
+  );
   return true;
 }
 export async function getPLDocHistory(plId, docId) {
@@ -350,10 +408,18 @@ export async function listPLComments(plId) {
   return Array.isArray(arr) ? arr : [];
 }
 export async function addPLComment(plId, { text }) {
-  return req(`/pl/${Number(plId)}/comments`, { method: "POST", body: { text } });
+  return mutate(
+    `/pl/${Number(plId)}/comments`,
+    { method: "POST", body: { text } },
+    ["/pl", `/pl/${plId}/comments`, `/pl/${plId}/events`]
+  );
 }
 export async function deletePLComment(plId, commentId) {
-  await req(`/pl/${Number(plId)}/comments/${commentId}`, { method: "DELETE" });
+  await mutate(
+    `/pl/${Number(plId)}/comments/${commentId}`,
+    { method: "DELETE" },
+    ["/pl", `/pl/${plId}/comments`, `/pl/${plId}/events`]
+  );
   return true;
 }
 
@@ -361,10 +427,13 @@ export async function deletePLComment(plId, commentId) {
    AUTH
 ------------------- */
 export async function login({ login, password }) {
-  return req(`/auth/login`, { method: "POST", body: { login, password } });
+  // после логина инвалидация — чтобы /auth/me и прочее не тянулись из кэша
+  const res = await mutate(`/auth/login`, { method: "POST", body: { login, password } }, ["/auth/me"]);
+  return res;
 }
 export async function logout() {
-  return req(`/auth/logout`, { method: "POST" });
+  const res = await mutate(`/auth/logout`, { method: "POST" }, ["/auth/me", "/pl", "/clients", "/consolidations"]);
+  return res;
 }
 export async function me() {
   return req(`/auth/me`);
@@ -397,7 +466,11 @@ export async function getConsolidation(id) {
   return normalizeCons(json);
 }
 export async function createConsolidation({ title, plIds = [] } = {}) {
-  const cons = await req("/consolidations", { method: "POST", body: { title, plIds } });
+  const cons = await mutate(
+    "/consolidations",
+    { method: "POST", body: { title, plIds } },
+    ["/consolidations"]
+  );
   if (plIds.length) {
     try {
       await setConsolidationPLs(cons.id, plIds);
@@ -406,18 +479,31 @@ export async function createConsolidation({ title, plIds = [] } = {}) {
   return normalizeCons(cons);
 }
 export async function updateConsolidation(id, patch = {}) {
-  const json = await req(`/consolidations/${id}`, { method: "PATCH", body: patch });
+  const json = await mutate(
+    `/consolidations/${id}`,
+    { method: "PATCH", body: patch },
+    ["/consolidations", `/consolidations/${id}`]
+  );
   return normalizeCons(json);
 }
 export async function deleteConsolidation(id) {
-  await req(`/consolidations/${id}`, { method: "DELETE" });
+  await mutate(`/consolidations/${id}`, { method: "DELETE" }, ["/consolidations", `/consolidations/${id}`]);
   return true;
 }
 export async function addPLToConsolidation(id, plId) {
-  return req(`/consolidations/${id}/pl`, { method: "POST", body: { plId } });
+  return mutate(
+    `/consolidations/${id}/pl`,
+    { method: "POST", body: { plId } },
+    ["/consolidations", `/consolidations/${id}`]
+  );
 }
 export async function removePLFromConsolidation(id, plId) {
-  return req(`/consolidations/${id}/pl/${plId}`, { method: "DELETE" });
+  await mutate(
+    `/consolidations/${id}/pl/${plId}`,
+    { method: "DELETE" },
+    ["/consolidations", `/consolidations/${id}`]
+  );
+  return true;
 }
 export async function getConsolidationStatusHistory(id) {
   const json = await req(`/consolidations/${id}/status-history`);
@@ -426,10 +512,11 @@ export async function getConsolidationStatusHistory(id) {
 export async function setConsolidationPLs(id, targetIds = []) {
   const target = Array.from(new Set((targetIds || []).map(Number))).filter(Boolean);
   try {
-    const res = await req(`/consolidations/${id}/pl`, {
-      method: "PUT",
-      body: { plIds: target },
-    });
+    const res = await mutate(
+      `/consolidations/${id}/pl`,
+      { method: "PUT", body: { plIds: target } },
+      ["/consolidations", `/consolidations/${id}`]
+    );
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
   } catch {
     const current = await getConsolidation(id);
@@ -442,16 +529,12 @@ export async function setConsolidationPLs(id, targetIds = []) {
   }
 }
 
+/* -------------------
+   USERS
+------------------- */
 export async function listUsers(params = {}) {
   const query = new URLSearchParams(params).toString();
   return req(`/users${query ? `?${query}` : ""}`, { method: "GET" });
-}
-
-export async function updateClient(id, data) {
-  return req(`/clients/${id}`, {
-    method: "PATCH",
-    body: data,
-  });
 }
 
 /* -------------------
@@ -461,6 +544,7 @@ const api = {
   // clients
   getClients,
   createClient,
+  updateClient,
 
   // pl
   listPLs,
@@ -491,7 +575,7 @@ const api = {
   login,
   logout,
   me,
-  listUsers,              
+  listUsers,
 
   // consolidations
   listConsolidations,
@@ -506,4 +590,3 @@ const api = {
 };
 
 export default api;
-

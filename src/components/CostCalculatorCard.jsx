@@ -4,18 +4,35 @@
 import React, { useState, useMemo, useEffect } from "react";
 import LabelInput from "/src/components/ui/LabelInput.jsx";
 import KV from "./ui/KV.jsx";
-import { updateClientPrice } from "/src/api/client.js"; // ⬅️ API вызов для сохранения цены
+import { updatePL } from "/src/api/client.js"; // сохраним цену и сам калькулятор
 
 /* ============================
    Хук расчёта логистических ставок
 ============================ */
-function useCostCalculator({ weight_kg, volume_cbm }) {
-  const [rate1Kg, setRate1Kg] = useState(0.0);
-  const [rate1Cbm, setRate1Cbm] = useState(0.0);
-  const [rate2Kg, setRate2Kg] = useState(0.0);
-  const [rate2Cbm, setRate2Cbm] = useState(0.0);
-  const [customsFee, setCustomsFee] = useState(0);
-  const [otherFee, setOtherFee] = useState(0);
+function useCostCalculator({ weight_kg, volume_cbm, init = {} }) {
+  const [rate1Kg, setRate1Kg] = useState(Number(init.rate1Kg ?? 0));
+  const [rate1Cbm, setRate1Cbm] = useState(Number(init.rate1Cbm ?? 0));
+  const [rate2Kg, setRate2Kg] = useState(Number(init.rate2Kg ?? 0));
+  const [rate2Cbm, setRate2Cbm] = useState(Number(init.rate2Cbm ?? 0));
+  const [customsFee, setCustomsFee] = useState(Number(init.customsFee ?? 0));
+  const [otherFee, setOtherFee] = useState(Number(init.otherFee ?? 0));
+
+  // при смене PL/инициализации подтягиваем сохранённые значения калькулятора
+  useEffect(() => {
+    setRate1Kg(Number(init.rate1Kg ?? 0));
+    setRate1Cbm(Number(init.rate1Cbm ?? 0));
+    setRate2Kg(Number(init.rate2Kg ?? 0));
+    setRate2Cbm(Number(init.rate2Cbm ?? 0));
+    setCustomsFee(Number(init.customsFee ?? 0));
+    setOtherFee(Number(init.otherFee ?? 0));
+  }, [
+    init.rate1Kg,
+    init.rate1Cbm,
+    init.rate2Kg,
+    init.rate2Cbm,
+    init.customsFee,
+    init.otherFee,
+  ]);
 
   const density = useMemo(() => {
     const w = Number(weight_kg) || 0;
@@ -82,6 +99,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
   const calc = useCostCalculator({
     weight_kg: pl.weight_kg,
     volume_cbm: pl.volume_cbm,
+    init: pl.calculator || {},
   });
 
   const [clientPrice, setClientPrice] = useState(pl.quote?.client_price ?? "");
@@ -125,21 +143,40 @@ export default function CostCalculatorCard({ pl, onSave }) {
     </span>
   );
 
-  // ⬇️ ТУТ ПРОИСХОДИТ ВЫЗОВ API ДЛЯ СОХРАНЕНИЯ ЦЕНЫ
+  // Сохранение: отправляем и цену клиента, и сам калькулятор (jsonb)
   const handleSave = async () => {
     setErrorMsg("");
     setSaving(true);
     try {
-      // сохраняем цену клиента на бэке (id или pl_number — что есть)
-      const saved = await updateClientPrice(pl.id ?? pl.pl_number, Number(clientPrice || 0));
+      const payload = {
+        clientPrice: Number(clientPrice || 0),
+        calculator: {
+          rate1Kg: Number(calc.rate1Kg || 0),
+          rate1Cbm: Number(calc.rate1Cbm || 0),
+          rate2Kg: Number(calc.rate2Kg || 0),
+          rate2Cbm: Number(calc.rate2Cbm || 0),
+          customsFee: Number(calc.customsFee || 0),
+          otherFee: Number(calc.otherFee || 0),
+          // полезные производные — вдруг пригодятся на бэке/в аналитике
+          density:
+            pl.volume_cbm && Number(pl.volume_cbm) > 0
+              ? Number(pl.weight_kg || 0) / Number(pl.volume_cbm || 1)
+              : null,
+          basisSuggestion: calc.basisSuggestion,
+          calcCost, // итоговая себестоимость по калькулятору
+        },
+      };
 
-      // пробрасываем наверх сохранённые значения (если родитель что-то ещё пишет, напр. себестоимость)
-      onSave?.(calcCost, Number(saved?.quote?.client_price ?? clientPrice));
+      const saved = await updatePL(pl.id, payload);
 
-      // фиксируем «сохранено»
+      // пробрасываем наверх сохранённые значения
+      const savedClientPrice =
+        Number(saved?.quote?.client_price ?? payload.clientPrice);
+      onSave?.(calcCost, savedClientPrice);
+
       setSavedStamp(new Date().toISOString());
     } catch (e) {
-      setErrorMsg(e?.message || "Не удалось сохранить цену");
+      setErrorMsg(e?.message || "Не удалось сохранить расчёт");
     } finally {
       setSaving(false);
     }
@@ -261,13 +298,13 @@ export default function CostCalculatorCard({ pl, onSave }) {
           )}
           {overKg && !overCbm && (
             <div>
-              Цена превышает среднюю ставку по весу: <b>$0.7/кг</b>{" "}
+              Цена превышает среднюю ставку по весу: <b>$0.7/кг</b>
               {perKg != null ? ` (у вас ${perKg.toFixed(3)} $/кг)` : ""}.
             </div>
           )}
           {overCbm && !overKg && (
             <div>
-              Цена превышает среднюю ставку по объёму: <b>$150/м³</b>{" "}
+              Цена превышает среднюю ставку по объёму: <b>$150/м³</b>
               {perCbm != null ? ` (у вас ${perCbm.toFixed(2)} $/м³)` : ""}.
             </div>
           )}
@@ -280,7 +317,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
           className="border rounded-lg px-3 py-3 text-sm min-h-[44px] disabled:opacity-60"
           disabled={saving}
           onClick={handleSave}
-          title="Сохранить цену клиента на сервере"
+          title="Сохранить цену клиента и калькулятор на сервере"
         >
           {saving ? "⏳ Сохраняем..." : "💾 Сохранить расчёт"}
         </button>

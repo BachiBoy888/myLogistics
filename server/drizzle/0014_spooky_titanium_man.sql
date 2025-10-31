@@ -1,0 +1,1 @@
+ALTER TABLE "pl" ADD COLUMN "calculator" jsonb DEFAULT '{}'::jsonb NOT NULL;

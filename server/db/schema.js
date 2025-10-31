@@ -24,8 +24,8 @@ export const clients = pgTable("clients", {
   name: text("name").notNull(),
   phone: text("phone"),
   phone2: text("phone2"),
-email: text("email"),
-notes: text("notes"),
+  email: text("email"),
+  notes: text("notes"),
   company: text("company"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -68,6 +68,10 @@ export const pl = pgTable(
 
     // Цена для клиента
     clientPrice: numeric("client_price", { precision: 12, scale: 2 }).default("0"),
+    
+
+    // ⬇️ Снимок калькулятора (все входы/итоги расчёта) — JSONB
+    calculator: jsonb("calculator").default(sql`'{}'::jsonb`).notNull(),
 
     // Ответственный: user с ролью «логист» (nullable)
     responsibleUserId: uuid("responsible_user_id").references(() => users.id, { onDelete: "set null" }),

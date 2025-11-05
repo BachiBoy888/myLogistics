@@ -38,7 +38,10 @@ async function main() {
     process.exit(1);
   }
 
-  const sql = postgres(process.env.DATABASE_URL, { prepare: true });
+  const sql = postgres(process.env.DATABASE_URL, {
+  prepare: true,
+  ssl: { rejectUnauthorized: false }, // важно для Render
+});
   const db = drizzle(sql);
 
   try {

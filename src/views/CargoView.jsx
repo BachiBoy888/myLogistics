@@ -23,7 +23,8 @@ import {
   deleteConsolidation as apiDeleteCons,
   setConsolidationPLs as apiSetConsPLs,
   listPLDocs as apiListPLDocs,
-  assignPLResponsible,     
+  assignPLResponsible,
+  resolveOrCreateClient,                 
 } from "../api/client";
 
 // Вынесенные модалки консолидаций
@@ -363,94 +364,104 @@ export default function CargoView({
   const [openConsId, setOpenConsId] = useState(null);
 
   // Создание PL
-  async function handleCreatePLFromModal(payload) {
-    const {
-      client,
-      title,
-      volume_cbm,
-      weight_kg,
-      incoterm,
-      exw_address,
-      fob_wh_id,
-      shipper_name,
-      shipper_contacts,
-    } = payload;
+async function handleCreatePLFromModal(payload) {
+  const {
+    client,            // текст из инпута
+    client_id,         // id, если выбран из подсказок (может быть null)
+    title,
+    volume_cbm,
+    weight_kg,
+    incoterm,
+    exw_address,
+    fob_wh_id,
+    shipper_name,
+    shipper_contacts,
+  } = payload;
 
-    const clientName = (client || "").trim();
-    if (!clientName) {
-      alert("Введите клиента перед созданием PL");
+  const clientName = (client || "").trim();
+  if (!clientName) {
+    alert("Введите клиента перед созданием PL");
+    return;
+  }
+
+  // 1) Если модалка уже дала нам выбранного клиента — используем его
+  let clientRow = null;
+  if (client_id) {
+    clientRow = (clients || []).find((c) => Number(c.id) === Number(client_id)) || null;
+    // если в локальном стейте его ещё нет — минимально добавим-отразим
+    if (!clientRow) {
+      clientRow = { id: client_id, name: clientName };
+      setClients((prev) => [...prev, clientRow]);
+    }
+  } else {
+    // 2) Иначе — пробуем найти точное совпадение или создать нового через API
+    try {
+      clientRow = await resolveOrCreateClient(clientName);
+      if (clientRow && !clients.some((c) => c.id === clientRow.id)) {
+        setClients((prev) => [...prev, clientRow]);
+      }
+    } catch (err) {
+      console.error("resolveOrCreateClient failed:", err);
+      alert("Не удалось определить/создать клиента");
       return;
     }
+  }
 
-    let clientRow =
-      (clients || []).find(
-        (c) => (c?.name || "").trim().toLowerCase() === clientName.toLowerCase()
-      ) || null;
+  // 3) Адрес забора
+  const pickup_address =
+    incoterm === "EXW"
+      ? (exw_address || "").trim()
+      : (() => {
+          const wh = warehouses.find((w) => w.id === fob_wh_id);
+          return wh ? `${wh.name} • ${wh.address}` : "";
+        })();
 
-    if (!clientRow) {
+  // 4) Тело запроса на создание PL
+  const body = {
+    client_id: clientRow.id,
+    title: title?.trim() || "",
+    weight_kg: parseFloat(weight_kg) || null,
+    volume_cbm: parseFloat(volume_cbm) || null,
+    places_qty: 0,
+    pickup_address,
+    shipper_name: shipper_name?.trim() || "",
+    shipper_contacts: shipper_contacts?.trim() || "",
+    incoterm,
+    fob_warehouse_id: incoterm === "FOB" ? fob_wh_id : null,
+    status: "draft",
+    docs: [],
+    comments: [],
+    quote: { calc_cost: null, client_price: null },
+  };
+
+  try {
+    const saved = await API.createPL(body);
+
+    // авто-назначение создателя ответственным (как было)
+    if (currentUser?.id) {
       try {
-        clientRow = await API.createClient({ name: clientName });
-        setClients((prev) => [...prev, clientRow]);
-      } catch (err) {
-        console.error("Ошибка при создании клиента:", err);
-        alert("Не удалось создать клиента");
-        return;
+        await assignPLResponsible(saved.id, currentUser.id);
+        setPls((prev) =>
+          (Array.isArray(prev) ? prev : []).map((p) =>
+            p?.id === saved.id
+              ? { ...p, responsible: { id: currentUser.id, name: currentUser.name } }
+              : p
+          )
+        );
+      } catch (e) {
+        console.debug("self-assign failed (non-blocking):", e);
       }
     }
 
-    const pickup_address =
-      incoterm === "EXW"
-        ? (exw_address || "").trim()
-        : (() => {
-            const wh = warehouses.find((w) => w.id === fob_wh_id);
-            return wh ? `${wh.name} • ${wh.address}` : "";
-          })();
-
-    const body = {
-      client_id: clientRow.id,
-      title: title?.trim() || "",
-      weight_kg: parseFloat(weight_kg) || null,
-      volume_cbm: parseFloat(volume_cbm) || null,
-      places_qty: 0,
-      pickup_address,
-      shipper_name: shipper_name?.trim() || "",
-      shipper_contacts: shipper_contacts?.trim() || "",
-      incoterm,
-      fob_warehouse_id: incoterm === "FOB" ? fob_wh_id : null,
-      status: "draft",
-      docs: [],
-      comments: [],
-      quote: { calc_cost: null, client_price: null },
-    };
-
-    try {
-      const saved = await API.createPL(body);
-
-      // ← авто-назначение создателя ответственным
-  if (currentUser?.id) {
-    try {
-      await assignPLResponsible(saved.id, currentUser.id);
-      // подправим локальный стейт, чтобы имя ответственного появилось сразу
-      setPls((prev) =>
-        (Array.isArray(prev) ? prev : []).map((p) =>
-          p?.id === saved.id
-            ? { ...p, responsible: { id: currentUser.id, name: currentUser.name } }
-            : p
-        )
-      );
-    } catch (e) {
-      console.debug("self-assign failed (non-blocking):", e);
-    }
+    setPls((prev) => [saved, ...(Array.isArray(prev) ? prev : [])]);
+    setSelectedId(saved.id);
+    setShowNew(false);
+    await refreshPLs({ keepSelected: true });
+  } catch (e) {
+    console.error("Ошибка при создании PL:", e);
+    alert("Не удалось сохранить PL");
   }
-      setPls((prev) => [saved, ...(Array.isArray(prev) ? prev : [])]);
-      setSelectedId(saved.id);
-      setShowNew(false);
-      await refreshPLs({ keepSelected: true });
-    } catch (e) {
-      console.error("Ошибка при создании PL:", e);
-      alert("Не удалось сохранить PL");
-    }
-  }
+}
 
   // Удаление PL
   async function handleDeletePL(id) {

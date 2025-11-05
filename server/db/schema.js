@@ -27,6 +27,7 @@ export const clients = pgTable("clients", {
   email: text("email"),
   notes: text("notes"),
   company: text("company"),
+  normalizedName: text("normalized_name"), // для поиска: lower(unaccent(name))
   createdAt: timestamp("created_at").defaultNow(),
 });
 

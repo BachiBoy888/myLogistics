@@ -590,3 +590,90 @@ const api = {
 };
 
 export default api;
+
+// Поиск клиентов по подстроке (умный поиск с двусторонней транслитерацией)
+export async function searchClients(query) {
+  if (!query || query.trim() === "") return [];
+
+  const q = query.trim();
+
+  // Простая таблица транслитерации (латиница ↔ кириллица)
+  const map = {
+    a: "а", b: "б", v: "в", g: "г", d: "д", e: "е", yo: "ё", zh: "ж",
+    z: "з", i: "и", j: "й", k: "к", l: "л", m: "м", n: "н", o: "о",
+    p: "п", r: "р", s: "с", t: "т", u: "у", f: "ф", h: "х", c: "ц",
+    ch: "ч", sh: "ш", shch: "щ", y: "ы", ye: "е", yu: "ю", ya: "я",
+  };
+
+  const revMap = Object.fromEntries(
+    Object.entries(map).map(([lat, cyr]) => [cyr, lat])
+  );
+
+  // Двусторонняя функция транслитерации
+  function transliterate(str, direction = "toCyr") {
+    let text = str.toLowerCase();
+    const dict = direction === "toCyr" ? map : revMap;
+    // сортируем по длине, чтобы сначала заменять shch, ch, sh и т.п.
+    for (const [k, v] of Object.entries(dict).sort(
+      (a, b) => b[0].length - a[0].length
+    )) {
+      const re = new RegExp(k, "g");
+      text = text.replace(re, v);
+    }
+    return text;
+  }
+
+  const toCyr = transliterate(q, "toCyr");
+  const toLat = transliterate(q, "toLat");
+
+  try {
+    // параллельно ищем по 3 вариантам: исходный, кириллица, латиница
+    const [r1, r2, r3] = await Promise.all([
+      req(`/clients/search?q=${encodeURIComponent(q)}`),
+      toCyr !== q ? req(`/clients/search?q=${encodeURIComponent(toCyr)}`) : Promise.resolve([]),
+      toLat !== q ? req(`/clients/search?q=${encodeURIComponent(toLat)}`) : Promise.resolve([]),
+    ]);
+
+    // склеиваем и удаляем дубли по id
+    const merged = [
+      ...(Array.isArray(r1) ? r1 : []),
+      ...(Array.isArray(r2) ? r2 : []),
+      ...(Array.isArray(r3) ? r3 : []),
+    ];
+    const seen = new Set();
+    return merged.filter((c) => {
+      if (seen.has(c.id)) return false;
+      seen.add(c.id);
+      return true;
+    });
+  } catch (err) {
+    console.error("Ошибка поиска клиентов:", err);
+    return [];
+  }
+}
+
+// Резолв: если клиент уже есть, вернуть его, иначе создать нового
+export async function resolveOrCreateClient(name) {
+  if (!name || name.trim() === "") return null;
+
+  // 1. Поиск похожих клиентов
+  const results = await searchClients(name);
+  const normalized = name.trim().toLowerCase();
+
+  // 2. Проверка на точное совпадение (без учёта регистра)
+  const exact = results.find(
+    (c) => (c.name || "").trim().toLowerCase() === normalized
+  );
+  if (exact) {
+    return exact;
+  }
+
+  // 3. Если не нашли — создаём нового
+  try {
+    const created = await createClient({ name });
+    return created;
+  } catch (err) {
+    console.error("Ошибка создания клиента:", err);
+    return null;
+  }
+}

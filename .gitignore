@@ -3,5 +3,15 @@ dist/
 
 # env
 .env*
+.env.local
+.env.development
+.env.production
+.env.local.prod-db
+!.env.example
 server/.env*
+server/.env.local
+server/.env.development
+server/.env.production
+server/.env.staging
+server/.local.prod-db
 src/.env.local

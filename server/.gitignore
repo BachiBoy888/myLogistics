@@ -1,5 +1,10 @@
 uploads/
 .env
 .DS_Store
-server/.env
+server/.env*
+server/.env.local
+server/.env.development
+server/.env.production
+server/.env.staging
+server/.local.prod-db
 dist

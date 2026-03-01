@@ -8,3 +8,4 @@
 npm install
 npm run dev
 
+CI check test - 2026-03-02

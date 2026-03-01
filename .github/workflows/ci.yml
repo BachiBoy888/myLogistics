@@ -34,6 +34,17 @@ jobs:
         run: npm ci
         working-directory: server
 
-      - name: Test (server)
-        run: npm test --if-present
+      - name: Test (server) if configured
         working-directory: server
+        run: |
+          if npm pkg get scripts.test | grep -q '"test":'; then
+            TEST_SCRIPT=$(npm pkg get scripts.test)
+            echo "Detected test script: $TEST_SCRIPT"
+            if echo "$TEST_SCRIPT" | grep -q 'no test specified'; then
+              echo "No real tests configured (placeholder). Skipping."
+              exit 0
+            fi
+            npm test
+          else
+            echo "No test script found. Skipping."
+          fi

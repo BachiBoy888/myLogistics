@@ -23,12 +23,8 @@ import StatusBar from "./components/StatusBar.jsx";
 // Вьюхи
 import CargoView from "./views/CargoView.jsx";
 import ClientsView from "./views/ClientsView.jsx";
-import WarehousesView from "./views/WarehousesView.jsx";
 import LogisticsView from "./views/LogisticsView.jsx";
 import AnalyticsPage from "./views/AnalyticsPage.jsx";
-
-// Константы/данные
-import { demoWarehouses } from "./constants/warehouses.js";
 
 /* ---------------------------
    Вспомогательные утилиты
@@ -178,7 +174,6 @@ function MainApp({ user, onLogout }) {
             }
             cons={cons}
             setCons={setCons}
-            warehouses={demoWarehouses}
             openPLId={openPLId}
             onConsumeOpenPL={() => setOpenPLId(null)}
             clients={clients}
@@ -213,10 +208,6 @@ function MainApp({ user, onLogout }) {
             }}
             onAddClient={handleAddClient}
           />
-        )}
-
-        {mode === "warehouses" && (
-          <WarehousesView pls={safePls} warehouses={demoWarehouses} />
         )}
 
         {mode === "logistics" && <LogisticsView />}

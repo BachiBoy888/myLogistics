@@ -24,6 +24,7 @@ import CargoView from "./views/CargoView.jsx";
 import ClientsView from "./views/ClientsView.jsx";
 import WarehousesView from "./views/WarehousesView.jsx";
 import LogisticsView from "./views/LogisticsView.jsx";
+import AnalyticsPage from "./views/AnalyticsPage.jsx";
 
 // Константы/данные
 import { demoWarehouses } from "./constants/warehouses.js";
@@ -217,6 +218,7 @@ function MainApp({ user, onLogout }) {
         )}
 
         {mode === "logistics" && <LogisticsView />}
+        {mode === "analytics" && <AnalyticsPage />}
       </main>
 
       <Footer />

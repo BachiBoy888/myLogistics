@@ -18,7 +18,6 @@ import LoadingScreen from "./components/LoadingScreen.jsx";
 import LoginScreen from "./components/auth/LoginScreen.jsx";
 import Header from "./components/layout/Header.jsx";
 import Footer from "./components/layout/Footer.jsx";
-import StatusBar from "./components/StatusBar.jsx";
 
 // Вьюхи
 import CargoView from "./views/CargoView.jsx";
@@ -161,7 +160,6 @@ function MainApp({ user, onLogout }) {
   return (
     <div className="min-h-screen bg-[#FAF3DD] flex flex-col">
       <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} />
-      <StatusBar />
 
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">
         {mode === "cargo" && (

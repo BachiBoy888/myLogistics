@@ -21,8 +21,10 @@ export default async function healthRoutes(app) {
    * Structure stable for future expansion
    */
   app.get("/metrics/summary", async (req, reply) => {
+    const period = req.query.period || "today";
+    
     return {
-      period: "today",
+      period: period,
       timestamp: new Date().toISOString(),
       inbound: {
         leads: 0,

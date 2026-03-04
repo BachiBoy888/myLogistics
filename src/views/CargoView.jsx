@@ -282,23 +282,12 @@ export default function CargoView({
         const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
         
         try {
-          // Backend doesn't allow moving cons backwards (released → to_customs)
-          // Workaround: delete old cons and create new one
-          
-          const plIds = plsOfC.map((p) => p.id);
-          
-          // First update all PLs to new status
+          // Сначала обновляем все PL внутри консолидации до нового статуса
+          // Это нужно чтобы бэкенд разрешил движение назад
           await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
           
-          // Delete old consolidation
-          await API.deleteCons(plId);
-          
-          // Create new consolidation with same PLs and new status
-          await API.createCons({ 
-            title: consItem.title || `Консолидация`, 
-            plIds: plIds,
-            status: newStatus 
-          });
+          // Затем обновляем саму консолидацию
+          await API.updateCons(plId, { status: newStatus });
           
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {

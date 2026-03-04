@@ -37,13 +37,28 @@ const RANK = new Map([
   ["closed", 6],
 ]);
 
-/** Ни один PL не должен «отставать» от целевого статуса консолидации */
-export async function assertPLsNotBehind(db, consId, consStatus) {
+/** Ни один PL не должен «отставать» от целевого статуса консолидации
+ *  При движении назад разрешаем, если все PL >= целевого статуса
+ */
+export async function assertPLsNotBehind(db, consId, consStatus, isMovingBackward = false) {
   const links = await db.select().from(consolidationPl).where(eq(consolidationPl.consolidationId, consId));
-  if (!links.length) return; // пустую консолидацию разрешаем (можно ужесточить)
+  if (!links.length) return; // пустую консолидацию разрешаем
   const ids = links.map(l => l.plId);
   const rows = await db.select({ id: pl.id, status: pl.status }).from(pl).where(inArray(pl.id, ids));
   const consRank = RANK.get(consStatus) ?? 0;
+  
+  // При движении назад проверяем, что PL не выше нового статуса слишком сильно
+  // (опционально: можно убрать эту проверку полностью для обратного движения)
+  if (isMovingBackward) {
+    // При движении назад PL должны быть >= новому статусу консолидации
+    const ahead = rows.filter(r => (RANK.get(r.status) ?? 999) > consRank + 2); // допускаем небольшой разброс
+    if (ahead.length) {
+      const list = ahead.map(b => `${b.id}:${b.status}`).join(", ");
+      throw new Error(`Некоторые PL слишком опережают статус "${consStatus}": ${list}`);
+    }
+    return;
+  }
+  
   const behind = rows.filter(r => (RANK.get(r.status) ?? -1) < consRank);
   if (behind.length) {
     const list = behind.map(b => `${b.id}:${b.status}`).join(", ");

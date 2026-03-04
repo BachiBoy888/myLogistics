@@ -258,29 +258,37 @@ export default function CargoView({
 
   const handlePLMove = useCallback(
     async (plId, targetStage, isCons = false) => {
+      const stageToStatus = {
+        intake: "draft",
+        collect_docs: "awaiting_docs",
+        collect_cargo: "awaiting_load",
+        loading: "to_load",
+        cn_formalities: "to_customs",
+        in_transit: "released",
+        kg_customs: "kg_customs",
+        payment: "collect_payment",
+        closed_stage: "closed",
+      };
+
+      const newStatus = stageToStatus[targetStage];
+      if (!newStatus) return;
+
       if (isCons) {
         // Move consolidation
         const consItem = safeCons.find((c) => c.id === plId);
-        if (!consItem) return;
-        
-        const stageToStatus = {
-          intake: "draft",
-          collect_docs: "awaiting_docs",
-          collect_cargo: "awaiting_load",
-          loading: "to_load",
-          cn_formalities: "to_customs",
-          in_transit: "released",
-          kg_customs: "kg_customs",
-          payment: "collect_payment",
-          closed_stage: "closed",
-        };
-        
-        const newStatus = stageToStatus[targetStage];
-        if (!newStatus || newStatus === consItem.status) return;
-        
+        if (!consItem || newStatus === consItem.status) return;
+
+        // Find PLs inside this consolidation that need to be upgraded
+        const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
+        const rank = (st) => OrderedStages.indexOf(stageOf(st));
+        const needUpgrade = plsOfC.filter((p) => rank(p.status) < rank(newStatus));
+
         try {
+          // First update all PLs inside the consolidation
+          await Promise.all(needUpgrade.map((p) => API.updatePL(p.id, { status: newStatus })));
+          // Then update the consolidation itself
           await API.updateCons(plId, { status: newStatus });
-          await refreshCons();
+          await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
           alert("Не удалось переместить консолидацию");
@@ -288,27 +296,12 @@ export default function CargoView({
       } else {
         // Move PL
         const pl = safePLs.find((p) => p.id === plId);
-        if (!pl) return;
-
-        const stageToStatus = {
-          intake: "draft",
-          collect_docs: "awaiting_docs",
-          collect_cargo: "awaiting_load",
-          loading: "to_load",
-          cn_formalities: "to_customs",
-          in_transit: "released",
-          kg_customs: "kg_customs",
-          payment: "collect_payment",
-          closed_stage: "closed",
-        };
-
-        const newStatus = stageToStatus[targetStage];
-        if (!newStatus || newStatus === pl.status) return;
+        if (!pl || newStatus === pl.status) return;
 
         try {
           await API.updatePL(plId, { status: newStatus });
           await refreshPLs({ keepSelected: true });
-          setSelectedPLs([]); // Clear selection after move
+          setSelectedPLs([]);
         } catch (err) {
           console.error("Ошибка при перемещении PL:", err);
           alert("Не удалось переместить груз");

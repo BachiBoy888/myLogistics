@@ -82,6 +82,7 @@ export default function KanbanColumn({
             key={`cons-${c.id}`}
             cons={c}
             onClick={onConsClick}
+            onPLClick={onPLClick}
             pls={allPLs?.filter((p) => c.pl_ids?.includes(p.id)) || []}
             clientNameOf={clientNameOf}
           />

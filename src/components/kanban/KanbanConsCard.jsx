@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import { Truck, ChevronDown, ChevronUp } from "lucide-react";
 
-export default function KanbanConsCard({ cons, onClick, pls, clientNameOf }) {
+export default function KanbanConsCard({ cons, onClick, onPLClick, pls, clientNameOf }) {
   const [expanded, setExpanded] = useState(true);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -64,7 +64,7 @@ export default function KanbanConsCard({ cons, onClick, pls, clientNameOf }) {
               key={pl.id}
               onClick={(e) => {
                 e.stopPropagation();
-                onClick?.(pl);
+                onPLClick?.(pl);
               }}
               className="bg-gray-700/50 rounded p-2 text-xs hover:bg-gray-700 transition-colors"
             >

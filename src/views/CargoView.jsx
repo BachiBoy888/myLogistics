@@ -539,7 +539,7 @@ async function handleCreatePLFromModal(payload) {
 
   return (
     <>
-      <!-- Шапка с фильтрами -->
+      {/*  Шапка с фильтрами */}
       <header className="bg-white border-b sticky top-0 z-20">
         <div className="max-w-full mx-auto px-4 py-3">
           <div className="flex flex-col md:flex-row md:items-center gap-3">
@@ -603,7 +603,7 @@ async function handleCreatePLFromModal(payload) {
         </div>
       </header>
 
-      <!-- Kanban Board -->
+      {/*  Kanban Board */}
       <main className="p-4 overflow-x-auto">
         <div className="flex gap-4 min-w-max">
           {OrderedStages.map((stage) => {
@@ -614,7 +614,7 @@ async function handleCreatePLFromModal(payload) {
             return (
               <div key={stage} className="w-80 flex-shrink-0">
                 <div className="bg-gray-100 rounded-xl flex flex-col max-h-[calc(100vh-140px)]">
-                  <!-- Column Header -->
+                  {/*  Column Header */}
                   <div className="px-3 py-3 flex items-center justify-between border-b border-gray-200">
                     <h3 className="font-semibold text-sm text-gray-800">{StageLabels[stage]}</h3>
                     <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">
@@ -622,9 +622,9 @@ async function handleCreatePLFromModal(payload) {
                     </span>
                   </div>
 
-                  <!-- Column Content -->
+                  {/*  Column Content */}
                   <div className="flex-1 overflow-y-auto p-2 space-y-2">
-                    <!-- Create Cons Button (only in Loading stage) -->
+                    {/*  Create Cons Button (only in Loading stage) */}
                     {isLoadingStage && !consOnly && (
                       <button
                         onClick={() => setShowCreateCons(true)}
@@ -635,7 +635,7 @@ async function handleCreatePLFromModal(payload) {
                       </button>
                     )}
 
-                    <!-- Consolidations -->
+                    {/*  Consolidations */}
                     {!consOnly && stageCons.map((c) => (
                       <KanbanConsCard
                         key={`cons-${c.id}`}
@@ -645,7 +645,7 @@ async function handleCreatePLFromModal(payload) {
                       />
                     ))}
 
-                    <!-- PL Cards -->
+                    {/*  PL Cards */}
                     {!consOnly && stagePLs.map((pl) => (
                       <KanbanPLCard
                         key={`pl-${pl.id}`}
@@ -655,7 +655,7 @@ async function handleCreatePLFromModal(payload) {
                       />
                     ))}
 
-                    <!-- Cons Only Mode -->
+                    {/*  Cons Only Mode */}
                     {consOnly && stageCons.map((c) => (
                       <KanbanConsCard
                         key={`cons-${c.id}`}
@@ -665,7 +665,7 @@ async function handleCreatePLFromModal(payload) {
                       />
                     ))}
 
-                    <!-- Empty State -->
+                    {/*  Empty State */}
                     {stageCons.length === 0 && stagePLs.length === 0 && (
                       <div className="text-center py-8 text-gray-400 text-sm">
                         Нет грузов
@@ -677,235 +677,7 @@ async function handleCreatePLFromModal(payload) {
             );
           })}
         </div>
-      </main>>
-              <Package className="w-4 h-4" />
-              {consOnly ? "Консолидации по этапам" : "Список PL по этапам"}
-            </div>
-            {!consOnly && (
-              <div className="text-xs text-gray-500">Всего PL: {filtered.length}</div>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            {OrderedStages.map((stage) => (
-              <div
-                key={stage}
-                className="rounded-2xl bg-white shadow-md border border-gray-100"
-              >
-                {/* Заголовок карточки этапа */}
-                <div className="px-4 py-3 flex items-center justify-between">
-                  <div className="text-sm font-semibold text-gray-800">
-                    {StageLabels[stage]}
-                  </div>
-                  <Chip className="bg-gray-200 text-gray-800">
-                    {consOnly
-                      ? (consByStage[stage]?.length ?? 0)
-                      : (groupedByStage[stage]?.length ?? 0)}
-                  </Chip>
-                </div>
-
-                {/* Спец-панель «Погрузка» (только когда показываем PL) */}
-                {!consOnly && stage === "loading" && (
-                  <div className="px-4 pb-2">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                      <div className="text-xs text-gray-600">
-                        Не консолидированы: <b>{notConsolidatedPLs.length}</b> •
-                        Консолидаций: <b>{consByStage["loading"].length}</b>
-                      </div>
-                      <button
-                        onClick={() => setShowCreateCons(true)}
-                        className="inline-flex items-center justify-center gap-2 bg-black text-white px-3 py-2 rounded-lg text-sm min-h-[40px]"
-                        disabled={notConsolidatedPLs.length === 0}
-                      >
-                        <PlusCircle className="w-4 h-4" />
-                        Создать консолидацию
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Консолидации этого этапа */}
-                {consByStage[stage]?.length > 0 && (
-                  <div className="px-4 pb-2">
-                    <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">
-                      Консолидации
-                    </div>
-                    <div className="space-y-3">
-                      {consByStage[stage].map((c) => {
-                        const plsOfC = c.pl_ids
-                          .map((id) => safePLs.find((p) => p.id === id))
-                          .filter(Boolean);
-                        const sumW = plsOfC.reduce(
-                          (a, p) => a + (p.weight_kg || 0),
-                          0
-                        );
-                        const sumV = plsOfC.reduce(
-                          (a, p) => a + (p.volume_cbm || 0),
-                          0
-                        );
-                        const overW =
-                          c.capacity_kg > 0 && sumW > c.capacity_kg;
-                        const overV =
-                          c.capacity_cbm > 0 && sumV > c.capacity_cbm;
-
-                        return (
-                          <div key={c.id} className="border rounded-xl">
-                            <button
-                              onClick={() => setOpenConsId(c.id)}
-                              className="w-full text-left p-3 hover:bg-gray-50"
-                              title="Открыть консолидацию"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold">
-                                      {c.number}
-                                    </span>
-                                    <Chip
-                                      className={badgeColorByConsStatus(
-                                        c.status
-                                      )}
-                                    >
-                                      {humanConsStatus(c.status)}
-                                    </Chip>
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    PL: {plsOfC.length} • Вес:{" "}
-                                    {sumW.toFixed(2)} кг
-                                    {c.capacity_kg
-                                      ? ` / ${c.capacity_kg} кг`
-                                      : ""}{" "}
-                                    • Объём: {sumV.toFixed(2)} м³
-                                    {c.capacity_cbm
-                                      ? ` / ${c.capacity_cbm} м³`
-                                      : ""}
-                                  </div>
-                                  {(overW || overV) && (
-                                    <div className="mt-1 text-xs text-rose-600">
-                                      {!overW ? null : "Превышение по весу. "}
-                                      {!overV ? null : "Превышение по объёму."}
-                                    </div>
-                                  )}
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              </div>
-                            </button>
-
-                            {/* мини-список PL внутри */}
-                            {!consOnly && (
-                              <div className="px-3 pb-3">
-                                <div className="divide-y rounded-lg border bg-gray-50">
-                                  {plsOfC.map((p) => {
-                                    const ready = readinessForPL(p);
-                                    return (
-                                      <button
-                                        key={p.id}
-                                        className="w-full text-left p-2 hover:bg-gray-100 flex items-center justify-between"
-                                        onClick={() => setSelectedId(p.id)}
-                                        title="Открыть карточку PL справа"
-                                      >
-                                        <div className="truncate">
-                                          <span className="font-medium">
-                                            {p.pl_number}
-                                          </span>
-                                          <span className="text-gray-600">
-                                            {" "}
-                                            •{" "}
-                                            {typeof p.client === "string"
-                                              ? p.client
-                                              : p.client?.name || ""}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                                          <div className="w-24">
-                                            <ProgressBar value={ready} />
-                                          </div>
-                                          <span>{ready}%</span>
-                                          <span>
-                                            {p.weight_kg} кг • {p.volume_cbm} м³
-                                          </span>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                  {plsOfC.length === 0 && (
-                                    <div className="p-2 text-sm text-gray-500">
-                                      Пока пусто
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Список PL этого этапа (скрываем, если consOnly) */}
-                {!consOnly &&
-                  (groupedByStage[stage].length === 0 ? (
-                    <div className="px-4 pb-4 text-sm text-gray-400">
-                      Нет PL на этой стадии
-                    </div>
-                  ) : (
-                    <div className="px-2 pb-2">
-                      <div className="divide-y rounded-xl border bg-white overflow-hidden">
-                        {groupedByStage[stage].map((pl) => {
-                          const readiness = readinessForPL(pl);
-                          return (
-                            <button
-                              key={pl.id}
-                              onClick={() => setSelectedId(pl.id)}
-                              className={`w-full text-left p-4 hover:bg-gray-50 ${
-                                selectedId === pl.id ? "bg-gray-50" : ""
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold truncate">
-                                      {pl.pl_number}
-                                    </span>
-                                    <Chip className={badgeColorByStatus(pl.status)}>
-                                      {humanStatus(pl.status)}
-                                    </Chip>
-                                  </div>
-                                  <div className="text-sm text-gray-600 truncate">
-                                    {typeof pl.client === "string"
-                                      ? pl.client
-                                      : pl.client?.name || "—"}{" "}
-                                    • {pl.title}
-                                  </div>
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <div className="w-32">
-                                      <ProgressBar value={readiness} />
-                                    </div>
-                                    <span className="text-xs text-gray-600">
-                                      {readiness}%
-                                    </span>
-                                    {canAllowToShip(pl) && (
-                                      <Chip className="bg-emerald-100 text-emerald-700">
-                                        Готов к выпуску
-                                      </Chip>
-                                    )}
-                                  </div>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ))}
-          </div>
-        </section>
-
-      {/* PL Detail Modal */}
+      </main>{/* PL Detail Modal */}
       {selected && !consOnly && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -945,9 +717,8 @@ async function handleCreatePLFromModal(payload) {
           </div>
         </div>
       )}
-    </>
 
-      {/* Модалки */}
+      {/* Модалки */}    {/* Модалки */}
       {showNew && (
         <NewPLModal
           onClose={() => setShowNew(false)}

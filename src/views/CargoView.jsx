@@ -8,6 +8,7 @@ import ProgressBar from "../components/ui/ProgressBar.jsx";
 import Card from "../components/ui/Card.jsx";
 import Label from "../components/ui/Label.jsx";
 import LabelInput from "../components/ui/LabelInput.jsx";
+import ErrorModal from "../components/ui/ErrorModal.jsx";
 import NewPLModal from "../components/pl/NewPLModal.jsx";
 
 // API
@@ -84,6 +85,18 @@ export default function CargoView({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPLs, setSelectedPLs] = useState([]);
+
+  // Error modal state
+  const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    title: "Ошибка",
+    description: "",
+    ctaText: "Понятно",
+  });
+
+  const showError = (description, title = "Ошибка", ctaText = "Понятно") => {
+    setErrorModal({ isOpen: true, title, description, ctaText });
+  };
 
   const [showNew, setShowNew] = useState(false);
   const [showCreateCons, setShowCreateCons] = useState(false);
@@ -292,7 +305,7 @@ export default function CargoView({
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
-          alert("Не удалось переместить консолидацию: " + (err.message || ""));
+          showError("Не удалось переместить консолидацию: " + (err.message || ""));
         }
       } else {
         // Move PL
@@ -305,7 +318,7 @@ export default function CargoView({
           setSelectedPLs([]);
         } catch (err) {
           console.error("Ошибка при перемещении PL:", err);
-          alert("Не удалось переместить груз");
+          showError("Не удалось переместить груз");
         }
       }
     },
@@ -345,7 +358,7 @@ export default function CargoView({
       );
     } catch (e) {
       console.error("Ошибка при сохранении PL:", e);
-      alert("Не удалось сохранить изменения");
+      showError("Не удалось сохранить изменения");
       await refreshPLs({ keepSelected: true });
     }
   }
@@ -354,7 +367,7 @@ export default function CargoView({
     const { client, client_id, title, volume_cbm, weight_kg, incoterm, exw_address, fob_wh_id } = payload;
     const clientName = (client || "").trim();
     if (!clientName) {
-      alert("Введите клиента перед созданием PL");
+      showError("Введите клиента перед созданием PL");
       return;
     }
 
@@ -372,7 +385,7 @@ export default function CargoView({
           setClients((prev) => [...prev, clientRow]);
         }
       } catch (err) {
-        alert("Не удалось определить/создать клиента");
+        showError("Не удалось определить/создать клиента");
         return;
       }
     }
@@ -412,7 +425,7 @@ export default function CargoView({
       setShowNew(false);
       await refreshPLs({ keepSelected: true });
     } catch (e) {
-      alert("Не удалось сохранить PL");
+      showError("Не удалось сохранить PL");
     }
   }
 
@@ -423,7 +436,7 @@ export default function CargoView({
       if (selectedId === id) setSelectedId(null);
       await refreshPLs({ keepSelected: true });
     } catch (err) {
-      alert("Не удалось удалить PL");
+      showError("Не удалось удалить PL");
     }
   }
 
@@ -433,7 +446,7 @@ export default function CargoView({
       await refreshPLs({ keepSelected: true });
       setSelectedId(id);
     } catch (err) {
-      alert("Не удалось обновить статус");
+      showError("Не удалось обновить статус");
     }
   }
 
@@ -593,7 +606,7 @@ export default function CargoView({
                 setOpenConsId(null);
                 await Promise.all([refreshPLs(), refreshCons()]);
               } catch (e) {
-                alert("Не удалось перейти к следующему этапу");
+                showError("Не удалось перейти к следующему этапу");
               }
             }}
             onDissolve={async (c) => {
@@ -603,7 +616,7 @@ export default function CargoView({
                 await refreshCons();
                 await refreshPLs({ keepSelected: true });
               } catch (e) {
-                alert("Не удалось расформировать консолидацию");
+                showError("Не удалось расформировать консолидацию");
               }
             }}
             onSavePLs={async (id, plIds) => {
@@ -611,7 +624,7 @@ export default function CargoView({
                 await API.setConsPLs(id, plIds.map(Number));
                 await Promise.all([refreshCons(), refreshPLs()]);
               } catch (e) {
-                alert("Не удалось сохранить состав консолидации");
+                showError("Не удалось сохранить состав консолидации");
               }
             }}
           />
@@ -644,7 +657,7 @@ export default function CargoView({
                 setShowCreateCons(false);
                 await refreshCons();
               } catch (e) {
-                alert("Не удалось создать консолидацию");
+                showError("Не удалось создать консолидацию");
               }
             }}
           />
@@ -653,6 +666,15 @@ export default function CargoView({
 
       {/* Summary Drawer */}
       <SummaryDrawer open={summaryOpen} onClose={() => setSummaryOpen(false)} stats={stats} />
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal(prev => ({ ...prev, isOpen: false }))}
+        title={errorModal.title}
+        description={errorModal.description}
+        ctaText={errorModal.ctaText}
+      />
     </div>
   );
 }

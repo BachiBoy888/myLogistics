@@ -31,6 +31,15 @@ import {
 import ConsolidationCreateModal from "../components/consolidation/ConsolidationCreateModal.jsx";
 import ConsolidationDetailsModal from "../components/consolidation/ConsolidationDetailsModal.jsx";
 
+// Kanban компоненты
+import KanbanBoard from "../components/kanban/KanbanBoard.jsx";
+import KanbanColumn from "../components/kanban/KanbanColumn.jsx";
+import KanbanPLCard from "../components/kanban/KanbanPLCard.jsx";
+import KanbanConsCard from "../components/kanban/KanbanConsCard.jsx";
+
+// Drawer
+import SummaryDrawer from "../components/cargo/SummaryDrawer.jsx";
+
 // Константы/утилиты (ЕДИНЫЙ источник правды)
 import {
   Statuses,
@@ -104,6 +113,7 @@ export default function CargoView({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [consOnly, setConsOnly] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(
     (Array.isArray(pls) ? pls.filter(Boolean) : []).find(
       (p) => (p?.status ?? "draft") !== "closed"
@@ -307,6 +317,43 @@ export default function CargoView({
     return m;
   }, [safeCons]);
 
+  // Stats for SummaryDrawer
+  const stats = useMemo(() => {
+    const total = safePLs.length;
+    const closedCount = safePLs.filter(p => ["closed", "cancelled"].includes(p.status)).length;
+    const activeCount = total - closedCount;
+    
+    // Calculate average progress
+    const progressSum = safePLs.reduce((sum, pl) => {
+      const stageIdx = OrderedStages.indexOf(stageOf(pl.status));
+      const progress = Math.round((stageIdx / (OrderedStages.length - 1)) * 100);
+      return sum + progress;
+    }, 0);
+    const avgProgress = total > 0 ? Math.round(progressSum / total) : 0;
+
+    // Stage breakdown
+    const stageBreakdown = OrderedStages.map((stage) => {
+      const count = (groupedByStage[stage] || []).length;
+      const label = StageLabels[stage];
+      // Get color from badgeColorByStatus for a representative status of this stage
+      const repStatus = {
+        intake: "draft",
+        collect_docs: "awaiting_docs",
+        collect_cargo: "awaiting_load",
+        loading: "to_load",
+        cn_formalities: "to_customs",
+        in_transit: "released",
+        kg_customs: "kg_customs",
+        payment: "collect_payment",
+        closed_stage: "closed",
+      }[stage];
+      const color = repStatus ? badgeColorByStatus(repStatus).split(" ")[0] : "bg-gray-400";
+      return { stage, label, count, color };
+    });
+
+    return { total, activeCount, closedCount, avgProgress, stageBreakdown };
+  }, [safePLs, groupedByStage]);
+
   const selected = useMemo(
     () => safePLs.find((p) => p.id === selectedId) ?? null,
     [safePLs, selectedId]
@@ -492,60 +539,145 @@ async function handleCreatePLFromModal(payload) {
 
   return (
     <>
-      <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Поиск/фильтры */}
-        <section className="bg-white rounded-2xl shadow-sm border p-4 lg:col-span-2">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:flex-wrap">
-            <div className="relative w-full md:w-72">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-gray-500" />
-              <input
-                className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm min-h-[44px]"
-                placeholder="Поиск: номер PL, клиент, груз…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
+      <!-- Шапка с фильтрами -->
+      <header className="bg-white border-b sticky top-0 z-20">
+        <div className="max-w-full mx-auto px-4 py-3">
+          <div className="flex flex-col md:flex-row md:items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Package className="w-5 h-5 text-gray-700" />
+              <span className="font-semibold text-gray-800">Мои грузы</span>
+              <span className="text-sm text-gray-500">({safePLs.length})</span>
             </div>
 
-            <select
-              className="border rounded-lg text-sm py-2 px-2 min-h-[44px]"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              disabled={consOnly}
-              title={consOnly ? "Фильтр по статусам скрыт при консолидациях" : ""}
-            >
-              <option value="all">Все статусы</option>
-              {Statuses.filter((s) => s !== "closed").map((s) => (
-                <option key={s} value={s}>
-                  {humanStatus(s)}
-                </option>
-              ))}
-            </select>
+            <div className="flex-1 flex flex-col md:flex-row gap-2 md:justify-end">
+              <div className="relative md:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-gray-500" />
+                <input
+                  className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm"
+                  placeholder="Поиск: номер PL, клиент, груз…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
 
-            {/* Переключатель «только консолидации» */}
-            <label className="inline-flex items-center gap-2 text-sm border rounded-lg px-3 py-2 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4"
-                checked={consOnly}
-                onChange={(e) => setConsOnly(e.target.checked)}
-              />
-              Показывать только консолидации
-            </label>
+              <select
+                className="border rounded-lg text-sm py-2 px-3"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                disabled={consOnly}
+              >
+                <option value="all">Все статусы</option>
+                {Statuses.map((s) => (
+                  <option key={s} value={s}>
+                    {humanStatus(s)}
+                  </option>
+                ))}
+              </select>
 
-            <button
-              onClick={() => setShowNew(true)}
-              className="inline-flex items-center justify-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm min-h-[44px] w-full md:w-auto"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Новый PL
-            </button>
+              <label className="inline-flex items-center gap-2 text-sm border rounded-lg px-3 py-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="w-4 h-4"
+                  checked={consOnly}
+                  onChange={(e) => setConsOnly(e.target.checked)}
+                />
+                Только консолидации
+              </label>
+
+              <button
+                onClick={() => setShowNew(true)}
+                className="inline-flex items-center justify-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Новый PL
+              </button>
+
+              <button
+                onClick={() => setSummaryOpen(true)}
+                className="inline-flex items-center justify-center gap-2 bg-gray-700 text-white px-4 py-2 rounded-lg text-sm"
+              >
+                Сводка
+              </button>
+            </div>
           </div>
-        </section>
+        </div>
+      </header>
 
-        {/* Левая колонка: этапы */}
-        <section className="bg-transparent">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="font-medium flex items-center gap-2">
+      <!-- Kanban Board -->
+      <main className="p-4 overflow-x-auto">
+        <div className="flex gap-4 min-w-max">
+          {OrderedStages.map((stage) => {
+            const stageCons = consByStage[stage] || [];
+            const stagePLs = groupedByStage[stage] || [];
+            const isLoadingStage = stage === "loading";
+
+            return (
+              <div key={stage} className="w-80 flex-shrink-0">
+                <div className="bg-gray-100 rounded-xl flex flex-col max-h-[calc(100vh-140px)]">
+                  <!-- Column Header -->
+                  <div className="px-3 py-3 flex items-center justify-between border-b border-gray-200">
+                    <h3 className="font-semibold text-sm text-gray-800">{StageLabels[stage]}</h3>
+                    <span className="bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full">
+                      {stageCons.length + stagePLs.length}
+                    </span>
+                  </div>
+
+                  <!-- Column Content -->
+                  <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                    <!-- Create Cons Button (only in Loading stage) -->
+                    {isLoadingStage && !consOnly && (
+                      <button
+                        onClick={() => setShowCreateCons(true)}
+                        className="w-full flex items-center justify-center gap-2 bg-indigo-600 text-white py-2 px-3 rounded-lg text-sm hover:bg-indigo-700 transition-colors"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        Создать консолидацию
+                      </button>
+                    )}
+
+                    <!-- Consolidations -->
+                    {!consOnly && stageCons.map((c) => (
+                      <KanbanConsCard
+                        key={`cons-${c.id}`}
+                        cons={c}
+                        onClick={() => setOpenConsId(c.id)}
+                        plCount={c.pl_ids?.length || 0}
+                      />
+                    ))}
+
+                    <!-- PL Cards -->
+                    {!consOnly && stagePLs.map((pl) => (
+                      <KanbanPLCard
+                        key={`pl-${pl.id}`}
+                        pl={pl}
+                        onClick={() => setSelectedId(pl.id)}
+                        clientName={clientNameOf(pl)}
+                      />
+                    ))}
+
+                    <!-- Cons Only Mode -->
+                    {consOnly && stageCons.map((c) => (
+                      <KanbanConsCard
+                        key={`cons-${c.id}`}
+                        cons={c}
+                        onClick={() => setOpenConsId(c.id)}
+                        plCount={c.pl_ids?.length || 0}
+                      />
+                    ))}
+
+                    <!-- Empty State -->
+                    {stageCons.length === 0 && stagePLs.length === 0 && (
+                      <div className="text-center py-8 text-gray-400 text-sm">
+                        Нет грузов
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </main>>
               <Package className="w-4 h-4" />
               {consOnly ? "Консолидации по этапам" : "Список PL по этапам"}
             </div>
@@ -773,10 +905,19 @@ async function handleCreatePLFromModal(payload) {
           </div>
         </section>
 
-        {/* Правая колонка: карточка PL (прячем, если consOnly) */}
-        <section className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-          {!consOnly ? (
-            selected ? (
+      {/* PL Detail Modal */}
+      {selected && !consOnly && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-4">
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => setSelectedId(null)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
               <PLCard
                 pl={selected}
                 warehouses={warehouses}
@@ -789,25 +930,22 @@ async function handleCreatePLFromModal(payload) {
                 helpers={{
                   readinessForPL,
                   canAllowToShip,
-                  requirementsResult,
                   nextStatusOf,
                   nextStageLabelOf,
                   humanStatus,
                   badgeColorByStatus,
                 }}
-                // ↓↓↓ добавляем переход к клиенту
-  navigateToClient={(clientId, clientName) => {
-    goToClients?.(clientId, clientName);
-  }}
+                navigateToClient={(clientId, clientName) => {
+                  setSelectedId(null);
+                  goToClients?.(clientId, clientName);
+                }}
+                currentUser={currentUser}
               />
-            ) : (
-              <EmptySummary items={filtered} />
-            )
-          ) : (
-            <OnlyConsHint />
-          )}
-        </section>
-      </main>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
 
       {/* Модалки */}
       {showNew && (
@@ -894,6 +1032,12 @@ async function handleCreatePLFromModal(payload) {
           }}
         />
       )}
+
+      <SummaryDrawer
+        open={summaryOpen}
+        onClose={() => setSummaryOpen(false)}
+        stats={stats}
+      />
     </>
   );
 }

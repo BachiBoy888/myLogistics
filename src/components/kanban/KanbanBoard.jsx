@@ -6,6 +6,7 @@ import { StageLabels, OrderedStages } from "../../constants/statuses.js";
 export default function KanbanBoard({
   groupedPLs,
   groupedCons,
+  allPLs,
   onPLClick,
   onConsClick,
   clientNameOf,
@@ -57,6 +58,7 @@ export default function KanbanBoard({
           label={StageLabels[stage]}
           pls={groupedPLs?.[stage] || []}
           cons={groupedCons?.[stage] || []}
+          allPLs={allPLs}
           onPLClick={onPLClick}
           onConsClick={onConsClick}
           clientNameOf={clientNameOf}

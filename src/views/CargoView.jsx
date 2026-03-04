@@ -526,6 +526,7 @@ export default function CargoView({
         <KanbanBoard
           groupedPLs={groupedByStage}
           groupedCons={consByStage}
+          allPLs={safePLs}
           onPLClick={(pl) => setSelectedId(pl.id)}
           onConsClick={(c) => setOpenConsId(c.id)}
           clientNameOf={clientNameOf}

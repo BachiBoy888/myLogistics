@@ -9,6 +9,7 @@ export default function KanbanColumn({
   label,
   pls,
   cons,
+  allPLs,
   onPLClick,
   onConsClick,
   clientNameOf,
@@ -81,7 +82,7 @@ export default function KanbanColumn({
             key={`cons-${c.id}`}
             cons={c}
             onClick={onConsClick}
-            pls={pls?.filter((p) => c.pl_ids?.includes(p.id)) || []}
+            pls={allPLs?.filter((p) => c.pl_ids?.includes(p.id)) || []}
             clientNameOf={clientNameOf}
           />
         ))}

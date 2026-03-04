@@ -1,5 +1,5 @@
 // src/views/CargoView.jsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import PLCard from "../components/PLCard.jsx";
 
 // UI
@@ -8,14 +8,10 @@ import ProgressBar from "../components/ui/ProgressBar.jsx";
 import Card from "../components/ui/Card.jsx";
 import Label from "../components/ui/Label.jsx";
 import LabelInput from "../components/ui/LabelInput.jsx";
-import ToggleChip from "../components/ui/ToggleChip.jsx";
-import KV from "../components/ui/KV.jsx";
+import ErrorModal from "../components/ui/ErrorModal.jsx";
 import NewPLModal from "../components/pl/NewPLModal.jsx";
 
-// Части карточки PL
-import DocsList from "../components/pl/DocsList.jsx";
-
-// API (фолбэк, если пропом не передали)
+// API
 import {
   listConsolidations as apiListCons,
   createConsolidation as apiCreateCons,
@@ -24,14 +20,18 @@ import {
   setConsolidationPLs as apiSetConsPLs,
   listPLDocs as apiListPLDocs,
   assignPLResponsible,
-  resolveOrCreateClient,                 
+  resolveOrCreateClient,
 } from "../api/client";
 
-// Вынесенные модалки консолидаций
+// Модалки
 import ConsolidationCreateModal from "../components/consolidation/ConsolidationCreateModal.jsx";
 import ConsolidationDetailsModal from "../components/consolidation/ConsolidationDetailsModal.jsx";
 
-// Константы/утилиты (ЕДИНЫЙ источник правды)
+// Kanban
+import KanbanBoard from "../components/kanban/KanbanBoard.jsx";
+import SummaryDrawer from "../components/cargo/SummaryDrawer.jsx";
+
+// Константы
 import {
   Statuses,
   humanStatus,
@@ -46,29 +46,11 @@ import {
   consNextStatusOf,
 } from "../constants/statuses.js";
 
-import {
-  readinessForPL,
-  canAllowToShip,
-  requirementsResult,
-} from "../utils/readiness.js";
+import { readinessForPL, canAllowToShip } from "../utils/readiness.js";
 
 // Иконки
-import {
-  Package,
-  Search,
-  PlusCircle,
-  ChevronRight,
-} from "lucide-react";
+import { Package, Search, PlusCircle, X, Filter } from "lucide-react";
 
-// Локальный uid
-const uid = () =>
-  typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : "id-" + Math.random().toString(36).slice(2, 10);
-
-/* ===========================
-   Вью: Мои грузы
-=========================== */
 export default function CargoView({
   pls,
   setPls,
@@ -80,44 +62,52 @@ export default function CargoView({
   clients,
   setClients,
   api,
-  currentUser,              
-  goToClients
+  currentUser,
+  goToClients,
 }) {
-  // --- API c фолбэками ---
   const API = {
     listPLs: api?.fetchPLs || api?.listPLs,
     createPL: api?.createPL,
     updatePL: api?.updatePL,
     deletePL: api?.deletePL,
     createClient: api?.createClient,
-
     listCons: api?.fetchCons || api?.listCons || apiListCons,
     createCons: api?.createConsolidation || apiCreateCons,
     updateCons: api?.updateConsolidation || apiUpdateCons,
     deleteCons: api?.deleteConsolidation || apiDeleteCons,
-
     setConsPLs: api?.setConsolidationPLs || apiSetConsPLs,
     listPLDocs: api?.listPLDocs || apiListPLDocs,
   };
 
-  // --- UI состояния
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [consOnly, setConsOnly] = useState(false);
-  const [selectedId, setSelectedId] = useState(
-    (Array.isArray(pls) ? pls.filter(Boolean) : []).find(
-      (p) => (p?.status ?? "draft") !== "closed"
-    )?.id ?? null
-  );
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState(null);
+  const [selectedPLs, setSelectedPLs] = useState([]);
 
-  // ===== Helpers: рефрешы с бэка =====
+  // Error modal state
+  const [errorModal, setErrorModal] = useState({
+    isOpen: false,
+    title: "Ошибка",
+    description: "",
+    ctaText: "Понятно",
+  });
+
+  const showError = (description, title = "Ошибка", ctaText = "Понятно") => {
+    setErrorModal({ isOpen: true, title, description, ctaText });
+  };
+
+  const [showNew, setShowNew] = useState(false);
+  const [showCreateCons, setShowCreateCons] = useState(false);
+  const [openConsId, setOpenConsId] = useState(null);
+
   async function refreshPLs({ keepSelected = true } = {}) {
     try {
       if (!API.listPLs) return;
       const list = await API.listPLs();
       const safeList = Array.isArray(list) ? list.filter(Boolean) : [];
       setPls(safeList);
-      hydrateDocsFor(safeList, { limit: 30 });
       if (keepSelected && selectedId) {
         const exists = safeList.some((p) => p?.id === selectedId);
         if (!exists) setSelectedId(null);
@@ -136,14 +126,13 @@ export default function CargoView({
     }
   }
 
-  // нормализация входных
   const safePLs = useMemo(() => {
     const arr = Array.isArray(pls) ? pls.filter(Boolean) : [];
     return arr.map((p) => ({
       ...p,
       status: p?.status ?? "draft",
       id: p?.id ?? null,
-      pl_number: String(p?.pl_number ?? p?.plNumber ?? "" ?? ""), // строка
+      pl_number: String(p?.pl_number ?? p?.plNumber ?? ""),
       title: p?.title ?? p?.name ?? "Без названия",
     }));
   }, [pls]);
@@ -157,7 +146,6 @@ export default function CargoView({
     }));
   }, [cons]);
 
-  // открытие PL извне
   useEffect(() => {
     if (openPLId) {
       setSelectedId(openPLId);
@@ -165,67 +153,43 @@ export default function CargoView({
     }
   }, [openPLId, onConsumeOpenPL]);
 
-  // первичные загрузки
   useEffect(() => {
     refreshCons();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     refreshPLs({ keepSelected: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // имя клиента
   const clientNameOf = (pl) =>
     typeof pl?.client === "string"
       ? pl.client
       : pl?.client?.name || pl?.client_name || "";
 
-  // список клиентов для модалки
   const clientOptions = useMemo(() => {
     const s = new Set(safePLs.map((p) => clientNameOf(p)).filter(Boolean));
     return Array.from(s).sort((a, b) => a.localeCompare(b, "ru"));
   }, [safePLs]);
 
-  // === Поиск/фильтр ===
   function norm(str = "") {
     return String(str).toLowerCase().trim();
-  }
-  function normCompact(str = "") {
-    return norm(str).replace(/[\s-_/\\.]+/g, "");
   }
 
   const filtered = useMemo(() => {
     const q = norm(query);
-    const qCompact = normCompact(query);
-
-    return safePLs
-      .filter((p) => (p?.status ?? "draft") !== "closed")
-      .filter((p) => {
-        const name = clientNameOf(p);
-        const num = p.pl_number || "";
-        const haystack = norm(`${num} ${name} ${p.title}`);
-        const hayCompact = normCompact(`${num}`);
-
-        const matchesQuery =
-          !q ||
-          haystack.includes(q) ||
-          (qCompact && hayCompact.includes(qCompact));
-
-        const matchesStatus =
-          statusFilter === "all"
-            ? true
-            : norm(p?.status ?? "draft") === norm(statusFilter);
-
-        return matchesQuery && matchesStatus;
-      });
+    return safePLs.filter((p) => {
+      const name = clientNameOf(p);
+      const num = p.pl_number || "";
+      const haystack = norm(`${num} ${name} ${p.title}`);
+      const matchesQuery = !q || haystack.includes(q);
+      const matchesStatus =
+        statusFilter === "all" || norm(p?.status ?? "draft") === norm(statusFilter);
+      return matchesQuery && matchesStatus;
+    });
   }, [safePLs, query, statusFilter]);
 
-  // догрузка доков для видимых
   const hydratedDocsRef = useRef(new Set());
   async function hydrateDocsFor(plArray, { limit = 30 } = {}) {
     const toFetch = (plArray || [])
-      .filter(Boolean)
       .filter((p) => p?.id && !hydratedDocsRef.current.has(p.id))
       .slice(0, limit);
 
@@ -245,17 +209,10 @@ export default function CargoView({
   }
   useEffect(() => {
     if (filtered.length) hydrateDocsFor(filtered, { limit: 50 });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered]);
 
-  // активные консолидации: множество PL-идов
   const ACTIVE_CONS_STATUSES = new Set([
-    "to_load",
-    "loaded",
-    "to_customs",
-    "released",
-    "kg_customs",
-    "delivered",
+    "to_load", "loaded", "to_customs", "released", "kg_customs", "delivered",
   ]);
   const activeConsPLIds = useMemo(() => {
     const s = new Set();
@@ -267,706 +224,493 @@ export default function CargoView({
     return s;
   }, [safeCons]);
 
-  // группировка PL по этапам (исключая уже в активных консолидациях)
   const groupedByStage = useMemo(() => {
     const groups = OrderedStages.reduce((acc, k) => ((acc[k] = []), acc), {});
     filtered
       .filter((pl) => !activeConsPLIds.has(pl.id))
       .forEach((pl) => {
         const st = stageOf(pl?.status ?? "draft");
-        if (groups[st]) groups[st].push(pl);
+        if (groups[st]) groups[st].push({ ...pl, stage: st });
       });
     return groups;
   }, [filtered, activeConsPLIds]);
 
-  // Для «Погрузка»
-  const plsLoading = useMemo(
-    () =>
-      filtered.filter((p) =>
-        ["to_load", "loaded"].includes(p?.status ?? "draft")
-      ),
-    [filtered]
-  );
-  const plToCons = useMemo(() => {
-    const m = new Map();
-    safeCons.forEach((c) => c.pl_ids.forEach((id) => m.set(id, c.id)));
-    return m;
-  }, [safeCons]);
-  const notConsolidatedPLs = useMemo(
-    () => plsLoading.filter((p) => !plToCons.has(p.id)),
-    [plsLoading, plToCons]
-  );
-
-  // консолидации по этапам
   const consByStage = useMemo(() => {
     const m = OrderedStages.reduce((acc, k) => ((acc[k] = []), acc), {});
     safeCons.forEach((c) => {
       const st = stageOf(c?.status ?? "to_load");
-      if (m[st]) m[st].push(c);
+      if (m[st]) m[st].push({ ...c, stage: st });
     });
     return m;
   }, [safeCons]);
+
+  const stats = useMemo(() => {
+    const total = safePLs.length;
+    const closedCount = safePLs.filter((p) =>
+      ["closed", "cancelled"].includes(p.status)
+    ).length;
+    const activeCount = total - closedCount;
+    const progressSum = safePLs.reduce((sum, pl) => {
+      const stageIdx = OrderedStages.indexOf(stageOf(pl.status));
+      const progress = Math.round((stageIdx / (OrderedStages.length - 1)) * 100);
+      return sum + progress;
+    }, 0);
+    const avgProgress = total > 0 ? Math.round(progressSum / total) : 0;
+    const stageBreakdown = OrderedStages.map((stage) => {
+      const count = (groupedByStage[stage] || []).length;
+      const label = StageLabels[stage];
+      return { stage, label, count, color: "bg-blue-500" };
+    });
+    return { total, activeCount, closedCount, avgProgress, stageBreakdown };
+  }, [safePLs, groupedByStage]);
 
   const selected = useMemo(
     () => safePLs.find((p) => p.id === selectedId) ?? null,
     [safePLs, selectedId]
   );
 
-  // локальное обновление в стейте
-  function updatePLLocal(id, patch) {
-    setPls((prev) =>
-      (Array.isArray(prev) ? prev : []).map((p) =>
-        p?.id === id
-          ? { ...p, ...patch, updated_at: new Date().toISOString() }
-          : p
-      )
-    );
-  }
+  const handlePLMove = useCallback(
+    async (plId, targetStage, isCons = false) => {
+      const stageToStatus = {
+        intake: "draft",
+        collect_docs: "awaiting_docs",
+        collect_cargo: "awaiting_load",
+        loading: "to_load",
+        cn_formalities: "to_customs",
+        in_transit: "released",
+        kg_customs: "kg_customs",
+        payment: "collect_payment",
+        closed_stage: "closed",
+      };
 
-  // === Патчи, не требующие PUT на сервер ===
-  const isLocalOnlyPatch = (patch) =>
-    patch && (Object.prototype.hasOwnProperty.call(patch, "comments")
-           || Object.prototype.hasOwnProperty.call(patch, "docs"));
+      const newStatus = stageToStatus[targetStage];
+      if (!newStatus) return;
 
-  // серверное сохранение + синк локального стейта
+      if (isCons) {
+        // Move consolidation
+        const consItem = safeCons.find((c) => c.id === plId);
+        if (!consItem || newStatus === consItem.status) return;
+
+        // Find ALL PLs inside this consolidation
+        const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
+        
+        try {
+          // Сначала обновляем все PL внутри консолидации до нового статуса
+          // Это нужно чтобы бэкенд разрешил движение назад
+          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
+          
+          // Затем обновляем саму консолидацию
+          await API.updateCons(plId, { status: newStatus });
+          
+          await Promise.all([refreshPLs(), refreshCons()]);
+        } catch (err) {
+          console.error("Ошибка при перемещении консолидации:", err);
+          showError("Не удалось переместить консолидацию: " + (err.message || ""));
+        }
+      } else {
+        // Move PL
+        const pl = safePLs.find((p) => p.id === plId);
+        if (!pl || newStatus === pl.status) return;
+
+        try {
+          await API.updatePL(plId, { status: newStatus });
+          await refreshPLs({ keepSelected: true });
+          setSelectedPLs([]);
+        } catch (err) {
+          console.error("Ошибка при перемещении PL:", err);
+          showError("Не удалось переместить груз");
+        }
+      }
+    },
+    [safePLs, safeCons, API]
+  );
+
+  const handleSelectPL = useCallback((plId, isShift) => {
+    setSelectedPLs((prev) => {
+      if (prev.includes(plId)) {
+        return prev.filter((id) => id !== plId);
+      }
+      return [...prev, plId];
+    });
+  }, []);
+
   async function savePLPatch(id, patch) {
-    // 1) Локальные патчи (comments/docs) — без запроса к серверу
-    if (isLocalOnlyPatch(patch)) {
-      updatePLLocal(id, patch);
-      setSelectedId(id); // держим карточку открытой
+    const isLocalOnly =
+      patch &&
+      (Object.prototype.hasOwnProperty.call(patch, "comments") ||
+        Object.prototype.hasOwnProperty.call(patch, "docs"));
+
+    if (isLocalOnly) {
+      setPls((prev) =>
+        (Array.isArray(prev) ? prev : []).map((p) =>
+          p?.id === id ? { ...p, ...patch, updated_at: new Date().toISOString() } : p
+        )
+      );
       return;
     }
 
-    // 2) Остальное — шлём на сервер
     try {
       const updated = await API.updatePL(id, patch);
       setPls((prev) =>
         (Array.isArray(prev) ? prev : []).map((p) =>
-          p?.id === id
-            // если сервер вернул пусто (204) — не удаляем PL, а мержим локальный патч
-            ? (updated ?? { ...p, ...patch, updated_at: new Date().toISOString() })
-            : p
+          p?.id === id ? updated ?? { ...p, ...patch, updated_at: new Date().toISOString() } : p
         )
       );
-      setSelectedId(id); // оставляем карточку открытой
     } catch (e) {
       console.error("Ошибка при сохранении PL:", e);
-      alert("Не удалось сохранить изменения");
-      // Подстрахуемся перечиткой (если вдруг что-то разъехалось)
+      showError("Не удалось сохранить изменения");
       await refreshPLs({ keepSelected: true });
-      setSelectedId(id);
     }
   }
 
-  // ===== Модалки =====
-  const [showNew, setShowNew] = useState(false);
-  const [showCreateCons, setShowCreateCons] = useState(false);
-  const [openConsId, setOpenConsId] = useState(null);
-
-  // Создание PL
-async function handleCreatePLFromModal(payload) {
-  const {
-    client,            // текст из инпута
-    client_id,         // id, если выбран из подсказок (может быть null)
-    title,
-    volume_cbm,
-    weight_kg,
-    incoterm,
-    exw_address,
-    fob_wh_id,
-    shipper_name,
-    shipper_contacts,
-  } = payload;
-
-  const clientName = (client || "").trim();
-  if (!clientName) {
-    alert("Введите клиента перед созданием PL");
-    return;
-  }
-
-  // 1) Если модалка уже дала нам выбранного клиента — используем его
-  let clientRow = null;
-  if (client_id) {
-    clientRow = (clients || []).find((c) => Number(c.id) === Number(client_id)) || null;
-    // если в локальном стейте его ещё нет — минимально добавим-отразим
-    if (!clientRow) {
-      clientRow = { id: client_id, name: clientName };
-      setClients((prev) => [...prev, clientRow]);
-    }
-  } else {
-    // 2) Иначе — пробуем найти точное совпадение или создать нового через API
-    try {
-      clientRow = await resolveOrCreateClient(clientName);
-      if (clientRow && !clients.some((c) => c.id === clientRow.id)) {
-        setClients((prev) => [...prev, clientRow]);
-      }
-    } catch (err) {
-      console.error("resolveOrCreateClient failed:", err);
-      alert("Не удалось определить/создать клиента");
+  async function handleCreatePLFromModal(payload) {
+    const { client, client_id, title, volume_cbm, weight_kg, incoterm, exw_address, fob_wh_id } = payload;
+    const clientName = (client || "").trim();
+    if (!clientName) {
+      showError("Введите клиента перед созданием PL");
       return;
     }
-  }
 
-  // 3) Адрес забора
-  const pickup_address =
-    incoterm === "EXW"
-      ? (exw_address || "").trim()
-      : (() => {
-          const wh = warehouses.find((w) => w.id === fob_wh_id);
-          return wh ? `${wh.name} • ${wh.address}` : "";
-        })();
-
-  // 4) Тело запроса на создание PL
-  const body = {
-    client_id: clientRow.id,
-    title: title?.trim() || "",
-    weight_kg: parseFloat(weight_kg) || null,
-    volume_cbm: parseFloat(volume_cbm) || null,
-    places_qty: 0,
-    pickup_address,
-    shipper_name: shipper_name?.trim() || "",
-    shipper_contacts: shipper_contacts?.trim() || "",
-    incoterm,
-    fob_warehouse_id: incoterm === "FOB" ? fob_wh_id : null,
-    status: "draft",
-    docs: [],
-    comments: [],
-    quote: { calc_cost: null, client_price: null },
-  };
-
-  try {
-    const saved = await API.createPL(body);
-
-    // авто-назначение создателя ответственным (как было)
-    if (currentUser?.id) {
+    let clientRow = null;
+    if (client_id) {
+      clientRow = (clients || []).find((c) => Number(c.id) === Number(client_id)) || null;
+      if (!clientRow) {
+        clientRow = { id: client_id, name: clientName };
+        setClients((prev) => [...prev, clientRow]);
+      }
+    } else {
       try {
-        await assignPLResponsible(saved.id, currentUser.id);
-        setPls((prev) =>
-          (Array.isArray(prev) ? prev : []).map((p) =>
-            p?.id === saved.id
-              ? { ...p, responsible: { id: currentUser.id, name: currentUser.name } }
-              : p
-          )
-        );
-      } catch (e) {
-        console.debug("self-assign failed (non-blocking):", e);
+        clientRow = await resolveOrCreateClient(clientName);
+        if (clientRow && !clients.some((c) => c.id === clientRow.id)) {
+          setClients((prev) => [...prev, clientRow]);
+        }
+      } catch (err) {
+        showError("Не удалось определить/создать клиента");
+        return;
       }
     }
 
-    setPls((prev) => [saved, ...(Array.isArray(prev) ? prev : [])]);
-    setSelectedId(saved.id);
-    setShowNew(false);
-    await refreshPLs({ keepSelected: true });
-  } catch (e) {
-    console.error("Ошибка при создании PL:", e);
-    alert("Не удалось сохранить PL");
-  }
-}
+    const pickup_address =
+      incoterm === "EXW"
+        ? (exw_address || "").trim()
+        : (() => {
+            const wh = warehouses.find((w) => w.id === fob_wh_id);
+            return wh ? `${wh.name} • ${wh.address}` : "";
+          })();
 
-  // Удаление PL
+    const body = {
+      client_id: clientRow.id,
+      title: title?.trim() || "",
+      weight_kg: parseFloat(weight_kg) || null,
+      volume_cbm: parseFloat(volume_cbm) || null,
+      places_qty: 0,
+      pickup_address,
+      incoterm,
+      fob_warehouse_id: incoterm === "FOB" ? fob_wh_id : null,
+      status: "draft",
+      docs: [],
+      comments: [],
+      quote: { calc_cost: null, client_price: null },
+    };
+
+    try {
+      const saved = await API.createPL(body);
+      if (currentUser?.id) {
+        try {
+          await assignPLResponsible(saved.id, currentUser.id);
+        } catch (e) {}
+      }
+      setPls((prev) => [saved, ...(Array.isArray(prev) ? prev : [])]);
+      setSelectedId(saved.id);
+      setShowNew(false);
+      await refreshPLs({ keepSelected: true });
+    } catch (e) {
+      showError("Не удалось сохранить PL");
+    }
+  }
+
   async function handleDeletePL(id) {
     try {
       await API.deletePL(id);
-      setPls((prev) =>
-        (Array.isArray(prev) ? prev : []).filter((p) => p?.id !== id)
-      );
+      setPls((prev) => (Array.isArray(prev) ? prev : []).filter((p) => p?.id !== id));
       if (selectedId === id) setSelectedId(null);
       await refreshPLs({ keepSelected: true });
     } catch (err) {
-      console.error("Ошибка при удалении PL:", err);
-      alert("Не удалось удалить PL");
+      showError("Не удалось удалить PL");
     }
   }
 
-  // Обновление статуса PL
   async function handleUpdateStatus(id, status) {
     try {
       await API.updatePL(id, { status });
       await refreshPLs({ keepSelected: true });
       setSelectedId(id);
     } catch (err) {
-      console.error("Ошибка при обновлении статуса:", err);
-      alert("Не удалось обновить статус");
+      showError("Не удалось обновить статус");
     }
   }
 
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape") {
+        setSelectedId(null);
+        setOpenConsId(null);
+        setShowNew(false);
+        setShowCreateCons(false);
+        setSelectedPLs([]);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, []);
+
   return (
-    <>
-      <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Поиск/фильтры */}
-        <section className="bg-white rounded-2xl shadow-sm border p-4 lg:col-span-2">
-          <div className="flex flex-col gap-2 md:flex-row md:items-center md:flex-wrap">
-            <div className="relative w-full md:w-72">
-              <Search className="w-4 h-4 absolute left-3 top-3 text-gray-500" />
-              <input
-                className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm min-h-[44px]"
-                placeholder="Поиск: номер PL, клиент, груз…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </div>
+    <div className="h-screen flex flex-col bg-gray-900">
+      {/* Header */}
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Package className="w-5 h-5 text-gray-300" />
+          <span className="font-semibold text-gray-100">Мои грузы</span>
+          <span className="text-sm text-gray-400">({safePLs.length})</span>
+        </div>
 
-            <select
-              className="border rounded-lg text-sm py-2 px-2 min-h-[44px]"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              disabled={consOnly}
-              title={consOnly ? "Фильтр по статусам скрыт при консолидациях" : ""}
-            >
-              <option value="all">Все статусы</option>
-              {Statuses.filter((s) => s !== "closed").map((s) => (
-                <option key={s} value={s}>
-                  {humanStatus(s)}
-                </option>
-              ))}
-            </select>
-
-            {/* Переключатель «только консолидации» */}
-            <label className="inline-flex items-center gap-2 text-sm border rounded-lg px-3 py-2 min-h-[44px] cursor-pointer">
-              <input
-                type="checkbox"
-                className="w-4 h-4"
-                checked={consOnly}
-                onChange={(e) => setConsOnly(e.target.checked)}
-              />
-              Показывать только консолидации
-            </label>
-
-            <button
-              onClick={() => setShowNew(true)}
-              className="inline-flex items-center justify-center gap-2 bg-black text-white px-4 py-2 rounded-lg text-sm min-h-[44px] w-full md:w-auto"
-            >
-              <PlusCircle className="w-4 h-4" />
-              Новый PL
-            </button>
-          </div>
-        </section>
-
-        {/* Левая колонка: этапы */}
-        <section className="bg-transparent">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="font-medium flex items-center gap-2">
-              <Package className="w-4 h-4" />
-              {consOnly ? "Консолидации по этапам" : "Список PL по этапам"}
-            </div>
-            {!consOnly && (
-              <div className="text-xs text-gray-500">Всего PL: {filtered.length}</div>
-            )}
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              className="pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm w-64 text-gray-100 placeholder-gray-400"
+              placeholder="Поиск: номер PL, клиент, груз…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
           </div>
 
-          <div className="space-y-3">
-            {OrderedStages.map((stage) => (
-              <div
-                key={stage}
-                className="rounded-2xl bg-white shadow-md border border-gray-100"
-              >
-                {/* Заголовок карточки этапа */}
-                <div className="px-4 py-3 flex items-center justify-between">
-                  <div className="text-sm font-semibold text-gray-800">
-                    {StageLabels[stage]}
-                  </div>
-                  <Chip className="bg-gray-200 text-gray-800">
-                    {consOnly
-                      ? (consByStage[stage]?.length ?? 0)
-                      : (groupedByStage[stage]?.length ?? 0)}
-                  </Chip>
-                </div>
-
-                {/* Спец-панель «Погрузка» (только когда показываем PL) */}
-                {!consOnly && stage === "loading" && (
-                  <div className="px-4 pb-2">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
-                      <div className="text-xs text-gray-600">
-                        Не консолидированы: <b>{notConsolidatedPLs.length}</b> •
-                        Консолидаций: <b>{consByStage["loading"].length}</b>
-                      </div>
-                      <button
-                        onClick={() => setShowCreateCons(true)}
-                        className="inline-flex items-center justify-center gap-2 bg-black text-white px-3 py-2 rounded-lg text-sm min-h-[40px]"
-                        disabled={notConsolidatedPLs.length === 0}
-                      >
-                        <PlusCircle className="w-4 h-4" />
-                        Создать консолидацию
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Консолидации этого этапа */}
-                {consByStage[stage]?.length > 0 && (
-                  <div className="px-4 pb-2">
-                    <div className="mb-2 text-xs uppercase tracking-wide text-gray-500">
-                      Консолидации
-                    </div>
-                    <div className="space-y-3">
-                      {consByStage[stage].map((c) => {
-                        const plsOfC = c.pl_ids
-                          .map((id) => safePLs.find((p) => p.id === id))
-                          .filter(Boolean);
-                        const sumW = plsOfC.reduce(
-                          (a, p) => a + (p.weight_kg || 0),
-                          0
-                        );
-                        const sumV = plsOfC.reduce(
-                          (a, p) => a + (p.volume_cbm || 0),
-                          0
-                        );
-                        const overW =
-                          c.capacity_kg > 0 && sumW > c.capacity_kg;
-                        const overV =
-                          c.capacity_cbm > 0 && sumV > c.capacity_cbm;
-
-                        return (
-                          <div key={c.id} className="border rounded-xl">
-                            <button
-                              onClick={() => setOpenConsId(c.id)}
-                              className="w-full text-left p-3 hover:bg-gray-50"
-                              title="Открыть консолидацию"
-                            >
-                              <div className="flex items-center justify-between">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold">
-                                      {c.number}
-                                    </span>
-                                    <Chip
-                                      className={badgeColorByConsStatus(
-                                        c.status
-                                      )}
-                                    >
-                                      {humanConsStatus(c.status)}
-                                    </Chip>
-                                  </div>
-                                  <div className="text-xs text-gray-600 mt-1">
-                                    PL: {plsOfC.length} • Вес:{" "}
-                                    {sumW.toFixed(2)} кг
-                                    {c.capacity_kg
-                                      ? ` / ${c.capacity_kg} кг`
-                                      : ""}{" "}
-                                    • Объём: {sumV.toFixed(2)} м³
-                                    {c.capacity_cbm
-                                      ? ` / ${c.capacity_cbm} м³`
-                                      : ""}
-                                  </div>
-                                  {(overW || overV) && (
-                                    <div className="mt-1 text-xs text-rose-600">
-                                      {!overW ? null : "Превышение по весу. "}
-                                      {!overV ? null : "Превышение по объёму."}
-                                    </div>
-                                  )}
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              </div>
-                            </button>
-
-                            {/* мини-список PL внутри */}
-                            {!consOnly && (
-                              <div className="px-3 pb-3">
-                                <div className="divide-y rounded-lg border bg-gray-50">
-                                  {plsOfC.map((p) => {
-                                    const ready = readinessForPL(p);
-                                    return (
-                                      <button
-                                        key={p.id}
-                                        className="w-full text-left p-2 hover:bg-gray-100 flex items-center justify-between"
-                                        onClick={() => setSelectedId(p.id)}
-                                        title="Открыть карточку PL справа"
-                                      >
-                                        <div className="truncate">
-                                          <span className="font-medium">
-                                            {p.pl_number}
-                                          </span>
-                                          <span className="text-gray-600">
-                                            {" "}
-                                            •{" "}
-                                            {typeof p.client === "string"
-                                              ? p.client
-                                              : p.client?.name || ""}
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-3 text-xs text-gray-600">
-                                          <div className="w-24">
-                                            <ProgressBar value={ready} />
-                                          </div>
-                                          <span>{ready}%</span>
-                                          <span>
-                                            {p.weight_kg} кг • {p.volume_cbm} м³
-                                          </span>
-                                        </div>
-                                      </button>
-                                    );
-                                  })}
-                                  {plsOfC.length === 0 && (
-                                    <div className="p-2 text-sm text-gray-500">
-                                      Пока пусто
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Список PL этого этапа (скрываем, если consOnly) */}
-                {!consOnly &&
-                  (groupedByStage[stage].length === 0 ? (
-                    <div className="px-4 pb-4 text-sm text-gray-400">
-                      Нет PL на этой стадии
-                    </div>
-                  ) : (
-                    <div className="px-2 pb-2">
-                      <div className="divide-y rounded-xl border bg-white overflow-hidden">
-                        {groupedByStage[stage].map((pl) => {
-                          const readiness = readinessForPL(pl);
-                          return (
-                            <button
-                              key={pl.id}
-                              onClick={() => setSelectedId(pl.id)}
-                              className={`w-full text-left p-4 hover:bg-gray-50 ${
-                                selectedId === pl.id ? "bg-gray-50" : ""
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-3">
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <span className="font-semibold truncate">
-                                      {pl.pl_number}
-                                    </span>
-                                    <Chip className={badgeColorByStatus(pl.status)}>
-                                      {humanStatus(pl.status)}
-                                    </Chip>
-                                  </div>
-                                  <div className="text-sm text-gray-600 truncate">
-                                    {typeof pl.client === "string"
-                                      ? pl.client
-                                      : pl.client?.name || "—"}{" "}
-                                    • {pl.title}
-                                  </div>
-                                  <div className="mt-2 flex items-center gap-2">
-                                    <div className="w-32">
-                                      <ProgressBar value={readiness} />
-                                    </div>
-                                    <span className="text-xs text-gray-600">
-                                      {readiness}%
-                                    </span>
-                                    {canAllowToShip(pl) && (
-                                      <Chip className="bg-emerald-100 text-emerald-700">
-                                        Готов к выпуску
-                                      </Chip>
-                                    )}
-                                  </div>
-                                </div>
-                                <ChevronRight className="w-4 h-4 text-gray-400" />
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-              </div>
+          <select
+            className="bg-gray-700 border border-gray-600 rounded-lg text-sm py-2 px-3 text-gray-100"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            disabled={consOnly}
+          >
+            <option value="all">Все статусы</option>
+            {Statuses.map((s) => (
+              <option key={s} value={s}>
+                {humanStatus(s)}
+              </option>
             ))}
-          </div>
-        </section>
+          </select>
 
-        {/* Правая колонка: карточка PL (прячем, если consOnly) */}
-        <section className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-          {!consOnly ? (
-            selected ? (
-              <PLCard
-                pl={selected}
-                warehouses={warehouses}
-                onUpdate={(patch) => savePLPatch(selected.id, patch)}
-                onNext={(newStatus) => handleUpdateStatus(selected.id, newStatus)}
-                onDelete={() => handleDeletePL(selected.id)}
-                onClose={() => setSelectedId(null)}
-                cons={safeCons}
-                ui={{ Chip, ProgressBar, Card, Label, LabelInput }}
-                helpers={{
-                  readinessForPL,
-                  canAllowToShip,
-                  requirementsResult,
-                  nextStatusOf,
-                  nextStageLabelOf,
-                  humanStatus,
-                  badgeColorByStatus,
-                }}
-                // ↓↓↓ добавляем переход к клиенту
-  navigateToClient={(clientId, clientName) => {
-    goToClients?.(clientId, clientName);
-  }}
-              />
-            ) : (
-              <EmptySummary items={filtered} />
-            )
-          ) : (
-            <OnlyConsHint />
-          )}
-        </section>
-      </main>
+          <button
+            onClick={() => setConsOnly(!consOnly)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${
+              consOnly 
+                ? "bg-blue-600/20 border-blue-500 text-blue-400" 
+                : "bg-gray-700 border-gray-600 text-gray-300"
+            }`}
+          >
+            <Filter className="w-4 h-4" />
+            Консолидации
+          </button>
 
-      {/* Модалки */}
-      {showNew && (
-        <NewPLModal
-          onClose={() => setShowNew(false)}
-          onCreate={handleCreatePLFromModal}
-          clientOptions={clientOptions}
-          warehouses={warehouses}
-        />
-      )}
+          <button
+            onClick={() => setShowNew(true)}
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            <PlusCircle className="w-4 h-4" />
+            Новый PL
+          </button>
 
-      {showCreateCons && (
-        <ConsolidationCreateModal
-          onClose={() => setShowCreateCons(false)}
-          plsCandidate={notConsolidatedPLs}
-          onCreate={async ({ capacity_cbm, capacity_kg, pl_ids }) => {
-            try {
-              await API.createCons({
-                title: `Консолидация`,
-                plIds: pl_ids.map(Number),
-              });
-              setShowCreateCons(false);
-              await refreshCons();
-            } catch (e) {
-              console.error("createConsolidation failed:", e);
-              alert("Не удалось создать консолидацию");
-            }
-          }}
-        />
-      )}
+          <button
+            onClick={() => setSummaryOpen(true)}
+            className="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            Сводка
+          </button>
+        </div>
+      </header>
 
-      {openConsId && (
-        <ConsolidationDetailsModal
-          cons={safeCons.find((c) => c.id === openConsId)}
+      {/* Main Content */}
+      <div className="flex-1 overflow-hidden">
+        <KanbanBoard
+          groupedPLs={groupedByStage}
+          groupedCons={consByStage}
           allPLs={safePLs}
-          consAll={safeCons}
-          onClose={() => setOpenConsId(null)}
-          onAdvance={async (c) => {
-            const next = consNextStatusOf(c.status);
-            if (!next) return;
-
-            const plsOfC = safePLs.filter((p) => c.pl_ids.includes(p.id));
-            const rank = (st) => OrderedStages.indexOf(stageOf(st));
-            const needUpgrade = plsOfC.filter((p) => rank(p.status) < rank(next));
-
-            try {
-              await Promise.all(
-                needUpgrade.map((p) => API.updatePL(p.id, { status: next }))
-              );
-              await API.updateCons(c.id, { status: next });
-
-              setOpenConsId(null);
-              setSelectedId(null);
-              await Promise.all([refreshPLs(), refreshCons()]);
-            } catch (e) {
-              console.error("updateConsolidation failed:", e);
-              const msg = String(e?.message || "");
-              alert(
-                msg.includes("Некоторые PL")
-                  ? msg
-                  : "Не удалось перейти к следующему этапу"
-              );
-            }
-          }}
-          onDissolve={async (c) => {
-            try {
-              await API.deleteCons(c.id);
-              setOpenConsId(null);
-              await refreshCons();
-              await refreshPLs({ keepSelected: true });
-            } catch (e) {
-              console.error("deleteConsolidation failed:", e);
-              alert("Не удалось расформировать консолидацию");
-            }
-          }}
-          onSavePLs={async (id, plIds) => {
-            try {
-              await API.setConsPLs(id, plIds.map(Number));
-              await Promise.all([refreshCons(), refreshPLs()]);
-            } catch (e) {
-              console.error("setConsolidationPLs failed:", e);
-              alert("Не удалось сохранить состав консолидации");
-            }
-          }}
+          onPLClick={(pl) => setSelectedId(pl.id)}
+          onConsClick={(c) => setOpenConsId(c.id)}
+          clientNameOf={clientNameOf}
+          onPLMove={handlePLMove}
+          selectedPLs={selectedPLs}
+          onSelectPL={handleSelectPL}
+          consOnly={consOnly}
+          onCreateCons={() => setShowCreateCons(true)}
         />
+      </div>
+
+      {/* Footer */}
+      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 text-xs text-gray-400 flex items-center justify-between shrink-0">
+        <div>
+          {selectedPLs.length > 0 && (
+            <span className="font-medium text-blue-400">
+              Выбрано: {selectedPLs.length} грузов
+            </span>
+          )}
+        </div>
+        <div>Перетащите карточку для смены этапа • Shift+Click для множественного выбора</div>
+      </div>
+
+      {/* PL Modal */}
+      {selected && (
+        <Modal onClose={() => setSelectedId(null)}>
+          <PLCard
+            pl={selected}
+            warehouses={warehouses}
+            onUpdate={(patch) => savePLPatch(selected.id, patch)}
+            onNext={(newStatus) => handleUpdateStatus(selected.id, newStatus)}
+            onDelete={() => handleDeletePL(selected.id)}
+            onClose={() => setSelectedId(null)}
+            cons={safeCons}
+            ui={{ Chip, ProgressBar, Card, Label, LabelInput }}
+            helpers={{
+              readinessForPL,
+              canAllowToShip,
+              nextStatusOf,
+              nextStageLabelOf,
+              humanStatus,
+              badgeColorByStatus,
+            }}
+            navigateToClient={(clientId, clientName) => {
+              setSelectedId(null);
+              goToClients?.(clientId, clientName);
+            }}
+            currentUser={currentUser}
+          />
+        </Modal>
       )}
-    </>
-  );
-}
 
-/* ===========================
-   Вспомогательные компоненты
-=========================== */
+      {/* Cons Modal */}
+      {openConsId && (
+        <Modal onClose={() => setOpenConsId(null)}>
+          <ConsolidationDetailsModal
+            cons={safeCons.find((c) => c.id === openConsId)}
+            allPLs={safePLs}
+            consAll={safeCons}
+            onClose={() => setOpenConsId(null)}
+            onAdvance={async (c) => {
+              const next = consNextStatusOf(c.status);
+              if (!next) return;
+              const plsOfC = safePLs.filter((p) => c.pl_ids.includes(p.id));
+              const rank = (st) => OrderedStages.indexOf(stageOf(st));
+              const needUpgrade = plsOfC.filter((p) => rank(p.status) < rank(next));
+              try {
+                await Promise.all(needUpgrade.map((p) => API.updatePL(p.id, { status: next })));
+                await API.updateCons(c.id, { status: next });
+                setOpenConsId(null);
+                await Promise.all([refreshPLs(), refreshCons()]);
+              } catch (e) {
+                showError("Не удалось перейти к следующему этапу");
+              }
+            }}
+            onDissolve={async (c) => {
+              try {
+                await API.deleteCons(c.id);
+                setOpenConsId(null);
+                await refreshCons();
+                await refreshPLs({ keepSelected: true });
+              } catch (e) {
+                showError("Не удалось расформировать консолидацию");
+              }
+            }}
+            onSavePLs={async (id, plIds) => {
+              try {
+                await API.setConsPLs(id, plIds.map(Number));
+                await Promise.all([refreshCons(), refreshPLs()]);
+              } catch (e) {
+                showError("Не удалось сохранить состав консолидации");
+              }
+            }}
+          />
+        </Modal>
+      )}
 
-function EmptySummary({ items = [] }) {
-  return (
-    <div>
-      <div className="p-4 border-b">
-        <div className="font-medium">Сводка по этапам</div>
-      </div>
-      <div className="p-4">
-        <StageSummary items={items} />
-      </div>
+      {/* New PL Modal */}
+      {showNew && (
+        <Modal onClose={() => setShowNew(false)}>
+          <NewPLModal
+            onClose={() => setShowNew(false)}
+            onCreate={handleCreatePLFromModal}
+            clientOptions={clientOptions}
+            warehouses={warehouses}
+          />
+        </Modal>
+      )}
+
+      {/* Create Cons Modal */}
+      {showCreateCons && (
+        <Modal onClose={() => setShowCreateCons(false)}>
+          <ConsolidationCreateModal
+            onClose={() => setShowCreateCons(false)}
+            plsCandidate={Object.values(groupedByStage)
+              .flat()
+              .filter((p) => ["to_load", "loaded"].includes(p.status))}
+            onCreate={async ({ pl_ids }) => {
+              try {
+                await API.createCons({ title: `Консолидация`, plIds: pl_ids.map(Number) });
+                setShowCreateCons(false);
+                await refreshCons();
+              } catch (e) {
+                showError("Не удалось создать консолидацию");
+              }
+            }}
+          />
+        </Modal>
+      )}
+
+      {/* Summary Drawer */}
+      <SummaryDrawer open={summaryOpen} onClose={() => setSummaryOpen(false)} stats={stats} />
+
+      {/* Error Modal */}
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal(prev => ({ ...prev, isOpen: false }))}
+        title={errorModal.title}
+        description={errorModal.description}
+        ctaText={errorModal.ctaText}
+      />
     </div>
   );
 }
 
-function OnlyConsHint() {
-  return (
-    <div className="p-6 text-sm text-gray-600">
-      Включён режим «Показывать только консолидации». Выберите консолидацию слева, чтобы открыть детали.
-    </div>
-  );
-}
+// Modal component with click outside
+function Modal({ children, onClose }) {
+  const overlayRef = useRef(null);
 
-function StageSummary({ items }) {
-  const counts = useMemo(() => {
-    const map = OrderedStages.reduce((acc, k) => {
-      acc[k] = 0;
-      return acc;
-    }, {});
-    (items || [])
-      .filter(Boolean)
-      .forEach((pl) => {
-        const st = stageOf(pl?.status ?? "draft");
-        if (map[st] != null) map[st] += 1;
-      });
-    return map;
-  }, [items]);
+  useEffect(() => {
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, []);
 
-  const maxVal = useMemo(
-    () => Math.max(1, ...OrderedStages.map((k) => counts[k] || 0)),
-    [counts]
-  );
+  const handleOverlayClick = (e) => {
+    if (e.target === overlayRef.current) {
+      onClose();
+    }
+  };
 
   return (
-    <div className="space-y-3">
-      {OrderedStages.map((k) => {
-        const value = counts[k] || 0;
-        const pct = Math.round((value / maxVal) * 100);
-        return (
-          <div key={k} className="grid grid-cols-[1fr_auto] items-center gap-3">
-            <div className="text-sm text-gray-700">{StageLabels[k]}</div>
-            <div className="min-w-[220px] w-full">
-              <div className="relative h-6 rounded-lg bg-gray-100 border">
-                <div
-                  className="absolute inset-y-0 left-0 rounded-lg bg-black/80"
-                  style={{ width: `${pct}%` }}
-                />
-                <div className="absolute inset-y-0 right-0 pr-2 pl-2 flex items-center justify-end">
-                  <span className="text-xs font-medium text-white bg-black rounded px-1.5 py-0.5">
-                    {value}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+    <div
+      ref={overlayRef}
+      onClick={handleOverlayClick}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+    >
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden relative">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10"
+        >
+          <X className="w-5 h-5" />
+        </button>
+        <div className="overflow-y-auto max-h-[90vh]">{children}</div>
+      </div>
     </div>
   );
 }

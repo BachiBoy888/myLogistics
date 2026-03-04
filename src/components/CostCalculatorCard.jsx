@@ -268,7 +268,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
         />
         <div className="flex flex-col justify-end">
           <div className="text-xs text-gray-600">Себестоимость (1+2+3+4)</div>
-          <div className="text-base font-semibold">${calcCost}</div>
+          <div className="text-base font-semibold text-orange-500">${calcCost}</div>
         </div>
       </div>
 

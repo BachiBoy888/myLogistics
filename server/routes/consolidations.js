@@ -140,15 +140,29 @@ export default async function consolidationsRoutes(app) {
         if (body.status) {
           const fromIdx = CONS_PIPELINE.indexOf(before.status);
           const toIdx = CONS_PIPELINE.indexOf(body.status);
-          if (fromIdx === -1 || toIdx === -1 || toIdx < fromIdx) {
+          const isMovingBackward = toIdx < fromIdx;
+          
+          // Проверяем, что статусы валидны
+          if (fromIdx === -1 || toIdx === -1) {
             return reply.badRequest(
-              `Недопустимый переход статуса: ${before.status} → ${body.status}`
+              `Недопустимый статус: ${before.status} или ${body.status}`
             );
           }
-          try {
-            await assertPLsNotBehind(db, id, body.status);
-          } catch (e) {
-            return reply.badRequest(e.message);
+          
+          // При движении назад разрешаем, но проверяем PL
+          if (isMovingBackward) {
+            try {
+              await assertPLsNotBehind(db, id, body.status, true);
+            } catch (e) {
+              return reply.badRequest(e.message);
+            }
+          } else {
+            // При движении вперед стандартная проверка
+            try {
+              await assertPLsNotBehind(db, id, body.status, false);
+            } catch (e) {
+              return reply.badRequest(e.message);
+            }
           }
         }
 

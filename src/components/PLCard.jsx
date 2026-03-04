@@ -35,8 +35,6 @@ export default function PLCard({
   const { Chip, ProgressBar, Card, LabelInput } = ui;
   const {
     readinessForPL,
-    canAllowToShip,
-    requirementsResult,
     nextStatusOf,
     nextStageLabelOf,
     humanStatus,
@@ -52,8 +50,7 @@ export default function PLCard({
     [cons, pl.id]
   );
 
-  // ===== Валидации / прогресс
-  const { ok: canGoNext, need } = requirementsResult(pl);
+  // ===== Прогресс (только для отображения)
   const nextStatus = nextStatusOf(pl.status);
   const nextLabel = nextStageLabelOf(pl.status);
   const readiness = readinessForPL(pl);
@@ -419,21 +416,19 @@ export default function PLCard({
         <div className="flex flex-col gap-2 md:items-end">
           <button
             onClick={() => {
-              if (!canGoNext || !nextStatus) return;
+              if (!nextStatus) return;
               onNext(nextStatus);
               setTimeout(refreshEvents, 50);
             }}
-            disabled={!canGoNext || !nextStatus}
+            disabled={!nextStatus}
             className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm min-h-[40px] ${
-              canGoNext && nextStatus ? "bg-black text-white" : "bg-gray-200 text-gray-500 cursor-not-allowed"
+              nextStatus ? "bg-black text-white" : "bg-gray-200 text-gray-500 cursor-not-allowed"
             }`}
           >
             <ChevronRight className="w-4 h-4" />
             Перейти к следующему этапу
             {nextLabel ? `: ${nextLabel}` : ""}
           </button>
-
-          {!canGoNext && need && <div className="text-xs text-rose-600 max-w-xl">{need}</div>}
         </div>
       </div>
 

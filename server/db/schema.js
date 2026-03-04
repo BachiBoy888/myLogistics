@@ -136,12 +136,14 @@ export const plDocStatusHistory = pgTable("pl_doc_status_history", {
 ======================= */
 
 export const consolidationStatusEnum = pgEnum("consolidation_status_v2", [
-  "loaded",       // Погружено
-  "to_customs",   // Оформление Китай
-  "released",     // В пути
-  "kg_customs",   // Растаможка Кыргызстан
-  "delivered",    // Оплата
-  "closed",       // Закрыто
+  "to_load",       // На погрузку
+  "loaded",        // Погружено
+  "to_customs",    // Оформление Китай
+  "released",      // В пути
+  "kg_customs",    // Растаможка Кыргызстан
+  "collect_payment", // Оплата
+  "delivered",     // Доставлено
+  "closed",        // Закрыто
 ]);
 
 export const consolidations = pgTable(

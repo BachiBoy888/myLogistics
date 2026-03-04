@@ -278,14 +278,12 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
-        // Find PLs inside this consolidation that need to be upgraded
+        // Find ALL PLs inside this consolidation and update them to the new status
         const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
-        const rank = (st) => OrderedStages.indexOf(stageOf(st));
-        const needUpgrade = plsOfC.filter((p) => rank(p.status) < rank(newStatus));
-
+        
         try {
-          // First update all PLs inside the consolidation
-          await Promise.all(needUpgrade.map((p) => API.updatePL(p.id, { status: newStatus })));
+          // First update ALL PLs inside the consolidation to match the new status
+          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
           // Then update the consolidation itself
           await API.updateCons(plId, { status: newStatus });
           await Promise.all([refreshPLs(), refreshCons()]);

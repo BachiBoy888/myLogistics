@@ -48,7 +48,7 @@ import {
 import { readinessForPL, canAllowToShip } from "../utils/readiness.js";
 
 // Иконки
-import { Package, Search, PlusCircle, X, LayoutGrid, List, Filter } from "lucide-react";
+import { Package, Search, PlusCircle, X, Filter } from "lucide-react";
 
 export default function CargoView({
   pls,
@@ -64,7 +64,6 @@ export default function CargoView({
   currentUser,
   goToClients,
 }) {
-  // API
   const API = {
     listPLs: api?.fetchPLs || api?.listPLs,
     createPL: api?.createPL,
@@ -79,28 +78,23 @@ export default function CargoView({
     listPLDocs: api?.listPLDocs || apiListPLDocs,
   };
 
-  // UI состояния
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [consOnly, setConsOnly] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
-  const [selectedPLs, setSelectedPLs] = useState([]); // Множественный выбор
-  const [lastSelectedId, setLastSelectedId] = useState(null);
+  const [selectedPLs, setSelectedPLs] = useState([]);
 
-  // Модалки
   const [showNew, setShowNew] = useState(false);
   const [showCreateCons, setShowCreateCons] = useState(false);
   const [openConsId, setOpenConsId] = useState(null);
 
-  // Helpers
   async function refreshPLs({ keepSelected = true } = {}) {
     try {
       if (!API.listPLs) return;
       const list = await API.listPLs();
       const safeList = Array.isArray(list) ? list.filter(Boolean) : [];
       setPls(safeList);
-      hydrateDocsFor(safeList, { limit: 30 });
       if (keepSelected && selectedId) {
         const exists = safeList.some((p) => p?.id === selectedId);
         if (!exists) setSelectedId(null);
@@ -119,7 +113,6 @@ export default function CargoView({
     }
   }
 
-  // Нормализация
   const safePLs = useMemo(() => {
     const arr = Array.isArray(pls) ? pls.filter(Boolean) : [];
     return arr.map((p) => ({
@@ -140,7 +133,6 @@ export default function CargoView({
     }));
   }, [cons]);
 
-  // Открытие PL извне
   useEffect(() => {
     if (openPLId) {
       setSelectedId(openPLId);
@@ -165,7 +157,6 @@ export default function CargoView({
     return Array.from(s).sort((a, b) => a.localeCompare(b, "ru"));
   }, [safePLs]);
 
-  // Поиск/фильтр
   function norm(str = "") {
     return String(str).toLowerCase().trim();
   }
@@ -183,7 +174,6 @@ export default function CargoView({
     });
   }, [safePLs, query, statusFilter]);
 
-  // Догрузка доков
   const hydratedDocsRef = useRef(new Set());
   async function hydrateDocsFor(plArray, { limit = 30 } = {}) {
     const toFetch = (plArray || [])
@@ -208,7 +198,6 @@ export default function CargoView({
     if (filtered.length) hydrateDocsFor(filtered, { limit: 50 });
   }, [filtered]);
 
-  // Активные консолидации
   const ACTIVE_CONS_STATUSES = new Set([
     "to_load", "loaded", "to_customs", "released", "kg_customs", "delivered",
   ]);
@@ -222,7 +211,6 @@ export default function CargoView({
     return s;
   }, [safeCons]);
 
-  // Группировка
   const groupedByStage = useMemo(() => {
     const groups = OrderedStages.reduce((acc, k) => ((acc[k] = []), acc), {});
     filtered
@@ -243,7 +231,6 @@ export default function CargoView({
     return m;
   }, [safeCons]);
 
-  // Stats
   const stats = useMemo(() => {
     const total = safePLs.length;
     const closedCount = safePLs.filter((p) =>
@@ -269,67 +256,77 @@ export default function CargoView({
     [safePLs, selectedId]
   );
 
-  // Drag & Drop
   const handlePLMove = useCallback(
-    async (plId, targetStage) => {
-      const pl = safePLs.find((p) => p.id === plId);
-      if (!pl) return;
-
-      // Map stage to status
-      const stageToStatus = {
-        intake: "draft",
-        collect_docs: "awaiting_docs",
-        collect_cargo: "awaiting_load",
-        loading: "to_load",
-        cn_formalities: "to_customs",
-        in_transit: "released",
-        kg_customs: "kg_customs",
-        payment: "collect_payment",
-        closed_stage: "closed",
-      };
-
-      const newStatus = stageToStatus[targetStage];
-      if (!newStatus || newStatus === pl.status) return;
-
-      try {
-        await API.updatePL(plId, { status: newStatus });
-        await refreshPLs({ keepSelected: true });
-      } catch (err) {
-        console.error("Ошибка при перемещении PL:", err);
-        alert("Не удалось переместить груз");
-      }
-    },
-    [safePLs, API]
-  );
-
-  // Множественный выбор
-  const handleSelectPL = useCallback(
-    (plId, isMulti) => {
-      if (isMulti && lastSelectedId) {
-        // Range selection with Shift
-        const allPLs = Object.values(groupedByStage).flat();
-        const lastIdx = allPLs.findIndex((p) => p.id === lastSelectedId);
-        const currentIdx = allPLs.findIndex((p) => p.id === plId);
-
-        if (lastIdx !== -1 && currentIdx !== -1) {
-          const start = Math.min(lastIdx, currentIdx);
-          const end = Math.max(lastIdx, currentIdx);
-          const rangeIds = allPLs.slice(start, end + 1).map((p) => p.id);
-          setSelectedPLs((prev) => Array.from(new Set([...prev, ...rangeIds])));
+    async (plId, targetStage, isCons = false) => {
+      if (isCons) {
+        // Move consolidation
+        const consItem = safeCons.find((c) => c.id === plId);
+        if (!consItem) return;
+        
+        const stageToStatus = {
+          intake: "draft",
+          collect_docs: "awaiting_docs",
+          collect_cargo: "awaiting_load",
+          loading: "to_load",
+          cn_formalities: "to_customs",
+          in_transit: "released",
+          kg_customs: "kg_customs",
+          payment: "collect_payment",
+          closed_stage: "closed",
+        };
+        
+        const newStatus = stageToStatus[targetStage];
+        if (!newStatus || newStatus === consItem.status) return;
+        
+        try {
+          await API.updateCons(plId, { status: newStatus });
+          await refreshCons();
+        } catch (err) {
+          console.error("Ошибка при перемещении консолидации:", err);
+          alert("Не удалось переместить консолидацию");
         }
       } else {
-        setSelectedPLs((prev) =>
-          prev.includes(plId)
-            ? prev.filter((id) => id !== plId)
-            : [...prev, plId]
-        );
+        // Move PL
+        const pl = safePLs.find((p) => p.id === plId);
+        if (!pl) return;
+
+        const stageToStatus = {
+          intake: "draft",
+          collect_docs: "awaiting_docs",
+          collect_cargo: "awaiting_load",
+          loading: "to_load",
+          cn_formalities: "to_customs",
+          in_transit: "released",
+          kg_customs: "kg_customs",
+          payment: "collect_payment",
+          closed_stage: "closed",
+        };
+
+        const newStatus = stageToStatus[targetStage];
+        if (!newStatus || newStatus === pl.status) return;
+
+        try {
+          await API.updatePL(plId, { status: newStatus });
+          await refreshPLs({ keepSelected: true });
+          setSelectedPLs([]); // Clear selection after move
+        } catch (err) {
+          console.error("Ошибка при перемещении PL:", err);
+          alert("Не удалось переместить груз");
+        }
       }
-      setLastSelectedId(plId);
     },
-    [groupedByStage, lastSelectedId]
+    [safePLs, safeCons, API]
   );
 
-  // Сохранение
+  const handleSelectPL = useCallback((plId, isShift) => {
+    setSelectedPLs((prev) => {
+      if (prev.includes(plId)) {
+        return prev.filter((id) => id !== plId);
+      }
+      return [...prev, plId];
+    });
+  }, []);
+
   async function savePLPatch(id, patch) {
     const isLocalOnly =
       patch &&
@@ -359,7 +356,6 @@ export default function CargoView({
     }
   }
 
-  // Создание PL
   async function handleCreatePLFromModal(payload) {
     const { client, client_id, title, volume_cbm, weight_kg, incoterm, exw_address, fob_wh_id } = payload;
     const clientName = (client || "").trim();
@@ -426,7 +422,6 @@ export default function CargoView({
     }
   }
 
-  // Удаление
   async function handleDeletePL(id) {
     try {
       await API.deletePL(id);
@@ -438,7 +433,6 @@ export default function CargoView({
     }
   }
 
-  // Обновление статуса
   async function handleUpdateStatus(id, status) {
     try {
       await API.updatePL(id, { status });
@@ -449,7 +443,6 @@ export default function CargoView({
     }
   }
 
-  // Закрытие по ESC
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === "Escape") {
@@ -457,6 +450,7 @@ export default function CargoView({
         setOpenConsId(null);
         setShowNew(false);
         setShowCreateCons(false);
+        setSelectedPLs([]);
       }
     };
     window.addEventListener("keydown", handleEsc);
@@ -464,20 +458,20 @@ export default function CargoView({
   }, []);
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50">
+    <div className="h-screen flex flex-col bg-gray-900">
       {/* Header */}
-      <header className="bg-white border-b px-4 py-3 flex items-center justify-between shrink-0">
+      <header className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <Package className="w-5 h-5 text-gray-700" />
-          <span className="font-semibold text-gray-800">Мои грузы</span>
-          <span className="text-sm text-gray-500">({safePLs.length})</span>
+          <Package className="w-5 h-5 text-gray-300" />
+          <span className="font-semibold text-gray-100">Мои грузы</span>
+          <span className="text-sm text-gray-400">({safePLs.length})</span>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
-              className="pl-9 pr-3 py-2 border rounded-lg text-sm w-64"
+              className="pl-9 pr-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-sm w-64 text-gray-100 placeholder-gray-400"
               placeholder="Поиск: номер PL, клиент, груз…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -485,7 +479,7 @@ export default function CargoView({
           </div>
 
           <select
-            className="border rounded-lg text-sm py-2 px-3"
+            className="bg-gray-700 border border-gray-600 rounded-lg text-sm py-2 px-3 text-gray-100"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
             disabled={consOnly}
@@ -501,7 +495,9 @@ export default function CargoView({
           <button
             onClick={() => setConsOnly(!consOnly)}
             className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${
-              consOnly ? "bg-blue-50 border-blue-300 text-blue-700" : "bg-white"
+              consOnly 
+                ? "bg-blue-600/20 border-blue-500 text-blue-400" 
+                : "bg-gray-700 border-gray-600 text-gray-300"
             }`}
           >
             <Filter className="w-4 h-4" />
@@ -510,7 +506,7 @@ export default function CargoView({
 
           <button
             onClick={() => setShowNew(true)}
-            className="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-green-700"
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
           >
             <PlusCircle className="w-4 h-4" />
             Новый PL
@@ -518,7 +514,7 @@ export default function CargoView({
 
           <button
             onClick={() => setSummaryOpen(true)}
-            className="inline-flex items-center gap-2 bg-gray-800 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-900"
+            className="inline-flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
           >
             Сводка
           </button>
@@ -541,11 +537,11 @@ export default function CargoView({
         />
       </div>
 
-      {/* Footer with scrollbar hint */}
-      <div className="bg-gray-100 border-t px-4 py-2 text-xs text-gray-500 flex items-center justify-between shrink-0">
+      {/* Footer */}
+      <div className="bg-gray-800 border-t border-gray-700 px-4 py-2 text-xs text-gray-400 flex items-center justify-between shrink-0">
         <div>
           {selectedPLs.length > 0 && (
-            <span className="font-medium text-blue-600">
+            <span className="font-medium text-blue-400">
               Выбрано: {selectedPLs.length} грузов
             </span>
           )}
@@ -687,7 +683,7 @@ function Modal({ children, onClose }) {
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden relative">
         <button

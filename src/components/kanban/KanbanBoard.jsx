@@ -1,6 +1,4 @@
 // src/components/kanban/KanbanBoard.jsx
-// Основной компонент канбан-доски с drag & drop
-
 import React, { useState, useCallback } from "react";
 import KanbanColumn from "./KanbanColumn.jsx";
 import { StageLabels, OrderedStages } from "../../constants/statuses.js";
@@ -14,19 +12,13 @@ export default function KanbanBoard({
   onPLMove,
   selectedPLs,
   onSelectPL,
+  consOnly,
+  onCreateCons,
 }) {
-  const [draggedPL, setDraggedPL] = useState(null);
   const [dragOverStage, setDragOverStage] = useState(null);
-
-  const handleDragStart = useCallback((pl, e) => {
-    setDraggedPL(pl);
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", JSON.stringify({ plId: pl.id, currentStage: pl.stage }));
-  }, []);
 
   const handleDragOver = useCallback((stage, e) => {
     e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
     setDragOverStage(stage);
   }, []);
 
@@ -40,18 +32,25 @@ export default function KanbanBoard({
     
     try {
       const data = JSON.parse(e.dataTransfer.getData("text/plain"));
-      if (data.plId && targetStage && onPLMove) {
-        onPLMove(data.plId, targetStage);
+      if (data.plIds && data.plIds.length > 0) {
+        // Move multiple PLs
+        data.plIds.forEach(plId => onPLMove?.(plId, targetStage));
+      } else if (data.plId) {
+        // Move single PL
+        onPLMove?.(data.plId, targetStage);
+      }
+      if (data.consId) {
+        // Move consolidation
+        onPLMove?.(data.consId, targetStage, true);
       }
     } catch (err) {
       console.error("Drag drop error:", err);
     }
-    setDraggedPL(null);
   }, [onPLMove]);
 
   return (
-    <div className="flex gap-4 h-full pb-20">
-      {OrderedStages.map((stage) => (
+    <div className="flex h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-700">
+      {OrderedStages.map((stage, index) => (
         <KanbanColumn
           key={stage}
           stage={stage}
@@ -65,9 +64,11 @@ export default function KanbanBoard({
           onDragOver={(e) => handleDragOver(stage, e)}
           onDragLeave={handleDragLeave}
           onDrop={(e) => handleDrop(stage, e)}
-          onDragStart={handleDragStart}
           selectedPLs={selectedPLs}
           onSelectPL={onSelectPL}
+          showCreateCons={stage === "loading" && !consOnly}
+          onCreateCons={onCreateCons}
+          isLast={index === OrderedStages.length - 1}
         />
       ))}
     </div>

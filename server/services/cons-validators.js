@@ -3,7 +3,7 @@ import { inArray, eq, and } from "drizzle-orm";
 import { pl, consolidationPl } from "../db/schema.js";
 
 export const CONS_PIPELINE = [
-  "loaded", "to_customs", "released", "kg_customs", "delivered", "closed",
+  "to_load", "loaded", "to_customs", "released", "kg_customs", "collect_payment", "delivered", "closed",
 ];
 
 /** индекс следующего статуса */
@@ -33,8 +33,9 @@ const RANK = new Map([
   ["to_customs", 2],
   ["released", 3],
   ["kg_customs", 4],
-  ["delivered", 5],
-  ["closed", 6],
+  ["collect_payment", 5],
+  ["delivered", 6],
+  ["closed", 7],
 ]);
 
 /** Ни один PL не должен «отставать» от целевого статуса консолидации

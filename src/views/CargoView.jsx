@@ -278,18 +278,18 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
-        // Find ALL PLs inside this consolidation and update them to the new status
+        // Find ALL PLs inside this consolidation
         const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
         
         try {
-          // First update ALL PLs inside the consolidation to match the new status
-          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
-          // Then update the consolidation itself
+          // First update the consolidation itself
           await API.updateCons(plId, { status: newStatus });
+          // Then update ALL PLs inside the consolidation to match the new status
+          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
-          alert("Не удалось переместить консолидацию");
+          alert("Не удалось переместить консолидацию: " + (err.message || ""));
         }
       } else {
         // Move PL

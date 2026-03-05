@@ -92,10 +92,11 @@ export default function CargoView({
     title: "Ошибка",
     description: "",
     ctaText: "Понятно",
+    type: "error",
   });
 
-  const showError = (description, title = "Ошибка", ctaText = "Понятно") => {
-    setErrorModal({ isOpen: true, title, description, ctaText });
+  const showError = (description, title = "Ошибка", ctaText = "Понятно", type = "error") => {
+    setErrorModal({ isOpen: true, title, description, ctaText, type });
   };
 
   const [showNew, setShowNew] = useState(false);
@@ -287,6 +288,18 @@ export default function CargoView({
       if (!newStatus) return;
 
       if (isCons) {
+        // Проверяем, что консолидацию не пытаются переместить в статус только для PL
+        const consForbiddenStages = ["intake", "collect_docs", "collect_cargo"];
+        if (consForbiddenStages.includes(targetStage)) {
+          showError(
+            "Консолидации могут находиться только в следующих этапах: Погрузка, Оформление Китай, В пути, Растаможка, Оплата, Закрыто. Для перемещения в Обращение, Сбор документов или Сбор груза — расформируйте консолидацию и переместите грузы отдельно.",
+            "Внимание",
+            "Понятно",
+            "warning"
+          );
+          return;
+        }
+
         // Move consolidation
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
@@ -674,6 +687,7 @@ export default function CargoView({
         title={errorModal.title}
         description={errorModal.description}
         ctaText={errorModal.ctaText}
+        type={errorModal.type}
       />
     </div>
   );

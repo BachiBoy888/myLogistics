@@ -2,7 +2,7 @@
 // API для аналитических данных
 
 import { z } from "zod";
-import { and, gte, lte, eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { pl, clients } from "../db/schema.js";
 
 const QuerySchema = z.object({
@@ -22,9 +22,9 @@ export default async function analyticsRoutes(app) {
       const dateRange = generateDateRange(from, to, granularity);
 
       const [clientDynamics, plByStatus, weightDynamics] = await Promise.all([
-        getClientDynamics(db, dateRange, granularity),
-        getPLByStatus(db, dateRange, granularity),
-        getWeightDynamics(db, dateRange, granularity),
+        getClientDynamics(db, dateRange),
+        getPLByStatus(db, dateRange),
+        getWeightDynamics(db, dateRange),
       ]);
 
       return { clientDynamics, plByStatus, weightDynamics };
@@ -62,11 +62,10 @@ async function getClientDynamics(db, dateRange) {
   for (const date of dateRange) {
     const endDateStr = date + "T23:59:59.999Z";
 
-    // Всего клиентов (созданные до этой даты включительно)
-    const totalResult = await db
-      .select({ count: sql`COUNT(*)::int` })
-      .from(clients)
-      .where(sql`${clients.createdAt} <= ${endDateStr}`);
+    // Всего клиентов
+    const totalResult = await db.execute(
+      sql`SELECT COUNT(*)::int as count FROM clients WHERE created_at <= ${endDateStr}`
+    );
 
     // Клиенты в статусе обращения (есть PL в статусе draft)
     const inquiryResult = await db.execute(sql`
@@ -77,7 +76,7 @@ async function getClientDynamics(db, dateRange) {
       AND pl.status = 'draft'
     `);
 
-    // Активные клиенты (есть PL не в draft/cancelled/closed)
+    // Активные клиенты
     const activeResult = await db.execute(sql`
       SELECT COUNT(DISTINCT c.id)::int as count
       FROM clients c
@@ -88,7 +87,7 @@ async function getClientDynamics(db, dateRange) {
 
     result.push({
       date,
-      total: totalResult[0]?.count || 0,
+      total: totalResult.rows[0]?.count || 0,
       inquiry: inquiryResult.rows[0]?.count || 0,
       active: activeResult.rows[0]?.count || 0,
     });
@@ -109,12 +108,13 @@ async function getPLByStatus(db, dateRange) {
     const row = { date };
 
     for (const status of allStatuses) {
-      const countResult = await db
-        .select({ count: sql`COUNT(*)::int` })
-        .from(pl)
-        .where(sql`${pl.createdAt} <= ${endDateStr} AND ${pl.status} = ${status}`);
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*)::int as count 
+        FROM pl 
+        WHERE created_at <= ${endDateStr} AND status = ${status}
+      `);
       
-      row[status] = countResult[0]?.count || 0;
+      row[status] = countResult.rows[0]?.count || 0;
     }
 
     result.push(row);
@@ -132,14 +132,13 @@ async function getWeightDynamics(db, dateRange) {
     const row = { date };
 
     for (const status of keyStatuses) {
-      const weightResult = await db
-        .select({ 
-          totalWeight: sql`COALESCE(SUM(${pl.weight_kg}), 0)::int` 
-        })
-        .from(pl)
-        .where(sql`${pl.createdAt} <= ${endDateStr} AND ${pl.status} = ${status}`);
+      const weightResult = await db.execute(sql`
+        SELECT COALESCE(SUM(weight_kg), 0)::int as total_weight 
+        FROM pl 
+        WHERE created_at <= ${endDateStr} AND status = ${status}
+      `);
       
-      row[status] = weightResult[0]?.totalWeight || 0;
+      row[status] = weightResult.rows[0]?.total_weight || 0;
     }
 
     result.push(row);

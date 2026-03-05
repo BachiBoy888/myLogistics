@@ -3,7 +3,6 @@
 
 import { z } from "zod";
 import { sql } from "drizzle-orm";
-import { pl, clients } from "../db/schema.js";
 
 const QuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -20,17 +19,19 @@ export default async function analyticsRoutes(app) {
       const { from, to, granularity } = query;
 
       const dateRange = generateDateRange(from, to, granularity);
+      
+      req.log.info({ dateRange }, "Analytics request");
 
       const [clientDynamics, plByStatus, weightDynamics] = await Promise.all([
-        getClientDynamics(db, dateRange),
-        getPLByStatus(db, dateRange),
-        getWeightDynamics(db, dateRange),
+        getClientDynamics(db, dateRange, req.log),
+        getPLByStatus(db, dateRange, req.log),
+        getWeightDynamics(db, dateRange, req.log),
       ]);
 
       return { clientDynamics, plByStatus, weightDynamics };
     } catch (err) {
       console.error("Analytics error:", err);
-      return reply.status(400).send({ error: err.message });
+      return reply.status(500).send({ error: err.message, stack: err.stack });
     }
   });
 }
@@ -56,47 +57,52 @@ function generateDateRange(from, to, granularity) {
   return dates;
 }
 
-async function getClientDynamics(db, dateRange) {
+async function getClientDynamics(db, dateRange, log) {
   const result = [];
 
   for (const date of dateRange) {
-    const endDateStr = date + "T23:59:59.999Z";
+    try {
+      const endDateStr = date + "T23:59:59.999Z";
 
-    // Всего клиентов
-    const totalResult = await db.execute(
-      sql`SELECT COUNT(*)::int as count FROM clients WHERE created_at <= ${endDateStr}`
-    );
+      // Всего клиентов
+      const totalResult = await db.execute(
+        sql`SELECT COUNT(*)::int as count FROM clients WHERE created_at <= ${endDateStr}`
+      );
 
-    // Клиенты в статусе обращения (есть PL в статусе draft)
-    const inquiryResult = await db.execute(sql`
-      SELECT COUNT(DISTINCT c.id)::int as count
-      FROM clients c
-      INNER JOIN pl ON pl.client_id = c.id
-      WHERE c.created_at <= ${endDateStr}
-      AND pl.status = 'draft'
-    `);
+      // Клиенты в статусе обращения
+      const inquiryResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT c.id)::int as count
+        FROM clients c
+        INNER JOIN pl ON pl.client_id = c.id
+        WHERE c.created_at <= ${endDateStr}
+        AND pl.status = 'draft'
+      `);
 
-    // Активные клиенты
-    const activeResult = await db.execute(sql`
-      SELECT COUNT(DISTINCT c.id)::int as count
-      FROM clients c
-      INNER JOIN pl ON pl.client_id = c.id
-      WHERE c.created_at <= ${endDateStr}
-      AND pl.status NOT IN ('draft', 'closed', 'cancelled')
-    `);
+      // Активные клиенты
+      const activeResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT c.id)::int as count
+        FROM clients c
+        INNER JOIN pl ON pl.client_id = c.id
+        WHERE c.created_at <= ${endDateStr}
+        AND pl.status NOT IN ('draft', 'closed', 'cancelled')
+      `);
 
-    result.push({
-      date,
-      total: totalResult.rows[0]?.count || 0,
-      inquiry: inquiryResult.rows[0]?.count || 0,
-      active: activeResult.rows[0]?.count || 0,
-    });
+      result.push({
+        date,
+        total: totalResult?.rows?.[0]?.count || 0,
+        inquiry: inquiryResult?.rows?.[0]?.count || 0,
+        active: activeResult?.rows?.[0]?.count || 0,
+      });
+    } catch (err) {
+      log.error({ date, err: err.message }, "Client dynamics error");
+      result.push({ date, total: 0, inquiry: 0, active: 0 });
+    }
   }
 
   return result;
 }
 
-async function getPLByStatus(db, dateRange) {
+async function getPLByStatus(db, dateRange, log) {
   const result = [];
   const allStatuses = [
     "draft", "awaiting_docs", "awaiting_load", "to_load", "loaded",
@@ -104,44 +110,62 @@ async function getPLByStatus(db, dateRange) {
   ];
 
   for (const date of dateRange) {
-    const endDateStr = date + "T23:59:59.999Z";
-    const row = { date };
+    try {
+      const endDateStr = date + "T23:59:59.999Z";
+      const row = { date };
 
-    for (const status of allStatuses) {
-      const countResult = await db.execute(sql`
-        SELECT COUNT(*)::int as count 
-        FROM pl 
-        WHERE created_at <= ${endDateStr} AND status = ${status}
-      `);
-      
-      row[status] = countResult.rows[0]?.count || 0;
+      for (const status of allStatuses) {
+        try {
+          const countResult = await db.execute(sql`
+            SELECT COUNT(*)::int as count 
+            FROM pl 
+            WHERE created_at <= ${endDateStr} AND status = ${status}
+          `);
+          
+          row[status] = countResult?.rows?.[0]?.count || 0;
+        } catch (statusErr) {
+          row[status] = 0;
+        }
+      }
+
+      result.push(row);
+    } catch (err) {
+      log.error({ date, err: err.message }, "PL by status error");
+      result.push({ date });
     }
-
-    result.push(row);
   }
 
   return result;
 }
 
-async function getWeightDynamics(db, dateRange) {
+async function getWeightDynamics(db, dateRange, log) {
   const result = [];
   const keyStatuses = ["awaiting_docs", "to_load", "released", "kg_customs"];
 
   for (const date of dateRange) {
-    const endDateStr = date + "T23:59:59.999Z";
-    const row = { date };
+    try {
+      const endDateStr = date + "T23:59:59.999Z";
+      const row = { date };
 
-    for (const status of keyStatuses) {
-      const weightResult = await db.execute(sql`
-        SELECT COALESCE(SUM(weight_kg), 0)::int as total_weight 
-        FROM pl 
-        WHERE created_at <= ${endDateStr} AND status = ${status}
-      `);
-      
-      row[status] = weightResult.rows[0]?.total_weight || 0;
+      for (const status of keyStatuses) {
+        try {
+          const weightResult = await db.execute(sql`
+            SELECT COALESCE(SUM(weight_kg), 0)::int as total_weight 
+            FROM pl 
+            WHERE created_at <= ${endDateStr} AND status = ${status}
+          `);
+          
+          row[status] = weightResult?.rows?.[0]?.total_weight || 0;
+        } catch (weightErr) {
+          row[status] = 0;
+        }
+      }
+
+      result.push(row);
+    } catch (err) {
+      log.error({ date, err: err.message }, "Weight dynamics error");
+      result.push({ date });
     }
-
-    result.push(row);
   }
 
   return result;

@@ -1,5 +1,5 @@
 // server/routes/analytics.js
-// API для аналитических данных
+// API для аналитики - чтение из daily snapshots
 
 import { z } from "zod";
 import { sql } from "drizzle-orm";
@@ -10,6 +10,13 @@ const QuerySchema = z.object({
   granularity: z.enum(["day", "week", "month"]),
 });
 
+const ALL_PL_STATUSES = [
+  "draft", "awaiting_docs", "awaiting_load", "to_load", "loaded",
+  "to_customs", "released", "kg_customs", "collect_payment", "delivered", "closed"
+];
+
+const WEIGHT_STATUSES = ["awaiting_docs", "to_load", "released", "kg_customs"];
+
 export default async function analyticsRoutes(app) {
   const db = app.drizzle;
 
@@ -18,24 +25,48 @@ export default async function analyticsRoutes(app) {
       const query = QuerySchema.parse(req.query);
       const { from, to, granularity } = query;
 
-      const dateRange = generateDateRange(from, to, granularity);
-      
-      req.log.info({ dateRange }, "Analytics request");
+      req.log.info({ from, to, granularity }, "Analytics request");
 
+      // Получаем мета-информацию о последнем snapshot
+      const metaResult = await db.execute(sql`
+        SELECT 
+          MAX(day)::text as last_snapshot_day,
+          MAX(generated_at)::text as generated_at,
+          MAX(source_ts)::text as source_ts
+        FROM analytics_daily_snapshots
+        WHERE day <= ${to}::date
+      `);
+
+      const meta = {
+        from,
+        to,
+        granularity,
+        lastSnapshotDay: metaResult.rows[0]?.last_snapshot_day || null,
+        generatedAt: metaResult.rows[0]?.generated_at || null,
+        sourceTs: metaResult.rows[0]?.source_ts || null,
+      };
+
+      // Получаем данные из snapshots
       const [clientDynamics, plByStatus, weightDynamics] = await Promise.all([
-        getClientDynamics(db, dateRange, req.log),
-        getPLByStatus(db, dateRange, req.log),
-        getWeightDynamics(db, dateRange, req.log),
+        getClientDynamics(db, from, to, granularity),
+        getPLByStatus(db, from, to, granularity),
+        getWeightDynamics(db, from, to, granularity),
       ]);
 
-      return { clientDynamics, plByStatus, weightDynamics };
+      return {
+        meta,
+        clientDynamics,
+        plByStatus,
+        weightDynamics,
+      };
     } catch (err) {
       console.error("Analytics error:", err);
-      return reply.status(500).send({ error: err.message, stack: err.stack });
+      return reply.status(500).send({ error: err.message });
     }
   });
 }
 
+// Генерация диапазона дат
 function generateDateRange(from, to, granularity) {
   const dates = [];
   const start = new Date(from + "T00:00:00Z");
@@ -57,116 +88,99 @@ function generateDateRange(from, to, granularity) {
   return dates;
 }
 
-async function getClientDynamics(db, dateRange, log) {
-  const result = [];
+// Динамика клиентов - читаем из snapshots
+async function getClientDynamics(db, from, to, granularity) {
+  const dateRange = generateDateRange(from, to, granularity);
+  
+  // Загружаем все snapshots за период
+  const snapshots = await db.execute(sql`
+    SELECT 
+      day::text as day,
+      total_clients,
+      inquiry_clients,
+      active_clients
+    FROM analytics_daily_snapshots
+    WHERE day >= ${from}::date AND day <= ${to}::date
+    ORDER BY day
+  `);
 
-  for (const date of dateRange) {
-    try {
-      const endDateStr = date + "T23:59:59.999Z";
+  const snapshotMap = new Map(snapshots.rows.map(r => [r.day, r]));
 
-      // Всего клиентов
-      const totalResult = await db.execute(
-        sql`SELECT COUNT(*)::int as count FROM clients WHERE created_at <= ${endDateStr}`
-      );
-
-      // Клиенты в статусе обращения
-      const inquiryResult = await db.execute(sql`
-        SELECT COUNT(DISTINCT c.id)::int as count
-        FROM clients c
-        INNER JOIN pl ON pl.client_id = c.id
-        WHERE c.created_at <= ${endDateStr}
-        AND pl.status = 'draft'
-      `);
-
-      // Активные клиенты
-      const activeResult = await db.execute(sql`
-        SELECT COUNT(DISTINCT c.id)::int as count
-        FROM clients c
-        INNER JOIN pl ON pl.client_id = c.id
-        WHERE c.created_at <= ${endDateStr}
-        AND pl.status NOT IN ('draft', 'closed', 'cancelled')
-      `);
-
-      result.push({
-        date,
-        total: totalResult?.rows?.[0]?.count || 0,
-        inquiry: inquiryResult?.rows?.[0]?.count || 0,
-        active: activeResult?.rows?.[0]?.count || 0,
-      });
-    } catch (err) {
-      log.error({ date, err: err.message }, "Client dynamics error");
-      result.push({ date, total: 0, inquiry: 0, active: 0 });
-    }
-  }
-
-  return result;
+  return dateRange.map(date => {
+    const snap = snapshotMap.get(date);
+    return {
+      date,
+      total: snap?.total_clients ?? 0,
+      inquiry: snap?.inquiry_clients ?? 0,
+      active: snap?.active_clients ?? 0,
+    };
+  });
 }
 
-async function getPLByStatus(db, dateRange, log) {
-  const result = [];
-  const allStatuses = [
-    "draft", "awaiting_docs", "awaiting_load", "to_load", "loaded",
-    "to_customs", "released", "kg_customs", "collect_payment", "delivered", "closed"
-  ];
+// PL по статусам - читаем из snapshots
+async function getPLByStatus(db, from, to, granularity) {
+  const dateRange = generateDateRange(from, to, granularity);
+  
+  // Загружаем все snapshots за период
+  const snapshots = await db.execute(sql`
+    SELECT 
+      day::text as day,
+      status,
+      pl_count
+    FROM analytics_daily_pl_status
+    WHERE day >= ${from}::date AND day <= ${to}::date
+    ORDER BY day, status
+  `);
 
-  for (const date of dateRange) {
-    try {
-      const endDateStr = date + "T23:59:59.999Z";
-      const row = { date };
-
-      for (const status of allStatuses) {
-        try {
-          const countResult = await db.execute(sql`
-            SELECT COUNT(*)::int as count 
-            FROM pl 
-            WHERE created_at <= ${endDateStr} AND status = ${status}
-          `);
-          
-          row[status] = countResult?.rows?.[0]?.count || 0;
-        } catch (statusErr) {
-          row[status] = 0;
-        }
-      }
-
-      result.push(row);
-    } catch (err) {
-      log.error({ date, err: err.message }, "PL by status error");
-      result.push({ date });
+  // Группируем по дате
+  const dayStatusMap = new Map();
+  for (const row of snapshots.rows) {
+    if (!dayStatusMap.has(row.day)) {
+      dayStatusMap.set(row.day, new Map());
     }
+    dayStatusMap.get(row.day).set(row.status, row.pl_count);
   }
 
-  return result;
+  return dateRange.map(date => {
+    const statusMap = dayStatusMap.get(date) || new Map();
+    const result = { date };
+    for (const status of ALL_PL_STATUSES) {
+      result[status] = statusMap.get(status) ?? 0;
+    }
+    return result;
+  });
 }
 
-async function getWeightDynamics(db, dateRange, log) {
-  const result = [];
-  const keyStatuses = ["awaiting_docs", "to_load", "released", "kg_customs"];
+// Динамика веса - читаем из snapshots
+async function getWeightDynamics(db, from, to, granularity) {
+  const dateRange = generateDateRange(from, to, granularity);
+  
+  // Загружаем все snapshots за период
+  const snapshots = await db.execute(sql`
+    SELECT 
+      day::text as day,
+      status,
+      total_weight
+    FROM analytics_daily_weight_status
+    WHERE day >= ${from}::date AND day <= ${to}::date
+    ORDER BY day, status
+  `);
 
-  for (const date of dateRange) {
-    try {
-      const endDateStr = date + "T23:59:59.999Z";
-      const row = { date };
-
-      for (const status of keyStatuses) {
-        try {
-          const weightResult = await db.execute(sql`
-            SELECT COALESCE(SUM(weight_kg), 0)::int as total_weight 
-            FROM pl 
-            WHERE created_at <= ${endDateStr} AND status = ${status}
-          `);
-          
-          row[status] = weightResult?.rows?.[0]?.total_weight || 0;
-        } catch (weightErr) {
-          row[status] = 0;
-        }
-      }
-
-      result.push(row);
-    } catch (err) {
-      log.error({ date, err: err.message }, "Weight dynamics error");
-      result.push({ date });
+  // Группируем по дате
+  const dayStatusMap = new Map();
+  for (const row of snapshots.rows) {
+    if (!dayStatusMap.has(row.day)) {
+      dayStatusMap.set(row.day, new Map());
     }
+    dayStatusMap.get(row.day).set(row.status, Math.round(row.total_weight));
   }
 
-  return result;
+  return dateRange.map(date => {
+    const statusMap = dayStatusMap.get(date) || new Map();
+    const result = { date };
+    for (const status of WEIGHT_STATUSES) {
+      result[status] = statusMap.get(status) ?? 0;
+    }
+    return result;
+  });
 }

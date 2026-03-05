@@ -21,7 +21,7 @@ const CreateBody = z.object({
 const UpdateBody = z.object({
   title: z.string().optional(),
   status: z
-    .enum(["loaded", "to_customs", "released", "kg_customs", "delivered", "closed"])
+    .enum(["to_load", "loaded", "to_customs", "released", "kg_customs", "collect_payment", "delivered", "closed"])
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),

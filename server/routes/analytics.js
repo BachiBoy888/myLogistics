@@ -2,8 +2,8 @@
 // API для аналитических данных
 
 import { z } from "zod";
-import { and, gte, lte, sql } from "drizzle-orm";
-import { pl, clients, consolidations } from "../db/schema.js";
+import { and, gte, lte, eq, sql } from "drizzle-orm";
+import { pl, clients } from "../db/schema.js";
 
 const QuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -14,31 +14,20 @@ const QuerySchema = z.object({
 export default async function analyticsRoutes(app) {
   const db = app.drizzle;
 
-  // Получение аналитических данных
   app.get("/", async (req, reply) => {
     try {
       const query = QuerySchema.parse(req.query);
       const { from, to, granularity } = query;
 
-      // Генерируем диапазон дат
       const dateRange = generateDateRange(from, to, granularity);
 
-      // Получаем данные для каждого графика
-      const [
-        clientDynamics,
-        plByStatus,
-        weightDynamics,
-      ] = await Promise.all([
+      const [clientDynamics, plByStatus, weightDynamics] = await Promise.all([
         getClientDynamics(db, dateRange, granularity),
         getPLByStatus(db, dateRange, granularity),
         getWeightDynamics(db, dateRange, granularity),
       ]);
 
-      return {
-        clientDynamics,
-        plByStatus,
-        weightDynamics,
-      };
+      return { clientDynamics, plByStatus, weightDynamics };
     } catch (err) {
       console.error("Analytics error:", err);
       return reply.status(400).send({ error: err.message });
@@ -46,83 +35,69 @@ export default async function analyticsRoutes(app) {
   });
 }
 
-// Генерация диапазона дат
 function generateDateRange(from, to, granularity) {
   const dates = [];
-  const start = new Date(from);
-  const end = new Date(to);
+  const start = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
   let current = new Date(start);
 
   while (current <= end) {
-    dates.push(new Date(current).toISOString().split("T")[0]);
+    dates.push(current.toISOString().split("T")[0]);
     
     if (granularity === "day") {
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     } else if (granularity === "week") {
-      current.setDate(current.getDate() + 7);
+      current.setUTCDate(current.getUTCDate() + 7);
     } else if (granularity === "month") {
-      current.setMonth(current.getMonth() + 1);
+      current.setUTCMonth(current.getUTCMonth() + 1);
     }
   }
 
   return dates;
 }
 
-// Динамика клиентов
-async function getClientDynamics(db, dateRange, granularity) {
+async function getClientDynamics(db, dateRange) {
   const result = [];
 
   for (const date of dateRange) {
-    const dateObj = new Date(date);
-    const endDate = new Date(date);
-    
-    if (granularity === "day") {
-      endDate.setDate(endDate.getDate() + 1);
-    } else if (granularity === "week") {
-      endDate.setDate(endDate.getDate() + 7);
-    } else if (granularity === "month") {
-      endDate.setMonth(endDate.getMonth() + 1);
-    }
+    const endDateStr = date + "T23:59:59.999Z";
 
-    // Всего клиентов (созданные до этой даты)
-    const [totalResult] = await db
+    // Всего клиентов (созданные до этой даты включительно)
+    const totalResult = await db
       .select({ count: sql`COUNT(*)::int` })
       .from(clients)
-      .where(lte(clients.createdAt, endDate.toISOString()));
+      .where(sql`${clients.createdAt} <= ${endDateStr}`);
 
-    // Клиенты в статусе обращения (draft)
-    const [inquiryResult] = await db
-      .select({ count: sql`COUNT(DISTINCT ${clients.id})::int` })
-      .from(clients)
-      .innerJoin(pl, sql`${pl.client_id} = ${clients.id}`)
-      .where(and(
-        lte(clients.createdAt, endDate.toISOString()),
-        sql`${pl.status} = 'draft'`
-      ));
+    // Клиенты в статусе обращения (есть PL в статусе draft)
+    const inquiryResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT c.id)::int as count
+      FROM clients c
+      INNER JOIN pl ON pl.client_id = c.id
+      WHERE c.created_at <= ${endDateStr}
+      AND pl.status = 'draft'
+    `);
 
-    // Активные клиенты (есть PL не в draft и не closed)
-    const [activeResult] = await db
-      .select({ count: sql`COUNT(DISTINCT ${clients.id})::int` })
-      .from(clients)
-      .innerJoin(pl, sql`${pl.client_id} = ${clients.id}`)
-      .where(and(
-        lte(clients.createdAt, endDate.toISOString()),
-        sql`${pl.status} NOT IN ('draft', 'closed', 'cancelled')`
-      ));
+    // Активные клиенты (есть PL не в draft/cancelled/closed)
+    const activeResult = await db.execute(sql`
+      SELECT COUNT(DISTINCT c.id)::int as count
+      FROM clients c
+      INNER JOIN pl ON pl.client_id = c.id
+      WHERE c.created_at <= ${endDateStr}
+      AND pl.status NOT IN ('draft', 'closed', 'cancelled')
+    `);
 
     result.push({
       date,
-      total: totalResult?.count || 0,
-      inquiry: inquiryResult?.count || 0,
-      active: activeResult?.count || 0,
+      total: totalResult[0]?.count || 0,
+      inquiry: inquiryResult.rows[0]?.count || 0,
+      active: activeResult.rows[0]?.count || 0,
     });
   }
 
   return result;
 }
 
-// PL по статусам
-async function getPLByStatus(db, dateRange, granularity) {
+async function getPLByStatus(db, dateRange) {
   const result = [];
   const allStatuses = [
     "draft", "awaiting_docs", "awaiting_load", "to_load", "loaded",
@@ -130,30 +105,16 @@ async function getPLByStatus(db, dateRange, granularity) {
   ];
 
   for (const date of dateRange) {
-    const dateObj = new Date(date);
-    const endDate = new Date(date);
-    
-    if (granularity === "day") {
-      endDate.setDate(endDate.getDate() + 1);
-    } else if (granularity === "week") {
-      endDate.setDate(endDate.getDate() + 7);
-    } else if (granularity === "month") {
-      endDate.setMonth(endDate.getMonth() + 1);
-    }
-
+    const endDateStr = date + "T23:59:59.999Z";
     const row = { date };
 
-    // Для каждого статуса считаем количество PL
     for (const status of allStatuses) {
-      const [countResult] = await db
+      const countResult = await db
         .select({ count: sql`COUNT(*)::int` })
         .from(pl)
-        .where(and(
-          lte(pl.createdAt, endDate.toISOString()),
-          sql`${pl.status} = ${status}`
-        ));
+        .where(sql`${pl.createdAt} <= ${endDateStr} AND ${pl.status} = ${status}`);
       
-      row[status] = countResult?.count || 0;
+      row[status] = countResult[0]?.count || 0;
     }
 
     result.push(row);
@@ -162,37 +123,23 @@ async function getPLByStatus(db, dateRange, granularity) {
   return result;
 }
 
-// Динамика веса по ключевым статусам
-async function getWeightDynamics(db, dateRange, granularity) {
+async function getWeightDynamics(db, dateRange) {
   const result = [];
   const keyStatuses = ["awaiting_docs", "to_load", "released", "kg_customs"];
 
   for (const date of dateRange) {
-    const dateObj = new Date(date);
-    const endDate = new Date(date);
-    
-    if (granularity === "day") {
-      endDate.setDate(endDate.getDate() + 1);
-    } else if (granularity === "week") {
-      endDate.setDate(endDate.getDate() + 7);
-    } else if (granularity === "month") {
-      endDate.setMonth(endDate.getMonth() + 1);
-    }
-
+    const endDateStr = date + "T23:59:59.999Z";
     const row = { date };
 
     for (const status of keyStatuses) {
-      const [weightResult] = await db
+      const weightResult = await db
         .select({ 
           totalWeight: sql`COALESCE(SUM(${pl.weight_kg}), 0)::int` 
         })
         .from(pl)
-        .where(and(
-          lte(pl.createdAt, endDate.toISOString()),
-          sql`${pl.status} = ${status}`
-        ));
+        .where(sql`${pl.createdAt} <= ${endDateStr} AND ${pl.status} = ${status}`);
       
-      row[status] = weightResult?.totalWeight || 0;
+      row[status] = weightResult[0]?.totalWeight || 0;
     }
 
     result.push(row);

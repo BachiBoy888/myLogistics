@@ -17,6 +17,14 @@ const ALL_PL_STATUSES = [
 
 const WEIGHT_STATUSES = ["awaiting_docs", "to_load", "released", "kg_customs"];
 
+// Хелпер для безопасного получения rows из результата Drizzle
+function getRows(result) {
+  if (!result) return [];
+  if (Array.isArray(result)) return result;
+  if (result.rows) return result.rows;
+  return [];
+}
+
 export default async function analyticsRoutes(app) {
   const db = app.drizzle;
 
@@ -37,20 +45,23 @@ export default async function analyticsRoutes(app) {
         WHERE day <= ${to}::date
       `);
 
+      const metaRows = getRows(metaResult);
+      const metaRow = metaRows.length > 0 ? metaRows[0] : null;
+
       const meta = {
         from,
         to,
         granularity,
-        lastSnapshotDay: metaResult.rows[0]?.last_snapshot_day || null,
-        generatedAt: metaResult.rows[0]?.generated_at || null,
-        sourceTs: metaResult.rows[0]?.source_ts || null,
+        lastSnapshotDay: metaRow?.last_snapshot_day || null,
+        generatedAt: metaRow?.generated_at || null,
+        sourceTs: metaRow?.source_ts || null,
       };
 
       // Получаем данные из snapshots
       const [clientDynamics, plByStatus, weightDynamics] = await Promise.all([
-        getClientDynamics(db, from, to, granularity),
-        getPLByStatus(db, from, to, granularity),
-        getWeightDynamics(db, from, to, granularity),
+        getClientDynamics(db, from, to, granularity, req.log),
+        getPLByStatus(db, from, to, granularity, req.log),
+        getWeightDynamics(db, from, to, granularity, req.log),
       ]);
 
       return {
@@ -89,11 +100,11 @@ function generateDateRange(from, to, granularity) {
 }
 
 // Динамика клиентов - читаем из snapshots
-async function getClientDynamics(db, from, to, granularity) {
+async function getClientDynamics(db, from, to, granularity, log) {
   const dateRange = generateDateRange(from, to, granularity);
   
   // Загружаем все snapshots за период
-  const snapshots = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT 
       day::text as day,
       total_clients,
@@ -104,7 +115,13 @@ async function getClientDynamics(db, from, to, granularity) {
     ORDER BY day
   `);
 
-  const snapshotMap = new Map(snapshots.rows.map(r => [r.day, r]));
+  const rows = getRows(result);
+  
+  if (rows.length === 0) {
+    log.warn({ from, to }, "No client snapshots found for period");
+  }
+
+  const snapshotMap = new Map(rows.map(r => [r.day, r]));
 
   return dateRange.map(date => {
     const snap = snapshotMap.get(date);
@@ -118,11 +135,11 @@ async function getClientDynamics(db, from, to, granularity) {
 }
 
 // PL по статусам - читаем из snapshots
-async function getPLByStatus(db, from, to, granularity) {
+async function getPLByStatus(db, from, to, granularity, log) {
   const dateRange = generateDateRange(from, to, granularity);
   
   // Загружаем все snapshots за период
-  const snapshots = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT 
       day::text as day,
       status,
@@ -132,9 +149,15 @@ async function getPLByStatus(db, from, to, granularity) {
     ORDER BY day, status
   `);
 
+  const rows = getRows(result);
+  
+  if (rows.length === 0) {
+    log.warn({ from, to }, "No PL status snapshots found for period");
+  }
+
   // Группируем по дате
   const dayStatusMap = new Map();
-  for (const row of snapshots.rows) {
+  for (const row of rows) {
     if (!dayStatusMap.has(row.day)) {
       dayStatusMap.set(row.day, new Map());
     }
@@ -152,11 +175,11 @@ async function getPLByStatus(db, from, to, granularity) {
 }
 
 // Динамика веса - читаем из snapshots
-async function getWeightDynamics(db, from, to, granularity) {
+async function getWeightDynamics(db, from, to, granularity, log) {
   const dateRange = generateDateRange(from, to, granularity);
   
   // Загружаем все snapshots за период
-  const snapshots = await db.execute(sql`
+  const result = await db.execute(sql`
     SELECT 
       day::text as day,
       status,
@@ -166,13 +189,19 @@ async function getWeightDynamics(db, from, to, granularity) {
     ORDER BY day, status
   `);
 
+  const rows = getRows(result);
+  
+  if (rows.length === 0) {
+    log.warn({ from, to }, "No weight snapshots found for period");
+  }
+
   // Группируем по дате
   const dayStatusMap = new Map();
-  for (const row of snapshots.rows) {
+  for (const row of rows) {
     if (!dayStatusMap.has(row.day)) {
       dayStatusMap.set(row.day, new Map());
     }
-    dayStatusMap.get(row.day).set(row.status, Math.round(row.total_weight));
+    dayStatusMap.get(row.day).set(row.status, Math.round(row.total_weight || 0));
   }
 
   return dateRange.map(date => {

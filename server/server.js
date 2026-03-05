@@ -24,6 +24,7 @@ import consolidationsRoutes from "./routes/consolidations.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
 import healthRoutes from "./routes/health.js";
+import analyticsRoutes from "./routes/analytics.js";
 
 // --- вычислим текущую папку (для статики)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -145,6 +146,7 @@ async function start() {
   // API
   await app.register(authRoutes, { prefix: "/api/auth" });
   await app.register(healthRoutes, { prefix: "/api" });
+  await app.register(analyticsRoutes, { prefix: "/api/analytics" });
   await app.register(clientsRoutes, { prefix: "/api" });
   await app.register(plRoutes, { prefix: "/api/pl" });
   await app.register(consolidationsRoutes, { prefix: "/api/consolidations" });

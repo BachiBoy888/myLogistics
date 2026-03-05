@@ -14,6 +14,8 @@ import {
 } from "recharts";
 
 export default function ClientDynamicsChart({ data, granularity }) {
+  console.log("ClientDynamicsChart data:", data);
+  
   if (!data || data.length === 0) {
     return (
       <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">

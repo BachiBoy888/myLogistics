@@ -16,6 +16,8 @@ export default function AnalyticsPage() {
 
   const { data, loading, error } = useAnalytics(dateRange, granularity);
 
+  console.log("AnalyticsPage state:", { data, loading, error, dateRange, granularity });
+
   const handleDateChange = (field, value) => {
     setDateRange(prev => ({ ...prev, [field]: value }));
   };

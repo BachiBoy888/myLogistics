@@ -1,4 +1,6 @@
 // src/components/kanban/KanbanPLCard.jsx
+// Карточка PL для канбана в стиле Trello
+
 import React, { useState } from "react";
 
 export default function KanbanPLCard({ 
@@ -27,8 +29,6 @@ export default function KanbanPLCard({
     setIsDragging(true);
     e.dataTransfer.effectAllowed = "move";
     
-    // If this card is selected, drag all selected cards
-    // Otherwise drag just this one
     const selectedIds = onSelect?.selectedIds || [];
     if (selectedIds.includes(pl.id) && selectedIds.length > 1) {
       e.dataTransfer.setData("text/plain", JSON.stringify({ plIds: selectedIds }));
@@ -41,13 +41,11 @@ export default function KanbanPLCard({
     setIsDragging(false);
   };
 
-  // Get initials for avatar
   const getInitials = (name) => {
     if (!name) return "??";
     return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
   };
 
-  // Avatar color by client id
   const getAvatarColor = (clientId) => {
     const colors = [
       "bg-blue-500", "bg-green-500", "bg-purple-500", 
@@ -57,25 +55,45 @@ export default function KanbanPLCard({
     return colors[clientId % colors.length];
   };
 
+  // Цвет прогресса
+  const getProgressColor = (status) => {
+    const progressMap = {
+      draft: 1,
+      awaiting_docs: 2,
+      awaiting_load: 3,
+      to_load: 4,
+      loaded: 5,
+      to_customs: 6,
+      released: 7,
+      kg_customs: 8,
+      collect_payment: 9,
+      delivered: 10,
+      closed: 11,
+    };
+    return progressMap[status] || 1;
+  };
+
+  const progress = getProgressColor(pl.status);
+
   return (
     <div
       draggable
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handleClick}
-      className={`bg-gray-800 rounded-lg border p-3 cursor-pointer hover:border-gray-500 transition-all group select-none ${
+      className={`bg-gray-800 rounded-lg border p-3 cursor-pointer hover:shadow-lg transition-all group select-none ${
         isSelected 
-          ? "border-blue-500 ring-2 ring-blue-500/30" 
-          : "border-gray-600"
+          ? "border-blue-500 ring-2 ring-blue-500/20" 
+          : "border-gray-600 hover:border-gray-500"
       } ${isDragging ? "opacity-50" : ""}`}
     >
-      {/* Top: PL Number */}
+      {/* Top: PL Number + menu */}
       <div className="flex items-start justify-between mb-2">
         <span className="font-semibold text-sm text-gray-100">
           {pl.pl_number?.replace(/-?\d{4}-?/, '-') || `PL-${pl.id}`}
         </span>
         <button 
-          className="text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+          className="text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-700 rounded"
           onClick={(e) => e.stopPropagation()}
         >
           <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
@@ -101,19 +119,19 @@ export default function KanbanPLCard({
             <div
               key={i}
               className={`w-1.5 h-1.5 rounded-full ${
-                i <= 3 ? "bg-blue-500" : "bg-gray-600"
+                i <= Math.ceil(progress / 2.2) ? "bg-blue-500" : "bg-gray-600"
               }`}
             />
           ))}
         </div>
 
-        <div className={`w-6 h-6 rounded-full ${getAvatarColor(pl.client_id)} flex items-center justify-center text-white text-xs font-medium`}>
+        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.client_id)} flex items-center justify-center text-white text-xs font-medium`}>
           {getInitials(clientName)}
         </div>
       </div>
 
       {/* Weight/Volume */}
-      <div className="mt-2 pt-2 border-t border-gray-700 flex items-center gap-3 text-xs text-gray-400">
+      <div className="mt-2 pt-2 border-t border-gray-700 flex items-center gap-3 text-xs text-gray-500">
         {weight > 0 && <span>{weight} кг</span>}
         {volume > 0 && <span>{volume} м³</span>}
       </div>

@@ -34,14 +34,11 @@ export default function KanbanBoard({
     try {
       const data = JSON.parse(e.dataTransfer.getData("text/plain"));
       if (data.plIds && data.plIds.length > 0) {
-        // Move multiple PLs
         data.plIds.forEach(plId => onPLMove?.(plId, targetStage));
       } else if (data.plId) {
-        // Move single PL
         onPLMove?.(data.plId, targetStage);
       }
       if (data.consId) {
-        // Move consolidation
         onPLMove?.(data.consId, targetStage, true);
       }
     } catch (err) {
@@ -50,7 +47,7 @@ export default function KanbanBoard({
   }, [onPLMove]);
 
   return (
-    <div className="flex h-full overflow-x-auto overflow-y-hidden scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-700">
+    <div className="flex h-full overflow-x-auto overflow-y-hidden">
       {OrderedStages.map((stage, index) => (
         <KanbanColumn
           key={stage}

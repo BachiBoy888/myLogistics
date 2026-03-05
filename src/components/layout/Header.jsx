@@ -1,28 +1,62 @@
 // src/components/layout/Header.jsx
 import React from "react";
-import TabButton from "../ui/TabButton";
+import { Package, Users, BarChart3, LogOut } from "lucide-react";
 
 export default function Header({ mode, onChangeMode, user, onLogout }) {
+  const tabs = [
+    { key: "cargo", label: "Мои грузы", icon: Package },
+    { key: "clients", label: "Мои клиенты", icon: Users },
+    { key: "analytics", label: "Аналитика", icon: BarChart3 },
+  ];
+
   return (
-    <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b">
-      <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center justify-between md:justify-start gap-3">
-          <div className="text-lg font-semibold">Моя Логистика</div>
-          <nav className="flex items-center gap-2">
-            <TabButton active={mode === "cargo"} onClick={() => onChangeMode("cargo")}>Мои грузы</TabButton>
-            <TabButton active={mode === "clients"} onClick={() => onChangeMode("clients")}>Мои клиенты</TabButton>
-            <TabButton active={mode === "analytics"} onClick={() => onChangeMode("analytics")}>Аналитика</TabButton>
-          </nav>
+    <header className="sticky top-0 z-50 bg-gray-800 border-b border-gray-700">
+      <div className="px-4 py-3 flex items-center justify-between">
+        {/* Logo */}
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <Package className="w-4 h-4 text-white" />
+          </div>
+          <span className="text-lg font-semibold text-white">Моя Логистика</span>
         </div>
 
+        {/* Navigation */}
+        <nav className="flex items-center gap-1 bg-gray-900/50 rounded-lg p-1">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => onChangeMode(tab.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  mode === tab.key
+                    ? "bg-gray-700 text-white shadow-sm"
+                    : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* User */}
         <div className="flex items-center gap-3">
-          {user && <div className="text-sm text-neutral-700 truncate max-w-[200px]">{user.name}</div>}
+          {user && (
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                {user.name?.charAt(0).toUpperCase()}
+              </div>
+              <span className="text-sm text-gray-300 hidden md:block">{user.name}</span>
+            </div>
+          )}
           <button
             onClick={onLogout}
-            className="text-sm px-3 py-1.5 rounded-lg border border-neutral-300 hover:bg-neutral-100"
-            title="Выйти из учётки"
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+            title="Выйти"
           >
-            Выйти
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

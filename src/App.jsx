@@ -158,7 +158,7 @@ function MainApp({ user, onLogout }) {
   const safePls = sanitizePls(pls);
 
   return (
-    <div className="min-h-screen bg-[#FAF3DD] flex flex-col">
+    <div className="min-h-screen bg-gray-900 flex flex-col">
       <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} />
 
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">

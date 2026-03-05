@@ -127,6 +127,13 @@
       "when": 1741159200000,
       "tag": "0017_fix_cons_enum",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1772713647967,
+      "tag": "0018_add_analytics_snapshots",
+      "breakpoints": true
     }
   ]
 }

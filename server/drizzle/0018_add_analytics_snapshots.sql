@@ -1,5 +1,6 @@
 -- Migration: Add analytics snapshot tables
--- Created: 2026-03-05
+-- Created: 2026-03-06
+-- Note: Enum values to_load and collect_payment already exist (added in 0016, 0017)
 
 -- 1. Daily snapshots for client metrics
 CREATE TABLE IF NOT EXISTS analytics_daily_snapshots (

@@ -134,6 +134,13 @@
       "when": 1772713647967,
       "tag": "0018_add_analytics_snapshots",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1772716000000,
+      "tag": "0019_add_fx_calc_fields",
+      "breakpoints": true
     }
   ]
 }

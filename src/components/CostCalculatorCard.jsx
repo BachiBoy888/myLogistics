@@ -1,39 +1,77 @@
 // src/components/CostCalculatorCard.jsx
-// Калькулятор себестоимости и цены для клиента (вынесен из App.jsx)
+// Калькулятор себестоимости с поддержкой валют (KGS/USD/CNY)
 
 import React, { useState, useMemo, useEffect } from "react";
 import LabelInput from "/src/components/ui/LabelInput.jsx";
 import KV from "./ui/KV.jsx";
-import { updatePL } from "/src/api/client.js"; // сохраним цену и сам калькулятор
+import { updatePL, getFXRates } from "/src/api/client.js";
+
+const CURRENCIES = [
+  { code: "USD", name: "$ USD", flag: "🇺🇸" },
+  { code: "KGS", name: "сом KGS", flag: "🇰🇬" },
+  { code: "CNY", name: "¥ CNY", flag: "🇨🇳" },
+];
+
+// Форматирование числа как валюты
+function formatMoney(num, decimals = 2) {
+  const n = Number(num) || 0;
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+// Конвертация в USD
+function convertToUSD(amount, currency, rates) {
+  if (!rates || currency === "USD") return amount;
+  const amt = Number(amount) || 0;
+  if (currency === "KGS") return amt / rates.usdKgs;
+  if (currency === "CNY") return (amt * rates.cnyKgs) / rates.usdKgs;
+  return amt;
+}
 
 /* ============================
-   Хук расчёта логистических ставок
+   Хук расчёта логистических ставок (новый - с суммами)
 ============================ */
-function useCostCalculator({ weight_kg, volume_cbm, init = {} }) {
-  const [rate1Kg, setRate1Kg] = useState(Number(init.rate1Kg ?? 0));
-  const [rate1Cbm, setRate1Cbm] = useState(Number(init.rate1Cbm ?? 0));
-  const [rate2Kg, setRate2Kg] = useState(Number(init.rate2Kg ?? 0));
-  const [rate2Cbm, setRate2Cbm] = useState(Number(init.rate2Cbm ?? 0));
+function useCostCalculator({ weight_kg, volume_cbm, init = {}, fxRates }) {
+  // Состояния для плечей (сумма + валюта)
+  const [leg1Amount, setLeg1Amount] = useState(Number(init.leg1Amount ?? init.rate1Amount ?? 0));
+  const [leg1Currency, setLeg1Currency] = useState(init.leg1Currency ?? "USD");
+  const [leg2Amount, setLeg2Amount] = useState(Number(init.leg2Amount ?? init.rate2Amount ?? 0));
+  const [leg2Currency, setLeg2Currency] = useState(init.leg2Currency ?? "USD");
+  
+  // Дополнительные сборы
   const [customsFee, setCustomsFee] = useState(Number(init.customsFee ?? 0));
   const [otherFee, setOtherFee] = useState(Number(init.otherFee ?? 0));
+  
+  // FX rates из сохранённого расчёта (для исторических данных)
+  const [savedFxRates, setSavedFxRates] = useState(null);
 
-  // при смене PL/инициализации подтягиваем сохранённые значения калькулятора
+  // Загружаем FX rates из сохранённого расчёта
   useEffect(() => {
-    setRate1Kg(Number(init.rate1Kg ?? 0));
-    setRate1Cbm(Number(init.rate1Cbm ?? 0));
-    setRate2Kg(Number(init.rate2Kg ?? 0));
-    setRate2Cbm(Number(init.rate2Cbm ?? 0));
-    setCustomsFee(Number(init.customsFee ?? 0));
-    setOtherFee(Number(init.otherFee ?? 0));
-  }, [
-    init.rate1Kg,
-    init.rate1Cbm,
-    init.rate2Kg,
-    init.rate2Cbm,
-    init.customsFee,
-    init.otherFee,
-  ]);
+    if (init.fxUsdKgs && init.fxCnyKgs) {
+      setSavedFxRates({
+        usdKgs: Number(init.fxUsdKgs),
+        cnyKgs: Number(init.fxCnyKgs),
+        date: init.fxDate,
+        source: init.fxSource,
+      });
+    }
+  }, [init.fxUsdKgs, init.fxCnyKgs, init.fxDate, init.fxSource]);
 
+  // Определяем какие курсы использовать (сохранённые или текущие)
+  const activeRates = savedFxRates || fxRates;
+
+  // Пересчитываем суммы в USD
+  const leg1AmountUSD = useMemo(() => {
+    return convertToUSD(leg1Amount, leg1Currency, activeRates);
+  }, [leg1Amount, leg1Currency, activeRates]);
+
+  const leg2AmountUSD = useMemo(() => {
+    return convertToUSD(leg2Amount, leg2Currency, activeRates);
+  }, [leg2Amount, leg2Currency, activeRates]);
+
+  // Плотность и базис расчёта
   const density = useMemo(() => {
     const w = Number(weight_kg) || 0;
     const v = Number(volume_cbm) || 0;
@@ -46,21 +84,43 @@ function useCostCalculator({ weight_kg, volume_cbm, init = {} }) {
     return density > 250 ? "kg" : "cbm";
   }, [density]);
 
+  // Расчёт $/кг и $/м³ (производные от суммы)
+  const leg1UsdPerKg = useMemo(() => {
+    const w = Number(weight_kg) || 0;
+    if (w <= 0) return 0;
+    return leg1AmountUSD / w;
+  }, [leg1AmountUSD, weight_kg]);
+
+  const leg1UsdPerM3 = useMemo(() => {
+    const v = Number(volume_cbm) || 0;
+    if (v <= 0) return 0;
+    return leg1AmountUSD / v;
+  }, [leg1AmountUSD, volume_cbm]);
+
+  const leg2UsdPerKg = useMemo(() => {
+    const w = Number(weight_kg) || 0;
+    if (w <= 0) return 0;
+    return leg2AmountUSD / w;
+  }, [leg2AmountUSD, weight_kg]);
+
+  const leg2UsdPerM3 = useMemo(() => {
+    const v = Number(volume_cbm) || 0;
+    if (v <= 0) return 0;
+    return leg2AmountUSD / v;
+  }, [leg2AmountUSD, volume_cbm]);
+
+  // Расчёт стоимости плечей (по текущей логике - вес или объём)
   const leg1 = useMemo(() => {
-    const w = (Number(weight_kg) || 0) * (Number(rate1Kg) || 0);
-    const v = (Number(volume_cbm) || 0) * (Number(rate1Cbm) || 0);
-    if (basisSuggestion === "kg") return w;
-    if (basisSuggestion === "cbm") return v;
-    return Math.max(w, v);
-  }, [weight_kg, volume_cbm, rate1Kg, rate1Cbm, basisSuggestion]);
+    if (basisSuggestion === "kg") return leg1AmountUSD;
+    if (basisSuggestion === "cbm") return leg1AmountUSD;
+    return leg1AmountUSD;
+  }, [leg1AmountUSD, basisSuggestion]);
 
   const leg2 = useMemo(() => {
-    const w = (Number(weight_kg) || 0) * (Number(rate2Kg) || 0);
-    const v = (Number(volume_cbm) || 0) * (Number(rate2Cbm) || 0);
-    if (basisSuggestion === "kg") return w;
-    if (basisSuggestion === "cbm") return v;
-    return Math.max(w, v);
-  }, [weight_kg, volume_cbm, rate2Kg, rate2Cbm, basisSuggestion]);
+    if (basisSuggestion === "kg") return leg2AmountUSD;
+    if (basisSuggestion === "cbm") return leg2AmountUSD;
+    return leg2AmountUSD;
+  }, [leg2AmountUSD, basisSuggestion]);
 
   const total = useMemo(() => {
     return (
@@ -72,34 +132,90 @@ function useCostCalculator({ weight_kg, volume_cbm, init = {} }) {
   }, [leg1, leg2, customsFee, otherFee]);
 
   return {
-    rate1Kg,
-    setRate1Kg,
-    rate1Cbm,
-    setRate1Cbm,
-    rate2Kg,
-    setRate2Kg,
-    rate2Cbm,
-    setRate2Cbm,
+    // Плечо 1
+    leg1Amount,
+    setLeg1Amount,
+    leg1Currency,
+    setLeg1Currency,
+    leg1AmountUSD,
+    leg1UsdPerKg,
+    leg1UsdPerM3,
+    // Плечо 2
+    leg2Amount,
+    setLeg2Amount,
+    leg2Currency,
+    setLeg2Currency,
+    leg2AmountUSD,
+    leg2UsdPerKg,
+    leg2UsdPerM3,
+    // Доп. сборы
     customsFee,
     setCustomsFee,
     otherFee,
     setOtherFee,
+    // Расчёты
     density,
     basisSuggestion,
     leg1,
     leg2,
     total,
+    // FX
+    activeRates,
+    isHistorical: !!savedFxRates,
   };
+}
+
+/* ============================
+   Компонент выбора валюты
+============================ */
+function CurrencySelect({ value, onChange, disabled }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+      className="border rounded-lg px-2 py-2 text-sm bg-white"
+    >
+      {CURRENCIES.map((c) => (
+        <option key={c.code} value={c.code}>
+          {c.flag} {c.name}
+        </option>
+      ))}
+    </select>
+  );
 }
 
 /* ============================
    Основной компонент калькулятора
 ============================ */
 export default function CostCalculatorCard({ pl, onSave }) {
+  const [fxRates, setFxRates] = useState(null);
+  const [fxLoading, setFxLoading] = useState(true);
+  const [fxError, setFxError] = useState(null);
+
+  // Загружаем текущие курсы
+  useEffect(() => {
+    async function loadRates() {
+      try {
+        setFxLoading(true);
+        const rates = await getFXRates();
+        setFxRates(rates);
+        setFxError(null);
+      } catch (err) {
+        setFxError("Не удалось загрузить курсы валют");
+        console.error("FX load error:", err);
+      } finally {
+        setFxLoading(false);
+      }
+    }
+    loadRates();
+  }, []);
+
   const calc = useCostCalculator({
     weight_kg: pl.weight_kg,
     volume_cbm: pl.volume_cbm,
     init: pl.calculator || {},
+    fxRates,
   });
 
   const [clientPrice, setClientPrice] = useState(pl.quote?.client_price ?? "");
@@ -128,11 +244,6 @@ export default function CostCalculatorCard({ pl, onSave }) {
   const overKg = perKg != null && perKg > 0.7;
   const overCbm = perCbm != null && perCbm > 150;
 
-  const hlKg =
-    calc.basisSuggestion === "kg" ? "bg-emerald-50 border-emerald-300" : "";
-  const hlCbm =
-    calc.basisSuggestion === "cbm" ? "bg-emerald-50 border-emerald-300" : "";
-
   const badge = (text, good) => (
     <span
       className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
@@ -143,7 +254,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
     </span>
   );
 
-  // Сохранение: отправляем и цену клиента, и сам калькулятор (jsonb)
+  // Сохранение
   const handleSave = async () => {
     setErrorMsg("");
     setSaving(true);
@@ -151,25 +262,51 @@ export default function CostCalculatorCard({ pl, onSave }) {
       const payload = {
         clientPrice: Number(clientPrice || 0),
         calculator: {
-          rate1Kg: Number(calc.rate1Kg || 0),
-          rate1Cbm: Number(calc.rate1Cbm || 0),
-          rate2Kg: Number(calc.rate2Kg || 0),
-          rate2Cbm: Number(calc.rate2Cbm || 0),
+          // Новые поля для сумм плечей
+          leg1Amount: Number(calc.leg1Amount || 0),
+          leg1Currency: calc.leg1Currency,
+          leg1AmountUSD: calc.leg1AmountUSD,
+          leg1UsdPerKg: calc.leg1UsdPerKg,
+          leg1UsdPerM3: calc.leg1UsdPerM3,
+          leg2Amount: Number(calc.leg2Amount || 0),
+          leg2Currency: calc.leg2Currency,
+          leg2AmountUSD: calc.leg2AmountUSD,
+          leg2UsdPerKg: calc.leg2UsdPerKg,
+          leg2UsdPerM3: calc.leg2UsdPerM3,
+          // Доп. сборы
           customsFee: Number(calc.customsFee || 0),
           otherFee: Number(calc.otherFee || 0),
-          // полезные производные — вдруг пригодятся на бэке/в аналитике
-          density:
-            pl.volume_cbm && Number(pl.volume_cbm) > 0
-              ? Number(pl.weight_kg || 0) / Number(pl.volume_cbm || 1)
-              : null,
+          // Расчёты
+          density: calc.density,
           basisSuggestion: calc.basisSuggestion,
-          calcCost, // итоговая себестоимость по калькулятору
+          calcCost,
+          // FX snapshot
+          fxSource: calc.activeRates?.source || "NBKR",
+          fxDate: calc.activeRates?.date,
+          fxUsdKgs: calc.activeRates?.usdKgs,
+          fxCnyKgs: calc.activeRates?.cnyKgs,
+          fxSavedAt: new Date().toISOString(),
         },
+        // Также сохраняем в отдельные поля для индексации
+        leg1Amount: Number(calc.leg1Amount || 0),
+        leg1Currency: calc.leg1Currency,
+        leg1AmountUsd: calc.leg1AmountUSD,
+        leg1UsdPerKg: calc.leg1UsdPerKg,
+        leg1UsdPerM3: calc.leg1UsdPerM3,
+        leg2Amount: Number(calc.leg2Amount || 0),
+        leg2Currency: calc.leg2Currency,
+        leg2AmountUsd: calc.leg2AmountUSD,
+        leg2UsdPerKg: calc.leg2UsdPerKg,
+        leg2UsdPerM3: calc.leg2UsdPerM3,
+        fxSource: calc.activeRates?.source || "NBKR",
+        fxDate: calc.activeRates?.date,
+        fxUsdKgs: calc.activeRates?.usdKgs,
+        fxCnyKgs: calc.activeRates?.cnyKgs,
+        fxSavedAt: new Date().toISOString(),
       };
 
       const saved = await updatePL(pl.id, payload);
 
-      // пробрасываем наверх сохранённые значения
       const savedClientPrice =
         Number(saved?.quote?.client_price ?? payload.clientPrice);
       onSave?.(calcCost, savedClientPrice);
@@ -182,8 +319,42 @@ export default function CostCalculatorCard({ pl, onSave }) {
     }
   };
 
+  // Показываем USD эквивалент
+  function showUSDEquiv(amount, currency) {
+    if (currency === "USD" || !calc.activeRates) return null;
+    const usd = convertToUSD(amount, currency, calc.activeRates);
+    return `(≈ $${formatMoney(usd)})`;
+  }
+
   return (
     <div className="space-y-4 text-sm">
+      {/* Курсы валют */}
+      <div className="rounded-xl border p-3 bg-blue-50">
+        <div className="font-medium mb-2 flex items-center justify-between">
+          <span>Курсы валют НБКР</span>
+          {calc.isHistorical && (
+            <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">
+              Исторические курсы
+            </span>
+          )}
+        </div>
+        {fxLoading ? (
+          <div className="text-gray-500">Загрузка курсов...</div>
+        ) : fxError ? (
+          <div className="text-red-600 text-xs">{fxError}</div>
+        ) : calc.activeRates ? (
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>1 USD = {formatMoney(calc.activeRates.usdKgs, 4)} KGS</div>
+            <div>1 CNY = {formatMoney(calc.activeRates.cnyKgs, 4)} KGS</div>
+            <div className="text-gray-500 col-span-2">
+              Дата курса: {calc.activeRates.date || "—"}
+              {calc.activeRates.cached && " (из кэша)"}
+              {calc.activeRates.stale && " (устаревшие)"}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       {/* Плотность */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="text-gray-600">
@@ -201,26 +372,48 @@ export default function CostCalculatorCard({ pl, onSave }) {
       {/* Плечо 1 */}
       <div className="rounded-xl border p-3 bg-white">
         <div className="font-medium mb-2">1. Ставка до границы (Китай)</div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <LabelInput
-            type="number"
-            label="$/кг"
-            value={calc.rate1Kg}
-            inputClass={`transition-colors ${hlKg}`}
-            onChange={(v) => calc.setRate1Kg(parseFloat(v || 0))}
-          />
-          <LabelInput
-            type="number"
-            label="$/м³"
-            value={calc.rate1Cbm}
-            inputClass={`transition-colors ${hlCbm}`}
-            onChange={(v) => calc.setRate1Cbm(parseFloat(v || 0))}
-          />
-          <div className="flex flex-col justify-end">
-            <div className="text-xs text-gray-600">Стоимость плеча 1</div>
-            <div className="text-base font-semibold">
-              ${Math.round((calc.leg1 || 0) * 100) / 100}
+        
+        {/* Сумма + валюта */}
+        <div className="mb-3">
+          <label className="block text-xs text-gray-600 mb-1">Сумма ставки</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              min="0"
+              value={calc.leg1Amount}
+              onChange={(e) => calc.setLeg1Amount(parseFloat(e.target.value) || 0)}
+              className="flex-1 border rounded-lg px-3 py-2"
+              placeholder="Введите сумму"
+            />
+            <CurrencySelect
+              value={calc.leg1Currency}
+              onChange={calc.setLeg1Currency}
+            />
+          </div>
+          {calc.leg1Currency !== "USD" && (
+            <div className="text-xs text-gray-500 mt-1">
+              {showUSDEquiv(calc.leg1Amount, calc.leg1Currency)}
             </div>
+          )}
+        </div>
+
+        {/* Производные */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-gray-50 rounded-lg p-2">
+            <div className="text-xs text-gray-500">$/кг</div>
+            <div className="font-semibold">${formatMoney(calc.leg1UsdPerKg, 4)}</div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-2">
+            <div className="text-xs text-gray-500">$/м³</div>
+            <div className="font-semibold">${formatMoney(calc.leg1UsdPerM3, 2)}</div>
+          </div>
+        </div>
+
+        {/* Итог плеча */}
+        <div className="flex justify-end">
+          <div>
+            <div className="text-xs text-gray-600">Стоимость плеча 1</div>
+            <div className="text-base font-semibold">${formatMoney(calc.leg1)}</div>
           </div>
         </div>
       </div>
@@ -228,26 +421,48 @@ export default function CostCalculatorCard({ pl, onSave }) {
       {/* Плечо 2 */}
       <div className="rounded-xl border p-3 bg-white">
         <div className="font-medium mb-2">2. Ставка с границы до Канта</div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <LabelInput
-            type="number"
-            label="$/кг"
-            value={calc.rate2Kg}
-            inputClass={`transition-colors ${hlKg}`}
-            onChange={(v) => calc.setRate2Kg(parseFloat(v || 0))}
-          />
-          <LabelInput
-            type="number"
-            label="$/м³"
-            value={calc.rate2Cbm}
-            inputClass={`transition-colors ${hlCbm}`}
-            onChange={(v) => calc.setRate2Cbm(parseFloat(v || 0))}
-          />
-          <div className="flex flex-col justify-end">
-            <div className="text-xs text-gray-600">Стоимость плеча 2</div>
-            <div className="text-base font-semibold">
-              ${Math.round((calc.leg2 || 0) * 100) / 100}
+        
+        {/* Сумма + валюта */}
+        <div className="mb-3">
+          <label className="block text-xs text-gray-600 mb-1">Сумма ставки</label>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              min="0"
+              value={calc.leg2Amount}
+              onChange={(e) => calc.setLeg2Amount(parseFloat(e.target.value) || 0)}
+              className="flex-1 border rounded-lg px-3 py-2"
+              placeholder="Введите сумму"
+            />
+            <CurrencySelect
+              value={calc.leg2Currency}
+              onChange={calc.setLeg2Currency}
+            />
+          </div>
+          {calc.leg2Currency !== "USD" && (
+            <div className="text-xs text-gray-500 mt-1">
+              {showUSDEquiv(calc.leg2Amount, calc.leg2Currency)}
             </div>
+          )}
+        </div>
+
+        {/* Производные */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="bg-gray-50 rounded-lg p-2">
+            <div className="text-xs text-gray-500">$/кг</div>
+            <div className="font-semibold">${formatMoney(calc.leg2UsdPerKg, 4)}</div>
+          </div>
+          <div className="bg-gray-50 rounded-lg p-2">
+            <div className="text-xs text-gray-500">$/м³</div>
+            <div className="font-semibold">${formatMoney(calc.leg2UsdPerM3, 2)}</div>
+          </div>
+        </div>
+
+        {/* Итог плеча */}
+        <div className="flex justify-end">
+          <div>
+            <div className="text-xs text-gray-600">Стоимость плеча 2</div>
+            <div className="text-base font-semibold">${formatMoney(calc.leg2)}</div>
           </div>
         </div>
       </div>
@@ -268,7 +483,9 @@ export default function CostCalculatorCard({ pl, onSave }) {
         />
         <div className="flex flex-col justify-end">
           <div className="text-xs text-gray-600">Себестоимость (1+2+3+4)</div>
-          <div className="text-base font-semibold text-orange-500">${calcCost}</div>
+          <div className="text-base font-semibold text-orange-500">
+            ${formatMoney(calcCost)}
+          </div>
         </div>
       </div>
 
@@ -283,7 +500,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
         />
         <KV
           label="Прибыль"
-          value={`${profit >= 0 ? "+" : ""}${Math.round(profit * 100) / 100} $`}
+          value={`${profit >= 0 ? "+" : ""}${formatMoney(profit)} $`}
           good={profit >= 0}
         />
         <KV label="Маржа" value={`${marginPct}%`} good={marginPct >= 0} />
@@ -314,16 +531,14 @@ export default function CostCalculatorCard({ pl, onSave }) {
       {/* Сохранение */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
         <button
-          className="border rounded-lg px-3 py-3 text-sm min-h-[44px] disabled:opacity-60"
-          disabled={saving}
+          className="border rounded-lg px-3 py-3 text-sm min-h-[44px] disabled:opacity-60 bg-black text-white"
+          disabled={saving || fxLoading}
           onClick={handleSave}
           title="Сохранить цену клиента и калькулятор на сервере"
         >
           {saving ? "⏳ Сохраняем..." : "💾 Сохранить расчёт"}
         </button>
-        {errorMsg && (
-          <span className="text-xs text-red-600">{errorMsg}</span>
-        )}
+        {errorMsg && <span className="text-xs text-red-600">{errorMsg}</span>}
         {!errorMsg && savedStamp && (
           <span className="text-xs text-gray-500">
             Сохранено • себестоимость ${calcCost}, клиенту ${clientPrice}

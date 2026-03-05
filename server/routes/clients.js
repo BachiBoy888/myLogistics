@@ -1,6 +1,6 @@
 // server/routes/clients.js
-import { eq, sql } from "drizzle-orm";
-import { clients as clientsTable } from "../db/schema.js";
+import { eq, sql, count } from "drizzle-orm";
+import { clients as clientsTable, pl as plTable } from "../db/schema.js";
 
 /**
  * Fastify-плагин с роутами для клиентов.
@@ -105,5 +105,39 @@ export default async function clientsRoutes(app) {
 
     if (!row) return reply.notFound("Клиент не найден");
     return row;
+  });
+
+  // === Удаление клиента (только если нет PL) ===
+  app.delete("/clients/:id", { preHandler: app.authGuard }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.badRequest("Некорректный id");
+
+    // 1. Проверяем существование клиента
+    const [client] = await db
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.id, id));
+
+    if (!client) {
+      return reply.notFound("Клиент не найден");
+    }
+
+    // 2. Проверяем наличие PL у клиента
+    const plCheck = await db.execute(sql`
+      SELECT COUNT(*)::int as count FROM pl WHERE client_id = ${id}
+    `);
+    const plCount = plCheck?.rows?.[0]?.count ?? 0;
+
+    if (plCount > 0) {
+      return reply.status(409).send({
+        error: "CLIENT_HAS_PLS",
+        message: "Нельзя удалить клиента: у него есть PL. Сначала удалите/перенесите PL на другого клиента."
+      });
+    }
+
+    // 3. Удаляем клиента
+    await db.delete(clientsTable).where(eq(clientsTable.id, id));
+
+    return reply.status(204).send();
   });
 }

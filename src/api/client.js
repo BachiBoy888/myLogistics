@@ -216,6 +216,12 @@ export async function updateClient(id, data) {
   return mutate(`/clients/${id}`, { method: "PATCH", body: data }, ["/clients"]);
 }
 
+export async function deleteClient(id) {
+  const res = await mutate(`/clients/${id}`, { method: "DELETE" }, ["/clients"]);
+  // 204 No Content - возвращаем null
+  return res;
+}
+
 /* -------------------
    PL
 ------------------- */
@@ -545,6 +551,7 @@ const api = {
   getClients,
   createClient,
   updateClient,
+  deleteClient,
 
   // pl
   listPLs,

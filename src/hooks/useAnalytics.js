@@ -1,5 +1,5 @@
 // src/hooks/useAnalytics.js
-// Хук для получения аналитических данных из БД
+// Хук для получения аналитических данных из snapshot'ов
 
 import { useState, useEffect, useCallback } from "react";
 
@@ -24,7 +24,6 @@ export function useAnalytics(dateRange, granularity) {
       });
 
       const url = `${API_BASE}/api/analytics?${params}`;
-      console.log("Fetching analytics:", url);
       
       const response = await fetch(url);
       
@@ -34,7 +33,12 @@ export function useAnalytics(dateRange, granularity) {
       }
 
       const result = await response.json();
-      console.log("Analytics data received:", result);
+      
+      // Валидация контракта
+      if (!result.meta || !Array.isArray(result.clientDynamics)) {
+        throw new Error("Invalid response format");
+      }
+      
       setData(result);
     } catch (err) {
       console.error("Analytics fetch error:", err);

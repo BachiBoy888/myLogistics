@@ -245,3 +245,55 @@ export const plEvents = pgTable(
     byActor: index("idx_pl_events_actor").on(t.actorUserId),
   })
 );
+
+/* =======================
+   Аналитика: Daily Snapshots
+   TODO: добавить employee_id для фильтрации по сотрудникам
+======================= */
+
+export const analyticsDailySnapshots = pgTable(
+  "analytics_daily_snapshots",
+  {
+    day: timestamp("day", { withTimezone: false }).notNull().$type(), // Date primary key
+    generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
+    sourceTs: timestamp("source_ts", { withTimezone: true }).notNull().defaultNow(),
+    totalClients: integer("total_clients").notNull().default(0),
+    inquiryClients: integer("inquiry_clients").notNull().default(0),
+    activeClients: integer("active_clients").notNull().default(0),
+    // employeeId: uuid("employee_id").references(() => users.id), // TODO: для фильтра по сотруднику
+  },
+  (t) => ({
+    pk: uniqueIndex("pk_analytics_snapshots").on(t.day),
+    byDay: index("idx_analytics_snapshots_day").on(t.day),
+  })
+);
+
+export const analyticsDailyPlStatus = pgTable(
+  "analytics_daily_pl_status",
+  {
+    day: timestamp("day", { withTimezone: false }).notNull(),
+    status: text("status").notNull(),
+    plCount: integer("pl_count").notNull().default(0),
+    // employeeId: uuid("employee_id").references(() => users.id), // TODO: для фильтра по сотруднику
+  },
+  (t) => ({
+    pk: uniqueIndex("pk_analytics_pl_status").on(t.day, t.status),
+    byDay: index("idx_analytics_pl_status_day").on(t.day),
+    byStatus: index("idx_analytics_pl_status_status").on(t.status),
+  })
+);
+
+export const analyticsDailyWeightStatus = pgTable(
+  "analytics_daily_weight_status",
+  {
+    day: timestamp("day", { withTimezone: false }).notNull(),
+    status: text("status").notNull(),
+    totalWeight: numeric("total_weight", { precision: 15, scale: 3 }).notNull().default("0"),
+    // employeeId: uuid("employee_id").references(() => users.id), // TODO: для фильтра по сотруднику
+  },
+  (t) => ({
+    pk: uniqueIndex("pk_analytics_weight_status").on(t.day, t.status),
+    byDay: index("idx_analytics_weight_day").on(t.day),
+    byStatus: index("idx_analytics_weight_status").on(t.status),
+  })
+);

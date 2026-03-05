@@ -5,13 +5,11 @@
   "type": "module",
   "scripts": {
     "// ====== Development ======": "",
-    "dev": "vite",                          
-    "dev:staging": "vite --mode staging",   
-
+    "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "// ====== Build ======": "",
-    "build": "vite build",                  
+    "build": "vite build",
     "build:staging": "vite build --mode staging",
-
     "// ====== Preview ======": "",
     "preview": "vite preview --port 5173 --strictPort",
     "preview:staging": "vite preview --port 5174 --strictPort"
@@ -24,7 +22,8 @@
     "lucide-react": "^0.345.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.9.4"
+    "react-router-dom": "^7.9.4",
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.2.0",

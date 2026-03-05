@@ -9,6 +9,7 @@ import {
   deletePL,
   getClients,
   createClient,
+  deleteClient,
   me,
   logout as apiLogout,
 } from "./api/client.js";
@@ -115,6 +116,11 @@ function MainApp({ user, onLogout }) {
     }
   }
 
+  // удаление клиента
+  async function handleDeleteClient(clientId) {
+    setClients((prev) => prev.filter((c) => c.id !== clientId));
+  }
+
   // обновление PL — оптимистично + роллбэк
   async function handleUpdatePL(id, patch) {
     const snapshot = pls;
@@ -198,13 +204,14 @@ function MainApp({ user, onLogout }) {
           <ClientsView
             pls={safePls}
             clients={clients}
-            openClientId={openClientId}                 // ← передаём id клиента для авто-открытия
-            onConsumeOpenClient={() => setOpenClientId(null)} // ← сбрасываем после использования
+            openClientId={openClientId}
+            onConsumeOpenClient={() => setOpenClientId(null)}
             onOpenPL={(id) => {
               setMode("cargo");
               setOpenPLId(id);
             }}
             onAddClient={handleAddClient}
+            onDeleteClient={handleDeleteClient}
           />
         )}
 

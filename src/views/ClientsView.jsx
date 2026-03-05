@@ -1,15 +1,16 @@
 // src/views/ClientsView.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import Card from "../components/ui/Card.jsx";
-import { Users, ChevronRight } from "lucide-react";
+import { Users, ChevronRight, Trash2, AlertTriangle } from "lucide-react";
 import { humanStatus } from "../constants/statuses.js";
-import { updateClient } from "../api/client.js";
+import { updateClient, deleteClient } from "../api/client.js";
 
 export default function ClientsView({
   pls,
   clients = [],
   onOpenPL,
   onAddClient,
+  onDeleteClient,
   openClientId = null,
   onConsumeOpenClient,
 }) {
@@ -62,6 +63,11 @@ export default function ClientsView({
     });
   }, [selClientName, selClient?.id]);
 
+  // Modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
   async function saveField(field, value) {
     if (!selClient?.id) return;
     try {
@@ -72,6 +78,55 @@ export default function ClientsView({
     }
   }
 
+  function handleDeleteClick() {
+    setDeleteError(null);
+    setShowDeleteModal(true);
+  }
+
+  function handleCancelDelete() {
+    setShowDeleteModal(false);
+    setDeleteError(null);
+  }
+
+  async function handleConfirmDelete() {
+    if (!selClient?.id) return;
+    
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await deleteClient(selClient.id);
+      
+      // Успешное удаление
+      setShowDeleteModal(false);
+      onDeleteClient?.(selClient.id);
+      
+      // Выбираем следующего клиента или очищаем
+      const remainingClients = clientList.filter(c => c.id !== selClient.id);
+      if (remainingClients.length > 0) {
+        setSelClientName(remainingClients[0].name);
+      } else {
+        setSelClientName(null);
+      }
+      
+      alert("Клиент удалён");
+    } catch (err) {
+      console.error("Ошибка при удалении клиента:", err);
+      
+      // Парсим ошибку
+      const errorMsg = err.message || "";
+      if (errorMsg.includes("409") || errorMsg.includes("CLIENT_HAS_PLS")) {
+        setDeleteError("Нельзя удалить клиента: у него есть PL. Сначала удалите/перенесите PL на другого клиента.");
+      } else if (errorMsg.includes("404")) {
+        setDeleteError("Клиент не найден");
+      } else {
+        setDeleteError("Ошибка сервера. Попробуйте позже");
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const sumClient = (selClient?.pls || []).reduce(
     (acc, pl) => acc + (pl.quote?.client_price || 0),
     0
@@ -79,6 +134,7 @@ export default function ClientsView({
   const activePL = (selClient?.pls || []).filter((pl) => pl.status !== "closed");
   const closedPL = (selClient?.pls || []).filter((pl) => pl.status === "closed");
   const isEditable = !!selClient?.id;
+  const hasAnyPL = (selClient?.pls || []).length > 0;
 
   return (
     <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -136,11 +192,25 @@ export default function ClientsView({
       <section className="bg-white rounded-2xl shadow-sm border overflow-hidden">
         {selClient ? (
           <div>
-            <div className="p-4 border-b">
-              <div className="text-lg font-semibold">{selClient.name}</div>
-              <div className="text-sm text-gray-600 mt-1">
-                PL всего: {selClient.pls.length} • На сумму: ${sumClient}
+            <div className="p-4 border-b flex items-center justify-between">
+              <div>
+                <div className="text-lg font-semibold">{selClient.name}</div>
+                <div className="text-sm text-gray-600 mt-1">
+                  PL всего: {selClient.pls.length} • На сумму: ${sumClient}
+                </div>
               </div>
+              
+              {/* Кнопка удаления */}
+              {isEditable && (
+                <button
+                  onClick={handleDeleteClick}
+                  className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                  title="Удалить клиента"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span className="text-sm">Удалить</span>
+                </button>
+              )}
             </div>
 
             <div className="p-4 space-y-4">
@@ -248,6 +318,68 @@ export default function ClientsView({
           <div className="p-6 text-center text-gray-500">Выберите клиента из списка</div>
         )}
       </section>
+
+      {/* Модал подтверждения удаления */}
+      {showDeleteModal && selClient && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              {hasAnyPL ? (
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
+              ) : (
+                <Trash2 className="w-6 h-6 text-red-500" />
+              )}
+              <h3 className="text-lg font-semibold">Удалить клиента?</h3>
+            </div>
+            
+            <div className="mb-6">
+              {hasAnyPL ? (
+                <div className="text-sm text-gray-700">
+                  <p className="mb-2">
+                    <strong>Нельзя удалить клиента:</strong> у него есть PL. 
+                    Сначала удалите/перенесите PL на другого клиента.
+                  </p>
+                  <p className="text-gray-500">
+                    У клиента <strong>{selClient.name}</strong> {selClient.pls.length} PL.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-gray-700">
+                  Клиент <strong>{selClient.name}</strong> будет удалён безвозвратно. 
+                  Это действие нельзя отменить.
+                </p>
+              )}
+              
+              {deleteError && (
+                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                  {deleteError}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleCancelDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={isDeleting || hasAnyPL}
+                className={`px-4 py-2 rounded-lg transition-colors ${
+                  hasAnyPL
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-red-600 text-white hover:bg-red-700"
+                }`}
+              >
+                {isDeleting ? "Удаление..." : "Удалить"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

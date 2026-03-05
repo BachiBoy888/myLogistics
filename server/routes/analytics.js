@@ -69,7 +69,7 @@ async function getClientDynamics(db, dateRange, log) {
         sql`SELECT COUNT(*)::int as count FROM clients WHERE created_at <= ${endDateStr}`
       );
 
-      // Клиенты в статусе обращения
+      // Клиенты в статусе обращения (есть PL в статусе draft)
       const inquiryResult = await db.execute(sql`
         SELECT COUNT(DISTINCT c.id)::int as count
         FROM clients c
@@ -149,13 +149,14 @@ async function getWeightDynamics(db, dateRange, log) {
 
       for (const status of keyStatuses) {
         try {
+          // Используем weight (не weight_kg!) из схемы
           const weightResult = await db.execute(sql`
-            SELECT COALESCE(SUM(weight_kg), 0)::int as total_weight 
+            SELECT COALESCE(SUM(weight), 0)::float as total_weight 
             FROM pl 
             WHERE created_at <= ${endDateStr} AND status = ${status}
           `);
           
-          row[status] = weightResult?.rows?.[0]?.total_weight || 0;
+          row[status] = Math.round(weightResult?.rows?.[0]?.total_weight || 0);
         } catch (weightErr) {
           row[status] = 0;
         }

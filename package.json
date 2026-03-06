@@ -7,6 +7,8 @@
     "// ====== Development ======": "",
     "dev": "vite",
     "dev:staging": "vite --mode staging",
+	"test:e2e": "playwright test",
+	"test:e2e:headed": "playwright test --headed",
     "// ====== Build ======": "",
     "build": "vite build",
     "build:staging": "vite build --mode staging",
@@ -26,6 +28,7 @@
     "recharts": "^3.7.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@vitejs/plugin-react": "^4.2.0",
     "autoprefixer": "^10.4.15",
     "postcss": "^8.4.28",

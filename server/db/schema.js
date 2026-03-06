@@ -61,6 +61,7 @@ export const pl = pgTable(
     name: text("name").notNull(),
     weight: numeric("weight", { precision: 12, scale: 3 }),
     volume: numeric("volume", { precision: 12, scale: 3 }),
+    places: integer("places").default(1),
     incoterm: text("incoterm"),
     pickupAddress: text("pickup_address"),
     shipperName: text("shipper_name"),

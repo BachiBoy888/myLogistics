@@ -158,6 +158,7 @@ export default function PLCard({
       `Load: ${pl.title ?? ""}`,
       `Volume, м³: ${pl.volume_cbm ?? ""}`,
       `Weight, kg: ${pl.weight_kg ?? ""}`,
+      `Places: ${pl.places ?? 1}`,
       `Sender: ${pl.shipper_name ?? ""}`,
       `Sender address: ${pl.pickup_address ?? ""}`,
       `Contact info: ${pl.shipper_contacts ?? ""}`,
@@ -326,6 +327,13 @@ export default function PLCard({
                     label="Объём, м³"
                     value={pl.volume_cbm ?? ""}
                     onChange={(v) => onUpdate({ volume_cbm: parseFloat(v || 0) })}
+                  />
+                  <LabelInput
+                    type="number"
+                    label="Количество мест"
+                    value={pl.places ?? ""}
+                    min="1"
+                    onChange={(v) => onUpdate({ places: parseInt(v || 1, 10) })}
                   />
                 </div>
 

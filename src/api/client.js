@@ -152,7 +152,7 @@ export function normalizePL(s) {
     title: s.title ?? s.name ?? s.cargoTitle ?? "",
     weight_kg: toNum(s.weight_kg ?? s.weightKg ?? s.weight),
     volume_cbm: toNum(s.volume_cbm ?? s.volumeCbm ?? s.volume),
-    places_qty: s.places_qty ?? s.placesQty ?? 0,
+    places: s.places ?? s.places_qty ?? s.placesQty ?? 1,
     pickup_address: s.pickup_address ?? s.pickupAddress ?? s.exwAddress ?? "",
     shipper_name: s.shipper_name ?? s.shipperName ?? "",
     shipper_contacts: s.shipper_contacts ?? s.shipperContacts ?? "",

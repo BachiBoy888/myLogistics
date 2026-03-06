@@ -1,5 +1,9 @@
 import { test, expect } from "@playwright/test";
 
-test("placeholder smoke test", async () => {
-  expect(true).toBe(true);
+const BASE_URL = process.env.BASE_URL || "http://localhost:5173";
+
+test("app loads", async ({ page }) => {
+  await page.goto(BASE_URL);
+
+  await expect(page).toHaveTitle(/логистика/i);
 });

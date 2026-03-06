@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { listPLComments, addPLComment, deletePLComment } from "../api/client.js";
 
-export default function CommentsCard({ pl, onAppend }) {
+export default function CommentsCard({ pl, onAppend, onCountLoaded }) {
   const plId = pl.id;
   const [text, setText] = useState("");
   const [items, setItems] = useState([]);
@@ -17,7 +17,10 @@ export default function CommentsCard({ pl, onAppend }) {
       setLoading(true);
       try {
         const rows = await listPLComments(plId);
-        if (!ignore) setItems(rows);
+        if (!ignore) {
+          setItems(rows);
+          onCountLoaded?.(rows.length);
+        }
       } finally {
         setLoading(false);
       }
@@ -25,7 +28,7 @@ export default function CommentsCard({ pl, onAppend }) {
     return () => {
       ignore = true;
     };
-  }, [plId]);
+  }, [plId, onCountLoaded]);
 
   // добавить комментарий
   async function submit() {

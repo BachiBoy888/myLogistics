@@ -34,7 +34,7 @@ function toServerStatus(uiStatus) {
   }
 }
 
-export default function DocsList({ pl /*, onUpdate*/ }) {
+export default function DocsList({ pl, onUpdate, onCountLoaded }) {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -80,7 +80,9 @@ export default function DocsList({ pl /*, onUpdate*/ }) {
     try {
       const list = await listPLDocs(currentPLId);
       if (!mounted.current) return;
-      setDocs(Array.isArray(list) ? list : []);
+      const docsList = Array.isArray(list) ? list : [];
+      setDocs(docsList);
+      onCountLoaded?.(docsList.length);
     } catch (e) {
       if (e?.name !== "AbortError") {
         console.warn("[DocsList] load error", e);

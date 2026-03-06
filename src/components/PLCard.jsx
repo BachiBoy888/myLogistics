@@ -1,5 +1,5 @@
 // src/components/PLCard.jsx
-// Карточка PL — 2025-10-24 (compact paddings, no places, robust responsible picker)
+// Карточка PL с вкладками (Сведения / Документы / Комментарии / Хронология)
 import React, { useState, useMemo, useEffect } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
 import CommentsCard from "./CommentsCard.jsx";
@@ -11,19 +11,28 @@ import {
   Trash2,
   CheckCircle,
   ClipboardCopy,
-  ChevronRight,
   UserCheck,
   Clock,
   ArrowUpRight,
+  FileText,
+  MessageSquare,
+  History,
+  Info,
 } from "lucide-react";
 import { listPLEvents, assignPLResponsible, listUsers } from "../api/client.js";
 import { safeEvents } from "../utils/events.js";
+
+const TABS = [
+  { id: "info", label: "Сведения", icon: Info },
+  { id: "docs", label: "Документы", icon: FileText },
+  { id: "comments", label: "Комментарии", icon: MessageSquare },
+  { id: "timeline", label: "Хронология", icon: History },
+];
 
 export default function PLCard({
   pl,
   onUpdate,
   onClose,
-  onNext,
   onDelete,
   warehouses = [],
   cons = [],
@@ -32,15 +41,10 @@ export default function PLCard({
   currentUser = null,
   navigateToClient = null,
 }) {
-  const { Chip, ProgressBar, Card, LabelInput } = ui;
-  const {
-    readinessForPL,
-    nextStatusOf,
-    nextStageLabelOf,
-    humanStatus,
-    badgeColorByStatus,
-  } = helpers;
+  const { Chip, Card, LabelInput } = ui;
+  const { humanStatus, badgeColorByStatus } = helpers;
 
+  const [activeTab, setActiveTab] = useState("info");
   const [showMenu, setShowMenu] = useState(false);
   const [copiedCargo, setCopiedCargo] = useState(false);
 
@@ -49,11 +53,6 @@ export default function PLCard({
     () => (cons || []).find((c) => c.pl_ids?.includes(pl.id)) || null,
     [cons, pl.id]
   );
-
-  // ===== Прогресс (только для отображения)
-  const nextStatus = nextStatusOf(pl.status);
-  const nextLabel = nextStageLabelOf(pl.status);
-  const readiness = readinessForPL(pl);
 
   // ===== Хронология
   const [events, setEvents] = useState([]);
@@ -82,6 +81,14 @@ export default function PLCard({
     if (pl?.id) refreshEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pl?.id]);
+
+  // ===== Документы (для каунтера)
+  const [docsCount, setDocsCount] = useState(0);
+  const handleDocsLoaded = (count) => setDocsCount(count);
+
+  // ===== Комментарии (для каунтера)
+  const [commentsCount, setCommentsCount] = useState(0);
+  const handleCommentsLoaded = (count) => setCommentsCount(count);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);
@@ -136,10 +143,9 @@ export default function PLCard({
         .filter((u) => u.id);
       setLogists(arr);
     } catch (e) {
-      // API не реализован или упал — не блокируем UI
       console.error(e);
       setLogistsErr("Не удалось получить список логистов (эндпоинт /users).");
-      setLogists([]); // оставим пусто — модалка покажет подсказку
+      setLogists([]);
     } finally {
       setLogistsLoading(false);
     }
@@ -152,6 +158,7 @@ export default function PLCard({
       `Load: ${pl.title ?? ""}`,
       `Volume, м³: ${pl.volume_cbm ?? ""}`,
       `Weight, kg: ${pl.weight_kg ?? ""}`,
+      `Places: ${pl.places ?? 1}`,
       `Sender: ${pl.shipper_name ?? ""}`,
       `Sender address: ${pl.pickup_address ?? ""}`,
       `Contact info: ${pl.shipper_contacts ?? ""}`,
@@ -181,8 +188,22 @@ export default function PLCard({
       ? pl.client
       : pl?.client?.name || pl?.client_name || "—";
 
+  // Получаем счётчики для табов
+  const getTabCount = (tabId) => {
+    switch (tabId) {
+      case "docs":
+        return docsCount;
+      case "comments":
+        return commentsCount;
+      case "timeline":
+        return events.filter(Boolean).length;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="relative bg-white rounded-2xl shadow-sm border overflow-hidden">
+    <div className="relative bg-white rounded-2xl shadow-sm border overflow-hidden flex flex-col max-h-[90vh]">
       {/* Верхняя плашка: Клиент */}
       <div className="px-3 py-2 bg-gray-50 border-b text-sm flex items-center gap-2">
         <span className="text-gray-600">Клиент:</span>
@@ -245,191 +266,217 @@ export default function PLCard({
         </div>
       </div>
 
-      {/* В консолидации */}
-      {consOfPL && (
-        <div className="px-3 py-2 bg-violet-50 border-b text-sm">
-          В консолидации: <b>{consOfPL.number}</b>
-        </div>
-      )}
-
-      {/* === Груз + Забор + Ответственный === */}
-<div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
-  {/* Груз */}
-  <Card title="Груз" className="bg-gray-50 p-3">
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-      <LabelInput label="Название" value={pl.title ?? ""} onChange={(v) => onUpdate({ title: v })} />
-      <LabelInput
-        type="number"
-        label="Вес, кг"
-        value={pl.weight_kg ?? ""}
-        onChange={(v) => onUpdate({ weight_kg: parseFloat(v || 0) })}
-      />
-      <LabelInput
-        type="number"
-        label="Объём, м³"
-        value={pl.volume_cbm ?? ""}
-        onChange={(v) => onUpdate({ volume_cbm: parseFloat(v || 0) })}
-      />
-    </div>
-
-    <div className="mt-2 flex items-center gap-2">
-      <button onClick={copyCargoInfo} className="inline-flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg text-sm">
-        <ClipboardCopy className="w-4 h-4" />
-        Скопировать
-      </button>
-      {copiedCargo && (
-        <span className="inline-flex items-center gap-1 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
-          <CheckCircle className="w-4 h-4" />
-          Скопировано
-        </span>
-      )}
-    </div>
-  </Card>
-
-  {/* Забор */}
-<Card title="Забор" className="bg-gray-50 p-3">
-  <div className="flex flex-col gap-2 text-sm">
-    <LabelInput
-      label="Адрес забора"
-      value={pl.pickup_address ?? ""}
-      onChange={(v) => onUpdate({ pickup_address: v })}
-    />
-    <LabelInput
-      label="Отправитель"
-      value={pl.shipper_name ?? ""}
-      onChange={(v) => onUpdate({ shipper_name: v })}
-    />
-    <LabelInput
-      label="Контакты"
-      value={pl.shipper_contacts ?? ""}
-      onChange={(v) => onUpdate({ shipper_contacts: v })}
-    />
-  </div>
-</Card>
-
-  {/* Ответственный (вторая строка на всю ширину) */}
-  <Card title="Ответственный" className="bg-gray-50 p-3 md:col-span-2">
-    <div className="flex items-center justify-between gap-2 text-sm">
-      <div className="min-w-0">
-        <div className="text-xs text-gray-500">Назначен</div>
-        <div className="font-medium truncate">{responsibleName || "— не назначен —"}</div>
-      </div>
-
-      <div className="flex items-center gap-2">
-        {canSelfAssign && (
-          <button
-            type="button"
-            onClick={handleSelfAssign}
-            className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 hover:bg-gray-50"
-            title="Назначить себя ответственным"
-          >
-            <UserCheck className="w-4 h-4" />
-            Я
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={async () => {
-            setShowRespPicker(true);
-            await ensureLogistsLoaded();
-          }}
-          className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 hover:bg-gray-50"
-          title="Выбрать из списка"
-        >
-          Выбрать…
-        </button>
-      </div>
-    </div>
-  </Card>
-</div>
-
-      {/* Калькулятор → Документы → Комментарии → События */}
-      <div className="p-3 bg-gray-200 space-y-4">
-        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-3">
-          <h3 className="font-semibold mb-2">Калькулятор себестоимости</h3>
-          <CostCalculatorCard pl={pl} onSave={handleSaveQuote} />
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-3">
-          <h3 className="font-semibold mb-2">Документы</h3>
-          <DocsList pl={pl} onUpdate={onUpdate} />
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-3">
-          <h3 className="font-semibold mb-2">Комментарии</h3>
-          <CommentsCard
-            pl={pl}
-            onAppend={(created) => {
-              const next = [...(pl.comments || []), created];
-              onUpdate({ comments: next });
-              refreshEvents();
-            }}
-          />
-        </div>
-
-        <div className="rounded-2xl bg-white shadow-md border border-gray-100 p-3">
-          <h3 className="font-semibold mb-2 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
-            События (хронология)
-          </h3>
-
-          {evLoading ? (
-            <div className="text-sm text-gray-500">Загрузка…</div>
-          ) : evError ? (
-            <div className="text-sm text-rose-600">{evError}</div>
-          ) : (events || []).filter(Boolean).length === 0 ? (
-            <div className="text-sm text-gray-500">Пока событий нет</div>
-          ) : (
-            <ul className="divide-y text-[13px]">
-              {(events || [])
-                .filter((e) => e && (e.id != null || e.type))
-                .map((e, i) => {
-                  const key = e.id ?? `${e.type || "evt"}-${pl?.id ?? "x"}-${i}`;
-                  const when = e.createdAt || e.created_at || e.at;
-                  const userName = typeof e.user === "object" ? e.user?.name ?? "" : e.user ?? "";
-                  return (
-                    <li key={key} className="py-2 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-medium break-words">{e.title || e.type || "Событие"}</div>
-                        {e.details && <div className="text-gray-600 whitespace-pre-wrap break-words">{e.details}</div>}
-                        {userName && <div className="text-xs text-gray-500 mt-0.5">{userName}</div>}
-                      </div>
-                      <div className="shrink-0 text-xs text-gray-500">{when ? new Date(when).toLocaleString() : ""}</div>
-                    </li>
-                  );
-                })}
-            </ul>
-          )}
+      {/* Вкладки */}
+      <div className="border-b bg-gray-50">
+        <div className="flex overflow-x-auto">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            const count = getTabCount(tab.id);
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
+                  isActive
+                    ? "border-blue-600 text-blue-600 bg-white"
+                    : "border-transparent text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span>{tab.label}</span>
+                {count !== null && count > 0 && (
+                  <span className={`ml-1 px-1.5 py-0.5 text-xs rounded-full ${
+                    isActive ? "bg-blue-100 text-blue-700" : "bg-gray-200 text-gray-600"
+                  }`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Действия */}
-      <div className="p-3 border-t flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div className="flex items-center gap-3 text-sm text-gray-700">
-          Готовность документов:
-          <div className="w-36">
-            <ProgressBar value={readiness} />
+      {/* Контент вкладок */}
+      <div className="flex-1 overflow-y-auto p-3 bg-gray-100">
+        {/* Вкладка Сведения */}
+        {activeTab === "info" && (
+          <div className="space-y-3">
+            {/* В консолидации */}
+            {consOfPL && (
+              <div className="px-3 py-2 bg-violet-50 border rounded-lg text-sm">
+                В консолидации: <b>{consOfPL.number}</b>
+              </div>
+            )}
+
+            {/* Груз + Забор + Ответственный */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Груз */}
+              <Card title="Груз" className="bg-white p-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <LabelInput label="Название" value={pl.title ?? ""} onChange={(v) => onUpdate({ title: v })} />
+                  <LabelInput
+                    type="number"
+                    label="Вес, кг"
+                    value={pl.weight_kg ?? ""}
+                    onChange={(v) => onUpdate({ weight_kg: parseFloat(v || 0) })}
+                  />
+                  <LabelInput
+                    type="number"
+                    label="Объём, м³"
+                    value={pl.volume_cbm ?? ""}
+                    onChange={(v) => onUpdate({ volume_cbm: parseFloat(v || 0) })}
+                  />
+                  <LabelInput
+                    type="number"
+                    label="Количество мест"
+                    value={pl.places ?? ""}
+                    min="1"
+                    onChange={(v) => onUpdate({ places: parseInt(v || 1, 10) })}
+                  />
+                </div>
+
+                <div className="mt-2 flex items-center gap-2">
+                  <button onClick={copyCargoInfo} className="inline-flex items-center gap-2 bg-black text-white px-3 py-2 rounded-lg text-sm">
+                    <ClipboardCopy className="w-4 h-4" />
+                    Скопировать
+                  </button>
+                  {copiedCargo && (
+                    <span className="inline-flex items-center gap-1 text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-1 rounded-lg">
+                      <CheckCircle className="w-4 h-4" />
+                      Скопировано
+                    </span>
+                  )}
+                </div>
+              </Card>
+
+              {/* Забор */}
+              <Card title="Забор" className="bg-white p-3">
+                <div className="flex flex-col gap-2 text-sm">
+                  <LabelInput
+                    label="Адрес забора"
+                    value={pl.pickup_address ?? ""}
+                    onChange={(v) => onUpdate({ pickup_address: v })}
+                  />
+                  <LabelInput
+                    label="Отправитель"
+                    value={pl.shipper_name ?? ""}
+                    onChange={(v) => onUpdate({ shipper_name: v })}
+                  />
+                  <LabelInput
+                    label="Контакты"
+                    value={pl.shipper_contacts ?? ""}
+                    onChange={(v) => onUpdate({ shipper_contacts: v })}
+                  />
+                </div>
+              </Card>
+
+              {/* Ответственный */}
+              <Card title="Ответственный" className="bg-white p-3 md:col-span-2">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <div className="min-w-0">
+                    <div className="text-xs text-gray-500">Назначен</div>
+                    <div className="font-medium truncate">{responsibleName || "— не назначен —"}</div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {canSelfAssign && (
+                      <button
+                        type="button"
+                        onClick={handleSelfAssign}
+                        className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 hover:bg-gray-50"
+                        title="Назначить себя ответственным"
+                      >
+                        <UserCheck className="w-4 h-4" />
+                        Я
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setShowRespPicker(true);
+                        await ensureLogistsLoaded();
+                      }}
+                      className="inline-flex items-center gap-2 border rounded-lg px-3 py-2 hover:bg-gray-50"
+                      title="Выбрать из списка"
+                    >
+                      Выбрать…
+                    </button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+
+            {/* Калькулятор */}
+            <div className="rounded-2xl bg-white shadow-sm border p-3">
+              <h3 className="font-semibold mb-2">Калькулятор себестоимости</h3>
+              <CostCalculatorCard pl={pl} onSave={handleSaveQuote} />
+            </div>
           </div>
-          <span>{readiness}%</span>
-        </div>
+        )}
 
-        <div className="flex flex-col gap-2 md:items-end">
-          <button
-            onClick={() => {
-              if (!nextStatus) return;
-              onNext(nextStatus);
-              setTimeout(refreshEvents, 50);
-            }}
-            disabled={!nextStatus}
-            className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm min-h-[40px] ${
-              nextStatus ? "bg-black text-white" : "bg-gray-200 text-gray-500 cursor-not-allowed"
-            }`}
-          >
-            <ChevronRight className="w-4 h-4" />
-            Перейти к следующему этапу
-            {nextLabel ? `: ${nextLabel}` : ""}
-          </button>
-        </div>
+        {/* Вкладка Документы */}
+        {activeTab === "docs" && (
+          <div className="rounded-2xl bg-white shadow-sm border p-3">
+            <DocsList pl={pl} onUpdate={onUpdate} onCountLoaded={handleDocsLoaded} />
+          </div>
+        )}
+
+        {/* Вкладка Комментарии */}
+        {activeTab === "comments" && (
+          <div className="rounded-2xl bg-white shadow-sm border p-3">
+            <CommentsCard
+              pl={pl}
+              onAppend={(created) => {
+                const next = [...(pl.comments || []), created];
+                onUpdate({ comments: next });
+                refreshEvents();
+                setCommentsCount((c) => c + 1);
+              }}
+              onCountLoaded={handleCommentsLoaded}
+            />
+          </div>
+        )}
+
+        {/* Вкладка Хронология */}
+        {activeTab === "timeline" && (
+          <div className="rounded-2xl bg-white shadow-sm border p-3">
+            <div className="flex items-center gap-2 mb-3">
+              <Clock className="w-4 h-4" />
+              <h3 className="font-semibold">События</h3>
+              <span className="text-sm text-gray-500">({events.filter(Boolean).length})</span>
+            </div>
+
+            {evLoading ? (
+              <div className="text-sm text-gray-500">Загрузка…</div>
+            ) : evError ? (
+              <div className="text-sm text-rose-600">{evError}</div>
+            ) : (events || []).filter(Boolean).length === 0 ? (
+              <div className="text-sm text-gray-500">Пока событий нет</div>
+            ) : (
+              <ul className="divide-y text-[13px]">
+                {(events || [])
+                  .filter((e) => e && (e.id != null || e.type))
+                  .map((e, i) => {
+                    const key = e.id ?? `${e.type || "evt"}-${pl?.id ?? "x"}-${i}`;
+                    const when = e.createdAt || e.created_at || e.at;
+                    const userName = typeof e.user === "object" ? e.user?.name ?? "" : e.user ?? "";
+                    return (
+                      <li key={key} className="py-2 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="font-medium break-words">{e.title || e.type || "Событие"}</div>
+                          {e.details && <div className="text-gray-600 whitespace-pre-wrap break-words">{e.details}</div>}
+                          {userName && <div className="text-xs text-gray-500 mt-0.5">{userName}</div>}
+                        </div>
+                        <div className="shrink-0 text-xs text-gray-500">{when ? new Date(when).toLocaleString() : ""}</div>
+                      </li>
+                    );
+                  })}
+              </ul>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Модалка выбора логиста */}

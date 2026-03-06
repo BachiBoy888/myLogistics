@@ -1,6 +1,6 @@
 // src/components/PLCard.jsx
 // Карточка PL с вкладками (Сведения / Документы / Комментарии / Хронология)
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import CostCalculatorCard from "./CostCalculatorCard.jsx";
 import CommentsCard from "./CommentsCard.jsx";
 import DocsList from "./pl/DocsList.jsx";
@@ -19,7 +19,7 @@ import {
   History,
   Info,
 } from "lucide-react";
-import { listPLEvents, assignPLResponsible, listUsers } from "../api/client.js";
+import { listPLEvents, assignPLResponsible, listUsers, listPLDocs, listPLComments } from "../api/client.js";
 import { safeEvents } from "../utils/events.js";
 
 const TABS = [
@@ -47,6 +47,30 @@ export default function PLCard({
   const [activeTab, setActiveTab] = useState("info");
   const [showMenu, setShowMenu] = useState(false);
   const [copiedCargo, setCopiedCargo] = useState(false);
+
+  // ===== Локальное состояние формы (чтобы не сбрасывалось при вводе)
+  const [formData, setFormData] = useState({
+    title: pl.title ?? "",
+    weight_kg: pl.weight_kg ?? "",
+    volume_cbm: pl.volume_cbm ?? "",
+    places: pl.places ?? 1,
+    pickup_address: pl.pickup_address ?? "",
+    shipper_name: pl.shipper_name ?? "",
+    shipper_contacts: pl.shipper_contacts ?? "",
+  });
+
+  // Обновляем formData когда меняется pl (только при открытии нового PL)
+  useEffect(() => {
+    setFormData({
+      title: pl.title ?? "",
+      weight_kg: pl.weight_kg ?? "",
+      volume_cbm: pl.volume_cbm ?? "",
+      places: pl.places ?? 1,
+      pickup_address: pl.pickup_address ?? "",
+      shipper_name: pl.shipper_name ?? "",
+      shipper_contacts: pl.shipper_contacts ?? "",
+    });
+  }, [pl.id]);
 
   // ===== Консолидация для PL
   const consOfPL = useMemo(
@@ -82,13 +106,24 @@ export default function PLCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pl?.id]);
 
-  // ===== Документы (для каунтера)
+  // ===== Документы и комментарии - загружаем сразу для каунтеров
   const [docsCount, setDocsCount] = useState(0);
-  const handleDocsLoaded = (count) => setDocsCount(count);
-
-  // ===== Комментарии (для каунтера)
   const [commentsCount, setCommentsCount] = useState(0);
-  const handleCommentsLoaded = (count) => setCommentsCount(count);
+
+  // Загружаем счётчики сразу при открытии PL
+  useEffect(() => {
+    if (!pl?.id) return;
+    
+    // Загружаем документы
+    listPLDocs(pl.id).then(list => {
+      setDocsCount(Array.isArray(list) ? list.length : 0);
+    }).catch(() => setDocsCount(0));
+    
+    // Загружаем комментарии
+    listPLComments(pl.id).then(rows => {
+      setCommentsCount(Array.isArray(rows) ? rows.length : 0);
+    }).catch(() => setCommentsCount(0));
+  }, [pl?.id]);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);
@@ -155,13 +190,13 @@ export default function PLCard({
   const copyCargoInfo = () => {
     const text = [
       `${pl.pl_number ?? ""}`,
-      `Load: ${pl.title ?? ""}`,
-      `Volume, м³: ${pl.volume_cbm ?? ""}`,
-      `Weight, kg: ${pl.weight_kg ?? ""}`,
-      `Places: ${pl.places ?? 1}`,
-      `Sender: ${pl.shipper_name ?? ""}`,
-      `Sender address: ${pl.pickup_address ?? ""}`,
-      `Contact info: ${pl.shipper_contacts ?? ""}`,
+      `Load: ${formData.title ?? ""}`,
+      `Volume, м³: ${formData.volume_cbm ?? ""}`,
+      `Weight, kg: ${formData.weight_kg ?? ""}`,
+      `Places: ${formData.places ?? 1}`,
+      `Sender: ${formData.shipper_name ?? ""}`,
+      `Sender address: ${formData.pickup_address ?? ""}`,
+      `Contact info: ${formData.shipper_contacts ?? ""}`,
     ].join("\n");
     navigator.clipboard
       .writeText(text)
@@ -170,6 +205,20 @@ export default function PLCard({
         setTimeout(() => setCopiedCargo(false), 1500);
       })
       .catch((e) => console.error("Не удалось скопировать", e));
+  };
+
+  // ===== Сохранение по blur
+  const handleBlur = useCallback((field, value) => {
+    // Проверяем, изменилось ли значение
+    const originalValue = pl[field];
+    if (value !== originalValue) {
+      onUpdate({ [field]: value });
+    }
+  }, [pl, onUpdate]);
+
+  // ===== Обработчики изменения полей
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   async function handleSaveQuote(calcCost, clientPrice) {
@@ -182,6 +231,24 @@ export default function PLCard({
       alert("Не удалось сохранить стоимость");
     }
   }
+
+  // ===== Сохранение всех изменений при закрытии
+  const handleClose = () => {
+    // Сохраняем все изменённые поля
+    const updates = {};
+    if (formData.title !== pl.title) updates.title = formData.title;
+    if (formData.weight_kg !== pl.weight_kg) updates.weight_kg = Number(formData.weight_kg) || 0;
+    if (formData.volume_cbm !== pl.volume_cbm) updates.volume_cbm = Number(formData.volume_cbm) || 0;
+    if (formData.places !== pl.places) updates.places = Number(formData.places) || 1;
+    if (formData.pickup_address !== pl.pickup_address) updates.pickup_address = formData.pickup_address;
+    if (formData.shipper_name !== pl.shipper_name) updates.shipper_name = formData.shipper_name;
+    if (formData.shipper_contacts !== pl.shipper_contacts) updates.shipper_contacts = formData.shipper_contacts;
+    
+    if (Object.keys(updates).length > 0) {
+      onUpdate(updates);
+    }
+    onClose();
+  };
 
   const clientName =
     typeof pl?.client === "string"
@@ -231,7 +298,7 @@ export default function PLCard({
             <Chip className={badgeColorByStatus(pl.status)}>{humanStatus(pl.status)}</Chip>
           </div>
           <div className="text-sm text-gray-600 mt-0.5">
-            {clientName} • {pl.title || "Без названия"}
+            {clientName} • {formData.title || "Без названия"}
           </div>
         </div>
 
@@ -260,7 +327,7 @@ export default function PLCard({
             )}
           </div>
 
-          <button className="p-2 border rounded-lg hover:bg-gray-50" title="Закрыть карточку" onClick={onClose}>
+          <button className="p-2 border rounded-lg hover:bg-gray-50" title="Закрыть карточку" onClick={handleClose}>
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -315,25 +382,30 @@ export default function PLCard({
               {/* Груз */}
               <Card title="Груз" className="bg-white p-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                  <LabelInput label="Название" value={pl.title ?? ""} onChange={(v) => onUpdate({ title: v })} />
-                  <LabelInput
-                    type="number"
+                  <LabelInput 
+                    label="Название" 
+                    value={formData.title} 
+                    onChange={(v) => handleChange("title", v)}
+                    onBlur={() => handleBlur("title", formData.title)}
+                  />
+                  <NumberInput
                     label="Вес, кг"
-                    value={pl.weight_kg ?? ""}
-                    onChange={(v) => onUpdate({ weight_kg: parseFloat(v || 0) })}
+                    value={formData.weight_kg}
+                    onChange={(v) => handleChange("weight_kg", v)}
+                    onBlur={() => handleBlur("weight_kg", Number(formData.weight_kg) || 0)}
                   />
-                  <LabelInput
-                    type="number"
+                  <NumberInput
                     label="Объём, м³"
-                    value={pl.volume_cbm ?? ""}
-                    onChange={(v) => onUpdate({ volume_cbm: parseFloat(v || 0) })}
+                    value={formData.volume_cbm}
+                    onChange={(v) => handleChange("volume_cbm", v)}
+                    onBlur={() => handleBlur("volume_cbm", Number(formData.volume_cbm) || 0)}
                   />
-                  <LabelInput
-                    type="number"
+                  <NumberInput
                     label="Количество мест"
-                    value={pl.places ?? ""}
+                    value={formData.places}
                     min="1"
-                    onChange={(v) => onUpdate({ places: parseInt(v || 1, 10) })}
+                    onChange={(v) => handleChange("places", v)}
+                    onBlur={() => handleBlur("places", Number(formData.places) || 1)}
                   />
                 </div>
 
@@ -356,18 +428,21 @@ export default function PLCard({
                 <div className="flex flex-col gap-2 text-sm">
                   <LabelInput
                     label="Адрес забора"
-                    value={pl.pickup_address ?? ""}
-                    onChange={(v) => onUpdate({ pickup_address: v })}
+                    value={formData.pickup_address}
+                    onChange={(v) => handleChange("pickup_address", v)}
+                    onBlur={() => handleBlur("pickup_address", formData.pickup_address)}
                   />
                   <LabelInput
                     label="Отправитель"
-                    value={pl.shipper_name ?? ""}
-                    onChange={(v) => onUpdate({ shipper_name: v })}
+                    value={formData.shipper_name}
+                    onChange={(v) => handleChange("shipper_name", v)}
+                    onBlur={() => handleBlur("shipper_name", formData.shipper_name)}
                   />
                   <LabelInput
                     label="Контакты"
-                    value={pl.shipper_contacts ?? ""}
-                    onChange={(v) => onUpdate({ shipper_contacts: v })}
+                    value={formData.shipper_contacts}
+                    onChange={(v) => handleChange("shipper_contacts", v)}
+                    onBlur={() => handleBlur("shipper_contacts", formData.shipper_contacts)}
                   />
                 </div>
               </Card>
@@ -419,7 +494,7 @@ export default function PLCard({
         {/* Вкладка Документы */}
         {activeTab === "docs" && (
           <div className="rounded-2xl bg-white shadow-sm border p-3">
-            <DocsList pl={pl} onUpdate={onUpdate} onCountLoaded={handleDocsLoaded} />
+            <DocsList pl={pl} onUpdate={onUpdate} onCountLoaded={setDocsCount} />
           </div>
         )}
 
@@ -434,7 +509,7 @@ export default function PLCard({
                 refreshEvents();
                 setCommentsCount((c) => c + 1);
               }}
-              onCountLoaded={handleCommentsLoaded}
+              onCountLoaded={setCommentsCount}
             />
           </div>
         )}
@@ -538,5 +613,23 @@ export default function PLCard({
         </div>
       )}
     </div>
+  );
+}
+
+// Компонент для числовых полей без спиннеров
+function NumberInput({ label, value, onChange, onBlur, min }) {
+  return (
+    <label className="block text-sm">
+      <span className="text-gray-600 text-xs">{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        className="w-full border rounded-lg px-3 py-2 h-[40px] mt-1"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        placeholder="0"
+      />
+    </label>
   );
 }

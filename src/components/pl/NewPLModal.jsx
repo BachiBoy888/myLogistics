@@ -46,8 +46,7 @@ export default function NewPLModal({
   const [fobWhId, setFobWhId] = useState("");
   const [weight, setWeight] = useState("");
   const [volume, setVolume] = useState("");
-  const [shipperName, setShipperName] = useState("");
-  const [shipperContacts, setShipperContacts] = useState("");
+  const [places, setPlaces] = useState("1");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
 
@@ -72,8 +71,7 @@ export default function NewPLModal({
     setFobWhId("");
     setWeight("");
     setVolume("");
-    setShipperName("");
-    setShipperContacts("");
+    setPlaces("1");
     setSaving(false);
     setErr("");
   }, []);
@@ -185,11 +183,10 @@ export default function NewPLModal({
         title: title.trim(),
         weight_kg: weight ? Number(weight) : null,
         volume_cbm: volume ? Number(volume) : null,
+        places: places ? Number(places) : 1,
         incoterm,
         exw_address: exwAddress.trim(),
         fob_wh_id: fobWhId ? Number(fobWhId) : null,
-        shipper_name: shipperName.trim(),
-        shipper_contacts: shipperContacts.trim(),
       });
     } catch (e) {
       setErr(e?.message || "Не удалось создать PL");
@@ -314,8 +311,8 @@ export default function NewPLModal({
             <label className="block">
               <div className="text-sm text-neutral-700 mb-1">Вес, кг</div>
               <input
-                type="number"
-                step="0.001"
+                type="text"
+                inputMode="decimal"
                 className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black"
                 value={weight}
                 onChange={(e) => setWeight(e.target.value)}
@@ -325,8 +322,8 @@ export default function NewPLModal({
             <label className="block">
               <div className="text-sm text-neutral-700 mb-1">Объём, м³</div>
               <input
-                type="number"
-                step="0.001"
+                type="text"
+                inputMode="decimal"
                 className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black"
                 value={volume}
                 onChange={(e) => setVolume(e.target.value)}
@@ -334,15 +331,15 @@ export default function NewPLModal({
               />
             </label>
             <label className="block">
-              <div className="text-sm text-neutral-700 mb-1">Инкотерм</div>
-              <select
-                className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black bg-white"
-                value={incoterm}
-                onChange={(e) => setIncoterm(e.target.value)}
-              >
-                <option value="EXW">EXW</option>
-                <option value="FOB">FOB</option>
-              </select>
+              <div className="text-sm text-neutral-700 mb-1">Количество мест</div>
+              <input
+                type="text"
+                inputMode="numeric"
+                className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black"
+                value={places}
+                onChange={(e) => setPlaces(e.target.value)}
+                placeholder="1"
+              />
             </label>
           </div>
 

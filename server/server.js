@@ -52,7 +52,15 @@ async function start() {
   });
 
   // БД
-  const sql = postgres(DATABASE_URL, { prepare: true, idle_timeout: 20 });
+  const isLocalDb =
+  DATABASE_URL?.includes("localhost") ||
+  DATABASE_URL?.includes("127.0.0.1");
+
+const sql = postgres(DATABASE_URL, {
+  prepare: true,
+  idle_timeout: 20,
+  ...(isLocalDb ? {} : { ssl: "require" }),
+});
   const db = drizzle(sql);
   app.decorate("drizzle", db);
 

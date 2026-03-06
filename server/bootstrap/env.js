@@ -1,20 +1,31 @@
 // server/bootstrap/env.js
-// Гибкая загрузка .env.* через dotenv-flow
-// Работает так:
-//   NODE_ENV=development → .env, .env.development, .env.local
-//   NODE_ENV=staging     → .env, .env.staging, .env.local
-//   NODE_ENV=production  → .env, .env.production
-//
-// Подключи этот файл самым первым в server.js:
-//   import "./bootstrap/env.js";
-
 import dotenvFlow from "dotenv-flow";
 
+// Сохраняем заранее переданные переменные окружения,
+// чтобы dotenv-flow не перетирал их.
+const preserved = {
+  DATABASE_URL: process.env.DATABASE_URL,
+  JWT_SECRET: process.env.JWT_SECRET,
+  JWT_EXPIRES: process.env.JWT_EXPIRES,
+  PORT: process.env.PORT,
+  HOST: process.env.HOST,
+  NODE_ENV: process.env.NODE_ENV,
+};
+
 dotenvFlow.config({
-  // Если нужно, можно явно указать путь до корня:
-  // path: process.cwd(),
-  // silent: true  // не шуметь при отсутствии файлов
+  path: process.cwd(),
+  silent: true,
 });
+
+// Возвращаем внешне переданные значения обратно
+for (const [key, value] of Object.entries(preserved)) {
+  if (value !== undefined && value !== "") {
+    process.env[key] = value;
+  }
+}
 
 const stage = process.env.NODE_ENV || "development";
 console.log(`[env] Загружены переменные для NODE_ENV="${stage}"`);
+
+
+

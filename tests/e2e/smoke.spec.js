@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-test("placeholder smoke test", async () => {
-  expect(true).toBe(true);
+test("app loads", async ({ page }) => {
+  await page.goto("http://localhost:5173");
+
+  await expect(page).toHaveTitle(/Моя логистика/i);
 });

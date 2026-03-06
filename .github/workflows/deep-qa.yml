@@ -1,0 +1,124 @@
+name: Deep QA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deep-qa:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: mylogistics
+          POSTGRES_USER: mylogistics
+          POSTGRES_PASSWORD: mylogistics_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U mylogistics -d mylogistics"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: postgres://mylogistics:mylogistics_pass@127.0.0.1:5432/mylogistics
+      JWT_SECRET: dev-secret
+      JWT_EXPIRES: 30d
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 3000
+      VITE_API_BASE_URL: http://localhost:3000
+      VITE_API_URL: http://localhost:3000
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Install server dependencies
+        run: npm --prefix server ci
+
+      - name: Prepare server env
+        run: |
+          cat > server/.env.local <<'EOF'
+          DATABASE_URL=postgres://mylogistics:mylogistics_pass@127.0.0.1:5432/mylogistics
+          JWT_SECRET=dev-secret
+          JWT_EXPIRES=30d
+          NODE_ENV=development
+          HOST=0.0.0.0
+          PORT=3000
+          EOF
+
+      - name: Run database migrations
+        run: npm --prefix server run migrate:local
+
+      - name: Seed smoke user
+        run: |
+          cd server
+          npx dotenv -e .env.local -- node scripts/seed-user.js \
+            --login test_smoke \
+            --password 'Smoke123!' \
+            --name 'Smoke Test User' \
+            --email smoke@test.local \
+            --role admin
+
+      - name: Start backend
+        run: |
+          cd server
+          env -u DATABASE_URL npx dotenv -e .env.local -- node server.js > ../server.log 2>&1 &
+          echo $! > ../server.pid
+
+      - name: Wait for backend health
+        run: |
+          for i in {1..30}; do
+            if curl -sf http://localhost:3000/api/health > /dev/null; then
+              echo "Backend is up"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Backend failed to start"
+          cat server.log || true
+          exit 1
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        run: npm run build
+
+      - name: Run Deep QA tests
+        run: npx playwright test tests/e2e/deep-qa.spec.js
+
+      - name: Upload backend log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-qa-server-log
+          path: server.log
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deep-qa-playwright-report
+          path: |
+            playwright-report
+            test-results
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+          fi

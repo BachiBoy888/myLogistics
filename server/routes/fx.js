@@ -95,6 +95,8 @@ async function getFXRates() {
       cached: false,
     };
   } catch (err) {
+    console.error("NBKR fetch failed:", err.message);
+    
     // Если ошибка и есть stale кэш - возвращаем его
     if (fxCache.data) {
       return {
@@ -103,7 +105,18 @@ async function getFXRates() {
         stale: true,
       };
     }
-    throw err;
+    
+    // Fallback: фиксированные курсы (примерные)
+    const fallbackDate = new Date().toISOString().split('T')[0].split('-').reverse().join('.');
+    return {
+      source: "NBKR_FALLBACK",
+      date: fallbackDate,
+      usdKgs: 87.5,
+      cnyKgs: 12.1,
+      fetchedAt: new Date().toISOString(),
+      fallback: true,
+      cached: false,
+    };
   }
 }
 
@@ -115,10 +128,17 @@ export default async function fxRoutes(app) {
       return rates;
     } catch (err) {
       console.error("FX fetch error:", err);
-      return reply.status(503).send({
-        error: "FX_UNAVAILABLE",
-        message: "Не удалось загрузить курсы валют. Попробуйте позже.",
-      });
+      // Возвращаем fallback вместо ошибки
+      const fallbackDate = new Date().toISOString().split('T')[0].split('-').reverse().join('.');
+      return {
+        source: "NBKR_FALLBACK",
+        date: fallbackDate,
+        usdKgs: 87.5,
+        cnyKgs: 12.1,
+        fetchedAt: new Date().toISOString(),
+        fallback: true,
+        cached: false,
+      };
     }
   });
   

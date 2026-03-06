@@ -23,7 +23,7 @@ function formatMoney(num, decimals = 2) {
 
 // Конвертация в USD
 function convertToUSD(amount, currency, rates) {
-  if (!rates || currency === "USD") return amount;
+  if (!rates || currency === "USD") return Number(amount) || 0;
   const amt = Number(amount) || 0;
   if (currency === "KGS") return amt / rates.usdKgs;
   if (currency === "CNY") return (amt * rates.cnyKgs) / rates.usdKgs;
@@ -34,15 +34,15 @@ function convertToUSD(amount, currency, rates) {
    Хук расчёта логистических ставок (новый - с суммами)
 ============================ */
 function useCostCalculator({ weight_kg, volume_cbm, init = {}, fxRates }) {
-  // Состояния для плечей (сумма + валюта)
-  const [leg1Amount, setLeg1Amount] = useState(Number(init.leg1Amount ?? init.rate1Amount ?? 0));
+  // Состояния для плечей (сумма + валюта) - используем пустую строку вместо 0 для input
+  const [leg1Amount, setLeg1Amount] = useState(init.leg1Amount ?? init.rate1Amount ?? "");
   const [leg1Currency, setLeg1Currency] = useState(init.leg1Currency ?? "USD");
-  const [leg2Amount, setLeg2Amount] = useState(Number(init.leg2Amount ?? init.rate2Amount ?? 0));
+  const [leg2Amount, setLeg2Amount] = useState(init.leg2Amount ?? init.rate2Amount ?? "");
   const [leg2Currency, setLeg2Currency] = useState(init.leg2Currency ?? "USD");
   
   // Дополнительные сборы
-  const [customsFee, setCustomsFee] = useState(Number(init.customsFee ?? 0));
-  const [otherFee, setOtherFee] = useState(Number(init.otherFee ?? 0));
+  const [customsFee, setCustomsFee] = useState(init.customsFee ?? "");
+  const [otherFee, setOtherFee] = useState(init.otherFee ?? "");
   
   // FX rates из сохранённого расчёта (для исторических данных)
   const [savedFxRates, setSavedFxRates] = useState(null);
@@ -109,18 +109,9 @@ function useCostCalculator({ weight_kg, volume_cbm, init = {}, fxRates }) {
     return leg2AmountUSD / v;
   }, [leg2AmountUSD, volume_cbm]);
 
-  // Расчёт стоимости плечей (по текущей логике - вес или объём)
-  const leg1 = useMemo(() => {
-    if (basisSuggestion === "kg") return leg1AmountUSD;
-    if (basisSuggestion === "cbm") return leg1AmountUSD;
-    return leg1AmountUSD;
-  }, [leg1AmountUSD, basisSuggestion]);
-
-  const leg2 = useMemo(() => {
-    if (basisSuggestion === "kg") return leg2AmountUSD;
-    if (basisSuggestion === "cbm") return leg2AmountUSD;
-    return leg2AmountUSD;
-  }, [leg2AmountUSD, basisSuggestion]);
+  // Расчёт стоимости плечей - всегда в USD
+  const leg1 = leg1AmountUSD;
+  const leg2 = leg2AmountUSD;
 
   const total = useMemo(() => {
     return (
@@ -381,7 +372,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
               type="number"
               min="0"
               value={calc.leg1Amount}
-              onChange={(e) => calc.setLeg1Amount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => calc.setLeg1Amount(e.target.value)}
               className="flex-1 border rounded-lg px-3 py-2"
               placeholder="Введите сумму"
             />
@@ -430,7 +421,7 @@ export default function CostCalculatorCard({ pl, onSave }) {
               type="number"
               min="0"
               value={calc.leg2Amount}
-              onChange={(e) => calc.setLeg2Amount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => calc.setLeg2Amount(e.target.value)}
               className="flex-1 border rounded-lg px-3 py-2"
               placeholder="Введите сумму"
             />
@@ -473,13 +464,13 @@ export default function CostCalculatorCard({ pl, onSave }) {
           type="number"
           label="3. Таможня, $"
           value={calc.customsFee}
-          onChange={(v) => calc.setCustomsFee(parseFloat(v || 0))}
+          onChange={(v) => calc.setCustomsFee(v)}
         />
         <LabelInput
           type="number"
           label="4. Прочие, $"
           value={calc.otherFee}
-          onChange={(v) => calc.setOtherFee(parseFloat(v || 0))}
+          onChange={(v) => calc.setOtherFee(v)}
         />
         <div className="flex flex-col justify-end">
           <div className="text-xs text-gray-600">Себестоимость (1+2+3+4)</div>

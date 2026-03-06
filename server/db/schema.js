@@ -74,6 +74,23 @@ export const pl = pgTable(
     // ⬇️ Снимок калькулятора (все входы/итоги расчёта) — JSONB
     calculator: jsonb("calculator").default(sql`'{}'::jsonb`).notNull(),
 
+    // Новые поля для калькулятора с валютами (NBKR)
+    leg1Amount: numeric("leg1_amount", { precision: 15, scale: 2 }).default("0"),
+    leg1Currency: text("leg1_currency").default("USD"),
+    leg1AmountUsd: numeric("leg1_amount_usd", { precision: 15, scale: 2 }).default("0"),
+    leg1UsdPerKg: numeric("leg1_usd_per_kg", { precision: 15, scale: 4 }).default("0"),
+    leg1UsdPerM3: numeric("leg1_usd_per_m3", { precision: 15, scale: 4 }).default("0"),
+    leg2Amount: numeric("leg2_amount", { precision: 15, scale: 2 }).default("0"),
+    leg2Currency: text("leg2_currency").default("USD"),
+    leg2AmountUsd: numeric("leg2_amount_usd", { precision: 15, scale: 2 }).default("0"),
+    leg2UsdPerKg: numeric("leg2_usd_per_kg", { precision: 15, scale: 4 }).default("0"),
+    leg2UsdPerM3: numeric("leg2_usd_per_m3", { precision: 15, scale: 4 }).default("0"),
+    fxSource: text("fx_source"),
+    fxDate: text("fx_date"),
+    fxUsdKgs: numeric("fx_usd_kgs", { precision: 10, scale: 4 }),
+    fxCnyKgs: numeric("fx_cny_kgs", { precision: 10, scale: 4 }),
+    fxSavedAt: timestamp("fx_saved_at", { withTimezone: true }),
+
     // Ответственный: user с ролью «логист» (nullable)
     responsibleUserId: uuid("responsible_user_id").references(() => users.id, { onDelete: "set null" }),
 
@@ -83,6 +100,7 @@ export const pl = pgTable(
     plNumberIdx: index("pl_number_idx").on(t.plNumber),
     plNumberUq: uniqueIndex("pl_number_unique").on(t.plNumber),
     responsibleIdx: index("idx_pl_responsible").on(t.responsibleUserId),
+    fxDateIdx: index("idx_pl_fx_date").on(t.fxDate),
   })
 );
 

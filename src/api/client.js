@@ -329,6 +329,17 @@ export async function deletePL(id) {
 }
 
 /* -------------------
+   FX (курсы валют)
+------------------- */
+export async function getFXRates() {
+  return req("/fx/latest");
+}
+
+export async function convertFX(amount, from, to = "USD") {
+  return req(`/fx/convert?amount=${amount}&from=${from}&to=${to}`);
+}
+
+/* -------------------
    PL DOCUMENTS
 ------------------- */
 export async function listPLDocs(plId) {
@@ -535,9 +546,6 @@ export async function setConsolidationPLs(id, targetIds = []) {
   }
 }
 
-/* -------------------
-   USERS
-------------------- */
 export async function listUsers(params = {}) {
   const query = new URLSearchParams(params).toString();
   return req(`/users${query ? `?${query}` : ""}`, { method: "GET" });
@@ -583,6 +591,10 @@ const api = {
   logout,
   me,
   listUsers,
+
+  // fx
+  getFXRates,
+  convertFX,
 
   // consolidations
   listConsolidations,

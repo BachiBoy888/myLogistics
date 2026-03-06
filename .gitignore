@@ -15,3 +15,6 @@ server/.env.production
 server/.env.staging
 server/.local.prod-db
 src/.env.local
+
+playwright-report/
+test-results/

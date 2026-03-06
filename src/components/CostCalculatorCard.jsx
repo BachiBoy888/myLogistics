@@ -209,7 +209,10 @@ export default function CostCalculatorCard({ pl, onSave }) {
     fxRates,
   });
 
-  const [clientPrice, setClientPrice] = useState(pl.quote?.client_price ?? "");
+  const [clientPrice, setClientPrice] = useState(() => {
+    const cp = pl.quote?.client_price;
+    return cp && cp !== 0 ? String(cp) : "";
+  });
   const [saving, setSaving] = useState(false);
   const [savedStamp, setSavedStamp] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -361,8 +364,8 @@ export default function CostCalculatorCard({ pl, onSave }) {
       </div>
 
       {/* Плечо 1 */}
-      <div className="rounded-xl border p-3 bg-white">
-        <div className="font-medium mb-2">1. Ставка до границы (Китай)</div>
+      <div className="rounded-xl border-2 border-blue-200 p-3 bg-blue-50/50">
+        <div className="font-medium mb-2 text-blue-900">1. Ставка до границы (Китай)</div>
         
         {/* Сумма + валюта */}
         <div className="mb-3">
@@ -410,8 +413,8 @@ export default function CostCalculatorCard({ pl, onSave }) {
       </div>
 
       {/* Плечо 2 */}
-      <div className="rounded-xl border p-3 bg-white">
-        <div className="font-medium mb-2">2. Ставка с границы до Канта</div>
+      <div className="rounded-xl border-2 border-emerald-200 p-3 bg-emerald-50/50">
+        <div className="font-medium mb-2 text-emerald-900">2. Ставка с границы до Канта</div>
         
         {/* Сумма + валюта */}
         <div className="mb-3">

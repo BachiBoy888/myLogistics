@@ -1,0 +1,37 @@
+name: AI Development Task
+description: Task for AI agent implementation
+title: "[AI TASK]: "
+labels: ["ai-task"]
+
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What needs to be implemented?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why is this needed?
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What should be included?
+
+  - type: textarea
+    id: out_of_scope
+    attributes:
+      label: Out of Scope
+      description: What should NOT be changed?
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: How do we know the task is done?

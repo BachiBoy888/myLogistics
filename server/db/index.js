@@ -1,19 +1,26 @@
 // server/db/index.js
-import 'dotenv/config';
-import postgres from 'postgres';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { pl, clients } from './schema.js';
+import "dotenv/config";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { pl, clients } from "./schema.js";
 
+const databaseUrl = process.env.DATABASE_URL;
 
-// подключаемся к базе
-const client = postgres(process.env.DATABASE_URL, { ssl: 'require' });
+const isLocalDb =
+  databaseUrl?.includes("localhost") ||
+  databaseUrl?.includes("127.0.0.1");
+
+const client = postgres(databaseUrl, {
+  prepare: true,
+  ...(isLocalDb ? {} : { ssl: "require" }),
+});
+
 export const db = drizzle(client);
 
-console.log('✅ Connected to PostgreSQL');
+console.log("✅ Connected to PostgreSQL");
 
 async function init() {
   try {
-    // 1) clients
     await client`CREATE TABLE IF NOT EXISTS clients (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
@@ -22,16 +29,9 @@ async function init() {
       created_at TIMESTAMP DEFAULT NOW()
     )`;
 
-    // 2) pl (уже есть) — гарантируем поле client_id
     await client`ALTER TABLE pl ADD COLUMN IF NOT EXISTS client_id INTEGER`;
 
-    // (Опционально: FK — можно добавить позже миграцией)
-    // DO $$ BEGIN
-    //   ALTER TABLE pl ADD CONSTRAINT pl_client_fk
-    //     FOREIGN KEY (client_id) REFERENCES clients(id);
-    // EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-    console.log("✅  Tables ready: 'clients', 'pl'");
+    console.log("✅ Tables ready: 'clients', 'pl'");
   } catch (err) {
     console.error("❌ DB init error:", err);
   }

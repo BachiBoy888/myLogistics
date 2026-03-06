@@ -37,17 +37,18 @@ BEGIN
   LOOP
     CASE v_val
       WHEN 'to_load' THEN
-        ALTER TYPE consolidation_status_v2 ADD VALUE 'to_load' BEFORE 'loaded';
+        EXECUTE 'ALTER TYPE consolidation_status_v2 ADD VALUE ''to_load'' BEFORE ''loaded''';
         RAISE NOTICE 'Добавлено: to_load';
       WHEN 'collect_payment' THEN
-        ALTER TYPE consolidation_status_v2 ADD VALUE 'collect_payment' BEFORE 'delivered';
+        EXECUTE 'ALTER TYPE consolidation_status_v2 ADD VALUE ''collect_payment'' BEFORE ''delivered''';
         RAISE NOTICE 'Добавлено: collect_payment';
       ELSE
-        -- Для остальных добавляем в конец (хотя они должны быть)
-        ALTER TYPE consolidation_status_v2 ADD VALUE v_val;
+        EXECUTE format(
+          'ALTER TYPE consolidation_status_v2 ADD VALUE %L',
+          v_val
+        );
         RAISE NOTICE 'Добавлено: %', v_val;
     END CASE;
   END LOOP;
-
   RAISE NOTICE 'Миграция завершена успешно';
 END $$;

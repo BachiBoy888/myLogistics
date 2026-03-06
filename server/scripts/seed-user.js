@@ -38,10 +38,15 @@ async function main() {
     process.exit(1);
   }
 
+  const isLocalDb =
+    process.env.DATABASE_URL?.includes("localhost") ||
+    process.env.DATABASE_URL?.includes("127.0.0.1");
+
   const sql = postgres(process.env.DATABASE_URL, {
-  prepare: true,
-  ssl: { rejectUnauthorized: false }, // важно для Render
-});
+    prepare: true,
+    ...(isLocalDb ? {} : { ssl: { rejectUnauthorized: false } }),
+  });
+
   const db = drizzle(sql);
 
   try {

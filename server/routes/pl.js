@@ -14,6 +14,7 @@ import {
   plEvents,
 } from '../db/schema.js';
 import { savePLFile, getUploadsRootAbs } from '../services/storage.js';
+import * as XLSX from 'xlsx';
 
 // компактное представление клиента
 function toClientShape(c) {
@@ -773,5 +774,113 @@ export default async function plRoutes(fastify) {
       'PL_EVENTS built'
     );
     return { items: events };
+  });
+
+  // ===== Экспорт PL в Excel =====
+  fastify.get('/export/excel', { preHandler: fastify.authGuard }, async (req, reply) => {
+    try {
+      // Получаем все PL с клиентами и ответственными
+      const rows = await db
+        .select({ p: pl, c: clients })
+        .from(pl)
+        .leftJoin(clients, eq(pl.clientId, clients.id))
+        .orderBy(desc(pl.createdAt));
+
+      // Подготавливаем данные для Excel
+      const exportData = await Promise.all(
+        rows.map(async ({ p, c }) => {
+          const hydrated = await hydrateResponsible(db, p);
+          
+          // Извлекаем данные из calculator
+          const calc = p.calculator || {};
+          const calcCost = calc.calcCost || 0;
+          const clientPrice = Number(p.clientPrice || 0);
+          const profit = clientPrice - calcCost;
+          const marginPct = calcCost > 0 ? ((profit / calcCost) * 100).toFixed(2) : '0.00';
+
+          return {
+            'ID PL': p.id,
+            'Номер PL': p.plNumber || '',
+            'Название груза': p.name || '',
+            'ID клиента': c?.id || '',
+            'Имя клиента': c?.name || '',
+            'Компания клиента': c?.company || '',
+            'Вес (кг)': p.weight || '',
+            'Объём (м³)': p.volume || '',
+            'Количество мест': p.places || '',
+            'Инкотерм': p.incoterm || '',
+            'Адрес забора': p.pickupAddress || '',
+            'Отправитель': p.shipperName || '',
+            'Контакты отправителя': p.shipperContacts || '',
+            'Статус': p.status || '',
+            'Ответственный': hydrated.responsible_name || '',
+            'Цена клиента': clientPrice || '',
+            'Себестоимость': calcCost || '',
+            'Прибыль': profit || '',
+            'Маржа %': marginPct + '%',
+            'Ставка плечо 1': p.leg1AmountUsd || calc.leg1AmountUSD || '',
+            'Ставка плечо 2': p.leg2AmountUsd || calc.leg2AmountUSD || '',
+            'Таможня': calc.customsFee || '',
+            'Прочие сборы': calc.otherFee || '',
+            'Валюта плечо 1': p.leg1Currency || '',
+            'Валюта плечо 2': p.leg2Currency || '',
+            'Курс USD': p.fxUsdKgs || '',
+            'Курс CNY': p.fxCnyKgs || '',
+            'Дата создания': p.createdAt ? new Date(p.createdAt).toISOString() : '',
+          };
+        })
+      );
+
+      // Создаем workbook и worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+
+      // Настраиваем ширину колонок
+      const colWidths = [
+        { wch: 8 },   // ID PL
+        { wch: 15 },  // Номер PL
+        { wch: 25 },  // Название груза
+        { wch: 10 },  // ID клиента
+        { wch: 25 },  // Имя клиента
+        { wch: 20 },  // Компания клиента
+        { wch: 12 },  // Вес
+        { wch: 12 },  // Объём
+        { wch: 10 },  // Количество мест
+        { wch: 10 },  // Инкотерм
+        { wch: 30 },  // Адрес забора
+        { wch: 20 },  // Отправитель
+        { wch: 25 },  // Контакты
+        { wch: 15 },  // Статус
+        { wch: 20 },  // Ответственный
+        { wch: 15 },  // Цена клиента
+        { wch: 15 },  // Себестоимость
+        { wch: 15 },  // Прибыль
+        { wch: 12 },  // Маржа %
+        { wch: 15 },  // Ставка 1
+        { wch: 15 },  // Ставка 2
+        { wch: 12 },  // Таможня
+        { wch: 12 },  // Прочие
+        { wch: 10 },  // Валюта 1
+        { wch: 10 },  // Валюта 2
+        { wch: 10 },  // Курс USD
+        { wch: 10 },  // Курс CNY
+        { wch: 20 },  // Дата создания
+      ];
+      ws['!cols'] = colWidths;
+
+      // Добавляем worksheet в workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'PL Export');
+
+      // Генерируем буфер
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+      // Отправляем файл
+      reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      reply.header('Content-Disposition', contentDispositionAttachment(`pl_export_${new Date().toISOString().split('T')[0]}.xlsx`));
+      return buf;
+    } catch (err) {
+      req.log.error(err, 'PL export to Excel failed');
+      return reply.status(500).send({ error: 'Export failed' });
+    }
   });
 }

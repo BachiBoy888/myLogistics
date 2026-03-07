@@ -1,679 +1,836 @@
 # Current Product State — myLogistics
 
-**Дата анализа:** 7 марта 2026  
-**Ветка:** analysis/current-product-state  
-**Версия документа:** 1.0
+**Document version:** 2.0  
+**Date:** March 7, 2026  
+**Branch:** analysis/current-product-state
 
 ---
 
-## Общая информация о проекте
+## 1. Database Schema
 
-myLogistics — система управления логистическими операциями (Packing Lists, Consignments).  
-Стек: React + Vite + Tailwind (frontend), Fastify + Drizzle ORM + PostgreSQL (backend).
+### 1.1. clients
+**Found in:** `server/db/schema.js`
 
-**Найдено в коде:**
-- 76 файлов исходного кода (исключая node_modules)
-- 21 миграция базы данных
-- 8 API routes на backend
-- 5 основных views на frontend
-
----
-
-## 1. Основные сущности системы
-
-### 1.1. Clients (Клиенты)
-
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const clients = pgTable("clients", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  phone: text("phone"),
-  phone2: text("phone2"),
-  email: text("email"),
-  notes: text("notes"),
-  company: text("company"),
-  normalizedName: text("normalized_name"), // для поиска
-  createdAt: timestamp("created_at").defaultNow(),
-});
+{
+  id: serial,
+  name: text (not null),
+  phone: text,
+  phone2: text,
+  email: text,
+  notes: text,
+  company: text,
+  normalizedName: text,
+  createdAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/clients.js`):**
-- `GET /api/clients` — список всех клиентов
-- `GET /api/clients/search?q=` — поиск клиентов
-- `POST /api/clients` — создание клиента
-- `PATCH /api/clients/:id` — обновление клиента
-- `DELETE /api/clients/:id` — удаление клиента (только если нет PL)
-
-**UI (найдено в `src/views/ClientsView.jsx`):**
-- Список клиентов слева
-- Карточка клиента справа с полями: компания, имя, телефоны, email, заметки
-- Интеграция с PL (показывает PL клиента)
-- Кнопка удаления клиента
-
-**Связи:**
-- Один клиент → много PL (client_id в таблице pl)
+**Indexes:** none
 
 ---
 
-### 1.2. PL (Packing List / Груз)
+### 1.2. pl (Packing Lists)
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const pl = pgTable("pl", {
-  id: serial("id").primaryKey(),
-  plNumber: text("pl_number"),
-  clientId: integer("client_id").notNull(),
-  
-  // Основные данные
-  name: text("name").notNull(),
-  weight: numeric("weight", { precision: 12, scale: 3 }),
-  volume: numeric("volume", { precision: 12, scale: 3 }),
-  places: integer("places").default(1), // Количество мест
-  incoterm: text("incoterm"), // EXW | FOB
-  pickupAddress: text("pickup_address"),
-  shipperName: text("shipper_name"),
-  shipperContacts: text("shipper_contacts"),
-  status: text("status").default("draft"),
-  
-  // Финансы
-  clientPrice: numeric("client_price", { precision: 12, scale: 2 }).default("0"),
-  
-  // Калькулятор (JSONB)
-  calculator: jsonb("calculator").default(sql`'{}'::jsonb`).notNull(),
-  
-  // Поля для калькулятора с валютами
-  leg1Amount, leg1Currency, leg1AmountUsd, leg1UsdPerKg, leg1UsdPerM3,
-  leg2Amount, leg2Currency, leg2AmountUsd, leg2UsdPerKg, leg2UsdPerM3,
-  fxSource, fxDate, fxUsdKgs, fxCnyKgs, fxSavedAt,
-  
-  // Ответственный
-  responsibleUserId: uuid("responsible_user_id"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+{
+  id: serial,
+  plNumber: text,
+  clientId: integer (not null, foreign key),
+  name: text (not null),
+  weight: numeric(12,3),
+  volume: numeric(12,3),
+  places: integer (default 1),
+  incoterm: text,
+  pickupAddress: text,
+  shipperName: text,
+  shipperContacts: text,
+  status: text (default 'draft'),
+  clientPrice: numeric(12,2) (default 0),
+  calculator: jsonb (default '{}'),
+  leg1Amount: numeric(15,2) (default 0),
+  leg1Currency: text (default 'USD'),
+  leg1AmountUsd: numeric(15,2) (default 0),
+  leg1UsdPerKg: numeric(15,4) (default 0),
+  leg1UsdPerM3: numeric(15,4) (default 0),
+  leg2Amount: numeric(15,2) (default 0),
+  leg2Currency: text (default 'USD'),
+  leg2AmountUsd: numeric(15,2) (default 0),
+  leg2UsdPerKg: numeric(15,4) (default 0),
+  leg2UsdPerM3: numeric(15,4) (default 0),
+  fxSource: text,
+  fxDate: text,
+  fxUsdKgs: numeric(10,4),
+  fxCnyKgs: numeric(10,4),
+  fxSavedAt: timestamp,
+  responsibleUserId: uuid (foreign key),
+  createdAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/pl.js`):**
-- `GET /api/pl` — список всех PL
-- `GET /api/pl/:id` — один PL
-- `POST /api/pl` — создание PL
-- `PUT /api/pl/:id` — обновление PL
-- `DELETE /api/pl/:id` — удаление PL
-- `PUT /api/pl/:id/responsible` — назначение ответственного
-- `GET /api/pl/:id/events` — события PL
+**Indexes:** plNumberIdx, plNumberUq, responsibleIdx, fxDateIdx
 
-**UI (найдено в `src/components/PLCard.jsx`, `src/views/CargoView.jsx`):**
-- Карточка PL с табами: Сведения / Документы / Комментарии / Хронология
-- Поля: название груза, вес, объём, количество мест, инкотерм, адрес забора, отправитель, контакты
-- Калькулятор себестоимости
-- Drag & drop в канбане
+---
 
-**Статусы PL (найдено в `src/constants/statuses.js`):**
+### 1.3. plDocuments
+**Found in:** `server/db/schema.js`
+
 ```javascript
-["draft", "awaiting_docs", "awaiting_load", "to_load", "loaded",
- "to_customs", "released", "kg_customs", "collect_payment", "closed", "cancelled"]
+{
+  id: uuid,
+  plId: integer (not null, foreign key),
+  docType: text (not null),
+  name: text,
+  fileName: text (not null),
+  mimeType: text,
+  sizeBytes: bigint,
+  storagePath: text (not null),
+  status: text (default 'pending'),
+  note: text,
+  uploadedBy: text,
+  uploadedAt: timestamp,
+  updatedAt: timestamp
+}
 ```
 
-**Канбан (9 колонок):**
-1. Обращение (draft)
-2. Сбор документов (awaiting_docs)
-3. Сбор груза (awaiting_load)
-4. Погрузка (to_load, loaded)
-5. Оформление Китай (to_customs)
-6. В пути (released)
-7. Растаможка (kg_customs)
-8. Оплата (collect_payment)
-9. Закрыто (closed, cancelled)
+**Indexes:** byPlId, byType, byStatus, uqDocPerType
 
 ---
 
-### 1.3. Consolidations (Консолидации)
+### 1.4. plDocStatusHistory
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const consolidations = pgTable("consolidations", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  consNumber: text("cons_number").notNull(), // CONS-YYYY-N
-  title: text("title"),
-  status: consolidationStatusEnum("status").notNull().default("loaded"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const consolidationPl = pgTable("consolidation_pl", {
-  consolidationId: uuid("consolidation_id").notNull(),
-  plId: integer("pl_id").notNull(),
-  addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
-});
+{
+  id: uuid,
+  docId: uuid (not null, foreign key),
+  oldStatus: text,
+  newStatus: text (not null),
+  note: text,
+  changedBy: text,
+  changedAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/consolidations.js`):**
-- `GET /api/consolidations` — список консолидаций
-- `GET /api/consolidations/:id` — одна консолидация
-- `POST /api/consolidations` — создание
-- `PATCH /api/consolidations/:id` — обновление
-- `DELETE /api/consolidations/:id` — удаление
-- `POST /api/consolidations/:id/pl` — добавление PL
-- `DELETE /api/consolidations/:id/pl/:plId` — удаление PL
-- `PUT /api/consolidations/:id/pl` — установка списка PL
-
-**UI (найдено в `src/views/CargoView.jsx`):**
-- Создание консолидации
-- Добавление/удаление PL из консолидации
-- Drag & drop PL между статусами
-
-**Статусы консолидаций (8 статусов):**
-`to_load`, `loaded`, `to_customs`, `released`, `kg_customs`, `collect_payment`, `delivered`, `closed`
-
 ---
 
-### 1.4. Documents (Документы PL)
+### 1.5. plComments
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const plDocuments = pgTable("pl_documents", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  plId: integer("pl_id").notNull(),
-  docType: text("doc_type").notNull(), // 'invoice' | 'packing_list' | ...
-  name: text("name"),
-  fileName: text("file_name").notNull(),
-  mimeType: text("mime_type"),
-  sizeBytes: bigint("size_bytes", { mode: "number" }),
-  storagePath: text("storage_path").notNull(),
-  status: text("status").notNull().default("pending"), // pending | reviewed | approved | rejected
-  note: text("note"),
-  uploadedBy: text("uploaded_by"),
-  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const plDocStatusHistory = pgTable("pl_doc_status_history", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  docId: uuid("doc_id").notNull(),
-  oldStatus: text("old_status"),
-  newStatus: text("new_status").notNull(),
-  note: text("note"),
-  changedBy: text("changed_by"),
-  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
-});
+{
+  id: uuid,
+  plId: integer (not null, foreign key),
+  userId: uuid (foreign key),
+  author: text (default 'Логист'),
+  body: text (not null),
+  createdAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/pl.js`):**
-- `GET /api/pl/:id/docs` — список документов
-- `POST /api/pl/:id/docs` — загрузка документа
-- `GET /api/pl/:id/docs/:docId` — скачивание документа
-- `PATCH /api/pl/:id/docs/:docId` — обновление статуса/примечания
-- `DELETE /api/pl/:id/docs/:docId` — удаление документа
-- `GET /api/pl/:id/docs/:docId/history` — история статусов
-
-**UI (найдено в `src/components/pl/DocsList.jsx`):**
-- Загрузка файлов
-- Просмотр списка документов
-- Изменение статуса (uploaded → checked_by_logistic → recheck_ok / rejected)
-- Удаление документов
-- История изменений
-
-**Типы документов (найдено в `src/constants/docs.js`):**
-- invoice — Инвойс
-- packing_list — Packing List
-- other — Другое
+**Indexes:** byPl, byPlCreated
 
 ---
 
-### 1.5. Comments (Комментарии PL)
+### 1.6. plEvents
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const plComments = pgTable("pl_comments", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  plId: integer("pl_id").notNull(),
-  userId: uuid("user_id"),
-  author: text("author").notNull().default("Логист"),
-  body: text("body").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+{
+  id: uuid,
+  plId: integer (not null, foreign key),
+  type: text (not null),
+  message: text (not null),
+  meta: jsonb (default '{}'),
+  actorUserId: uuid (foreign key),
+  createdAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/pl.js`):**
-- `GET /api/pl/:id/comments` — список комментариев
-- `POST /api/pl/:id/comments` — добавление комментария
-- `DELETE /api/pl/:id/comments/:commentId` — удаление комментария
-
-**UI (найдено в `src/components/CommentsCard.jsx`):**
-- Отображение списка комментариев
-- Добавление нового комментария
-- Удаление комментария
+**Indexes:** byPl, byPlCreated, byActor
 
 ---
 
-### 1.6. Events / Timeline (События PL)
+### 1.7. consolidations
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const plEvents = pgTable("pl_events", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  plId: integer("pl_id").notNull(),
-  type: text("type").notNull(), // 'pl.created' | 'pl.status_changed' | ...
-  message: text("message").notNull(),
-  meta: jsonb("meta").default(sql`'{}'::jsonb`),
-  actorUserId: uuid("actor_user_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+{
+  id: uuid,
+  consNumber: text (not null),
+  title: text,
+  status: consolidation_status_v2 enum (default 'loaded'),
+  createdAt: timestamp,
+  updatedAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/pl.js`):**
-- `GET /api/pl/:id/events` — список событий
+**Enum values:** to_load, loaded, to_customs, released, kg_customs, collect_payment, delivered, closed
 
-**UI (найдено в `src/components/PLCard.jsx`):**
-- Вкладка "Хронология" с таблицей событий
-
-**Типы событий (найдено в коде):**
-- pl.created — создание PL
-- pl.status_changed — изменение статуса
-- pl.responsible_assigned — назначение ответственного
-- pl.comment_added — добавление комментария
-- pl.document_uploaded — загрузка документа
+**Indexes:** consNumberIdx, consNumberUq, statusIdx
 
 ---
 
-### 1.7. Users (Пользователи)
+### 1.8. consolidationPl
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const users = pgTable("users", {
-  id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
-  login: text("login").notNull(),
-  passwordHash: text("password_hash").notNull(),
-  name: text("name").notNull(),
-  phone: text("phone"),
-  email: text("email"),
-  role: text("role").notNull().default("user"), // admin | logist | user
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+{
+  consolidationId: uuid (not null, foreign key),
+  plId: integer (not null, foreign key),
+  addedAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/users.js`, `server/routes/auth.js`):**
-- `POST /api/auth/login` — вход
-- `POST /api/auth/logout` — выход
-- `GET /api/auth/me` — текущий пользователь
-- `GET /api/users?role=` — список пользователей (с фильтром по роли)
-
-**Роли:**
-- admin — администратор
-- logist — логист (может быть ответственным за PL)
-- user — обычный пользователь
+**Indexes:** pk, byPl, byCons
 
 ---
 
-### 1.8. Analytics Snapshots (Аналитика)
+### 1.9. consolidationStatusHistory
+**Found in:** `server/db/schema.js`
 
-**Модель данных (найдено в `server/db/schema.js`):**
 ```javascript
-export const analyticsDailySnapshots = pgTable("analytics_daily_snapshots", {
-  day: timestamp("day", { withTimezone: false }).notNull(),
-  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
-  sourceTs: timestamp("source_ts", { withTimezone: true }).notNull().defaultNow(),
-  totalClients: integer("total_clients").notNull().default(0),
-  inquiryClients: integer("inquiry_clients").notNull().default(0),
-  activeClients: integer("active_clients").notNull().default(0),
-});
-
-export const analyticsDailyPlStatus = pgTable("analytics_daily_pl_status", {
-  day: timestamp("day", { withTimezone: false }).notNull(),
-  status: text("status").notNull(),
-  plCount: integer("pl_count").notNull().default(0),
-});
-
-export const analyticsDailyWeightStatus = pgTable("analytics_daily_weight_status", {
-  day: timestamp("day", { withTimezone: false }).notNull(),
-  status: text("status").notNull(),
-  totalWeight: numeric("total_weight", { precision: 15, scale: 3 }).notNull().default("0"),
-});
+{
+  id: uuid,
+  consolidationId: uuid (not null, foreign key),
+  fromStatus: consolidation_status_v2 enum,
+  toStatus: consolidation_status_v2 enum (not null),
+  note: text,
+  changedBy: text,
+  createdAt: timestamp
+}
 ```
 
-**API (найдено в `server/routes/analytics.js`):**
-- `GET /api/analytics?from=YYYY-MM-DD&to=YYYY-MM-DD&granularity=day|week|month` — аналитика
-
-**Скрипт заполнения (найдено в `server/scripts/build-analytics-snapshots.js`):**
-- Ежедневное создание снапшотов
-- Расчёт метрик на основе текущих данных
-
-**UI (найдено в `src/views/AnalyticsPage.jsx`):**
-- 3 графика: динамика клиентов, PL по статусам, динамика веса
-- Выбор периода и гранулярности (день/неделя/месяц)
-
-**Статус:** Реализовано частично — требуется настройка cron job для автоматического заполнения
+**Indexes:** byCons, byToStatus
 
 ---
 
-## 2. Функциональность по разделам
+### 1.10. users
+**Found in:** `server/db/schema.js`
 
-### 2.1. Авторизация
+```javascript
+{
+  id: uuid,
+  login: text (not null),
+  passwordHash: text (not null),
+  name: text (not null),
+  phone: text,
+  email: text,
+  role: text (default 'user'),
+  createdAt: timestamp
+}
+```
 
-**Реализовано:**
-- ✅ Модель users с ролями (admin, logist, user)
-- ✅ API login/logout/me
-- ✅ Сессии через cookies
-- ✅ Проверка прав (authGuard)
+**Indexes:** uqLogin
 
-**Найдено в:**
-- `server/db/schema.js` — модель users
-- `server/routes/auth.js` — API
-- `server/server.js` — middleware authGuard
-
-**Отсутствует:**
-- ❌ Регистрация пользователей (только через БД напрямую)
-- ❌ Восстановление пароля
-- ❌ Смена пароля через UI
-
----
-
-### 2.2. PL (Грузы)
-
-**Реализовано:**
-- ✅ CRUD операции (создание, чтение, обновление, удаление)
-- ✅ Список PL с клиентами
-- ✅ Детальная карточка PL с табами
-- ✅ 11 статусов с канбан-доской (9 колонок)
-- ✅ Drag & drop между статусами
-- ✅ Drag & drop между колонками канбана
-- ✅ Назначение ответственного
-- ✅ Поля: вес, объём, количество мест, инкотерм, адрес, отправитель, контакты
-
-**Реализовано частично:**
-- ⚠️ Warehouses (FOB склады) — есть модель, но UI минимальный
-
-**Найдено в:**
-- `server/db/schema.js` — модель pl
-- `server/routes/pl.js` — API
-- `src/views/CargoView.jsx` — канбан
-- `src/components/PLCard.jsx` — карточка PL
-- `src/components/pl/NewPLModal.jsx` — создание PL
-
-**Отсутствует:**
-- ❌ Массовые операции с PL
-- ❌ Фильтрация и поиск PL (только по клиенту)
+**Roles:** admin, logist, user
 
 ---
 
-### 2.3. Clients (Клиенты)
+### 1.11. analyticsDailySnapshots
+**Found in:** `server/db/schema.js`
 
-**Реализовано:**
-- ✅ CRUD операции
-- ✅ Поиск клиентов с транслитерацией
-- ✅ Автосоздание клиента при создании PL
-- ✅ Привязка PL к клиенту
-- ✅ Просмотр всех PL клиента
+```javascript
+{
+  day: timestamp (not null),
+  generatedAt: timestamp,
+  sourceTs: timestamp,
+  totalClients: integer (default 0),
+  inquiryClients: integer (default 0),
+  activeClients: integer (default 0)
+}
+```
 
-**Найдено в:**
-- `server/db/schema.js` — модель clients
-- `server/routes/clients.js` — API
-- `src/views/ClientsView.jsx` — UI списка и карточки
-
-**Отсутствует:**
-- ❌ История изменений клиента
-- ❌ Сегментация клиентов
+**Indexes:** pk, byDay
 
 ---
 
-### 2.4. Consolidations (Консолидации)
+### 1.12. analyticsDailyPlStatus
+**Found in:** `server/db/schema.js`
 
-**Реализовано:**
-- ✅ CRUD операции
-- ✅ Добавление/удаление PL из консолидации
-- ✅ Статусы консолидации (8 статусов)
-- ✅ История изменений статусов
+```javascript
+{
+  day: timestamp (not null),
+  status: text (not null),
+  plCount: integer (default 0)
+}
+```
 
-**Найдено в:**
-- `server/db/schema.js` — модели consolidations, consolidationPl, consolidationStatusHistory
-- `server/routes/consolidations.js` — API
-- `src/views/CargoView.jsx` — UI (создание, управление)
-
-**Отсутствует:**
-- ❌ Визуализация консолидации (что внутри)
-- ❌ Расчёт объёма/веса консолидации
+**Indexes:** pk, byDay, byStatus
 
 ---
 
-### 2.5. Documents (Документы)
+### 1.13. analyticsDailyWeightStatus
+**Found in:** `server/db/schema.js`
 
-**Реализовано:**
-- ✅ Загрузка файлов
-- ✅ Хранение на диске (uploads/pl/<plId>/)
-- ✅ 3 типа документов: invoice, packing_list, other
-- ✅ Статусы документов: pending, reviewed, approved, rejected
-- ✅ История изменений статусов
-- ✅ Уникальность: один тип документа на PL
+```javascript
+{
+  day: timestamp (not null),
+  status: text (not null),
+  totalWeight: numeric(15,3) (default 0)
+}
+```
 
-**Найдено в:**
-- `server/db/schema.js` — модели plDocuments, plDocStatusHistory
-- `server/routes/pl.js` — API (внутри pl routes)
-- `src/components/pl/DocsList.jsx` — UI
-- `src/constants/docs.js` — типы документов
-
-**Отсутствует:**
-- ❌ Предпросмотр документов (только скачивание)
-- ❌ Версионирование документов
+**Indexes:** pk, byDay, byStatus
 
 ---
 
-### 2.6. Timeline / Хронология
+## 2. API Routes
 
-**Реализовано:**
-- ✅ Модель событий plEvents
-- ✅ API для получения событий
-- ✅ Таб "Хронология" в карточке PL
-- ✅ Автоматическое создание событий при:
-  - Создании PL
-  - Изменении статуса
-  - Назначении ответственного
-  - Добавлении комментария
-  - Загрузке документа
+### 2.1. Auth Routes
+**Found in:** `server/routes/auth.js`
 
-**Найдено в:**
-- `server/db/schema.js` — модель plEvents
-- `server/routes/pl.js` — API + создание событий
-- `src/components/PLCard.jsx` — вкладка "Хронология"
+| Method | Path | Handler |
+|--------|------|---------|
+| POST | /api/auth/login | Login |
+| POST | /api/auth/logout | Logout |
+| GET | /api/auth/me | Current user |
 
 ---
 
-### 2.7. Comments (Комментарии)
+### 2.2. Users Routes
+**Found in:** `server/routes/users.js`
 
-**Реализовано:**
-- ✅ Модель комментариев
-- ✅ API CRUD
-- ✅ UI в карточке PL (вкладка "Комментарии")
-- ✅ Автор и дата
-
-**Найдено в:**
-- `server/db/schema.js` — модель plComments
-- `server/routes/pl.js` — API
-- `src/components/CommentsCard.jsx` — UI
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/users | List users (with role filter) |
 
 ---
 
-### 2.8. Финансовая модель (Калькулятор)
+### 2.3. Clients Routes
+**Found in:** `server/routes/clients.js`
 
-**Реализовано:**
-- ✅ Поля в PL: clientPrice (цена для клиента)
-- ✅ JSONB поле calculator со снимком расчёта
-- ✅ Расчёт себестоимости (2 плеча + таможня + прочие)
-- ✅ Расчёт маржи и прибыли
-- ✅ Плотность груза (кг/м³)
-- ✅ Рекомендация: считать по весу или объёму
-- ✅ Поддержка 3 валют: USD, KGS, CNY
-- ✅ Курсы валют от NBKR
-- ✅ Сохранение курсов на момент расчёта
-- ✅ Пересчёт $/кг и $/м³ от суммы ставки
-
-**Найдено в:**
-- `server/db/schema.js` — поля PL (clientPrice, calculator, leg*, fx*)
-- `server/routes/fx.js` — API курсов валют
-- `src/components/CostCalculatorCard.jsx` — UI калькулятора
-
-**Отсутствует:**
-- ❌ История изменений цены
-- ❌ Агрегация финансов по клиенту
-- ❌ Агрегация финансов по консолидации
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/clients | List all clients |
+| GET | /api/clients/search | Search clients |
+| POST | /api/clients | Create client |
+| PATCH | /api/clients/:id | Update client |
+| DELETE | /api/clients/:id | Delete client (only if no PLs) |
 
 ---
 
-### 2.9. Аналитика
+### 2.4. PL Routes
+**Found in:** `server/routes/pl.js`
 
-**Реализовано:**
-- ✅ 3 снапшот-таблицы для аналитики
-- ✅ API /api/analytics
-- ✅ 3 графика в UI
-- ✅ Скрипт заполнения снапшотов
-- ✅ Поддержка гранулярности: день, неделя, месяц
-
-**Найдено в:**
-- `server/db/schema.js` — таблицы analytics*
-- `server/routes/analytics.js` — API
-- `server/scripts/build-analytics-snapshots.js` — скрипт
-- `src/views/AnalyticsPage.jsx` — UI
-
-**Реализовано частично:**
-- ⚠️ Требуется настройка cron job для ежедневного запуска скрипта
-
----
-
-## 3. UI Компоненты
-
-### 3.1. Основные Views
-
-| View | Файл | Описание |
-|------|------|----------|
-| CargoView | `src/views/CargoView.jsx` | Канбан доска с PL, консолидации |
-| ClientsView | `src/views/ClientsView.jsx` | Список клиентов, карточка клиента |
-| AnalyticsPage | `src/views/AnalyticsPage.jsx` | Графики аналитики |
-| LogisticsView | `src/views/LogisticsView.jsx` | Пустой placeholder |
-| WarehousesView | `src/views/WarehousesView.jsx` | Список складов (минимальный) |
-
-### 3.2. Компоненты
-
-| Компонент | Файл | Описание |
-|-----------|------|----------|
-| PLCard | `src/components/PLCard.jsx` | Карточка PL с 4 табами |
-| NewPLModal | `src/components/pl/NewPLModal.jsx` | Модал создания PL |
-| DocsList | `src/components/pl/DocsList.jsx` | Список документов |
-| CommentsCard | `src/components/CommentsCard.jsx` | Комментарии |
-| CostCalculatorCard | `src/components/CostCalculatorCard.jsx` | Калькулятор себестоимости |
-| KanbanBoard | `src/components/kanban/KanbanBoard.jsx` | Канбан доска |
-| KanbanPLCard | `src/components/kanban/KanbanPLCard.jsx` | Карточка PL в канбане |
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/pl | List all PLs |
+| GET | /api/pl/:id | Get single PL |
+| POST | /api/pl | Create PL |
+| PUT | /api/pl/:id | Update PL |
+| DELETE | /api/pl/:id | Delete PL |
+| PUT | /api/pl/:id/responsible | Assign responsible |
+| GET | /api/pl/:id/events | List events |
+| GET | /api/pl/:id/docs | List documents |
+| POST | /api/pl/:id/docs | Upload document |
+| GET | /api/pl/:id/docs/:docId | Download document |
+| PATCH | /api/pl/:id/docs/:docId | Update document |
+| DELETE | /api/pl/:id/docs/:docId | Delete document |
+| GET | /api/pl/:id/docs/:docId/history | Document status history |
+| GET | /api/pl/:id/comments | List comments |
+| POST | /api/pl/:id/comments | Add comment |
+| DELETE | /api/pl/:id/comments/:commentId | Delete comment |
 
 ---
 
-## 4. API Routes
+### 2.5. Consolidations Routes
+**Found in:** `server/routes/consolidations.js`
 
-| Route | Файл | Описание |
-|-------|------|----------|
-| /api/auth/* | `server/routes/auth.js` | Авторизация |
-| /api/users | `server/routes/users.js` | Пользователи |
-| /api/clients/* | `server/routes/clients.js` | Клиенты |
-| /api/pl/* | `server/routes/pl.js` | PL (основной) |
-| /api/consolidations/* | `server/routes/consolidations.js` | Консолидации |
-| /api/analytics | `server/routes/analytics.js` | Аналитика |
-| /api/fx/* | `server/routes/fx.js` | Курсы валют |
-| /api/health | `server/routes/health.js` | Health check |
-
----
-
-## 5. Миграции базы данных
-
-**Найдено:** 21 миграция в `server/drizzle/`
-
-**Ключевые миграции:**
-- `0016_add_cons_statuses.sql` — добавление статусов консолидации
-- `0018_add_analytics_snapshots.sql` — таблицы аналитики
-- `0019_add_fx_calc_fields.sql` — поля для калькулятора с валютами
-- `0020_add_pl_places.sql` — поле places (количество мест)
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/consolidations | List consolidations |
+| GET | /api/consolidations/:id | Get single consolidation |
+| POST | /api/consolidations | Create consolidation |
+| PATCH | /api/consolidations/:id | Update consolidation |
+| DELETE | /api/consolidations/:id | Delete consolidation |
+| POST | /api/consolidations/:id/pl | Add PL to consolidation |
+| DELETE | /api/consolidations/:id/pl/:plId | Remove PL from consolidation |
+| PUT | /api/consolidations/:id/pl | Set PL list |
+| GET | /api/consolidations/:id/status-history | Status history |
 
 ---
 
-## 6. Частично реализованные функции
+### 2.6. Analytics Routes
+**Found in:** `server/routes/analytics.js`
 
-### 6.1. Аналитика
-- **Есть:** Модели, API, UI, скрипт заполнения
-- **Нет:** Автоматический запуск по расписанию (cron)
-- **Действие:** Настроить Render Cron Job для `build-analytics-snapshots.js`
-
-### 6.2. Warehouses (Склады)
-- **Есть:** Модель, справочник
-- **Нет:** Полноценный UI управления
-- **Используется:** Только для выбора FOB склада при создании PL
-
-### 6.3. Финансовая агрегация
-- **Есть:** Расчёт на уровне PL
-- **Нет:** Суммы по клиенту, консолидации, периоду
-
-### 6.4. Документы
-- **Есть:** Загрузка, статусы, история
-- **Нет:** Предпросмотр, версионирование
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/analytics | Get analytics data (query: from, to, granularity) |
 
 ---
 
-## 7. Важные наблюдения
+### 2.7. FX Routes
+**Found in:** `server/routes/fx.js`
 
-### 7.1. Риск дублирования
-
-**Финансовая модель:**
-- Цена клиента хранится в двух местах: `pl.clientPrice` и внутри `pl.calculator.clientPrice`
-- **Рекомендация:** Использовать только `pl.clientPrice`, убрать дублирование из calculator
-
-**События и история:**
-- Есть `plEvents` для общих событий
-- Есть `plDocStatusHistory` для документов
-- Есть `consolidationStatusHistory` для консолидаций
-- **Рекомендация:** Рассмотреть unified event log если добавлять новые типы истории
-
-### 7.2. Требует развития
-
-**Калькулятор:**
-- Сейчас: только 2 плеча + фиксированные сборы
-- Можно развить: неограниченное число плеч, шаблоны маршрутов
-
-**Статусы:**
-- Сейчас: фиксированный pipeline
-- Можно развить: кастомные статусы, переходы с условиями
-
-**Аналитика:**
-- Сейчас: daily snapshots
-- Можно развить: real-time метрики, кастомные дашборды
-
-### 7.3. Технический долг
-
-**NB:** Поле `pl.calculator` хранит дублирующиеся данные (rate1Kg и т.д.), которые теперь есть в отдельных колонках. Рассмотреть миграцию для очистки.
-
-**NB:** В `plDocStatusHistory` используется text для статусов, а не enum — нет строгой типизации.
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/fx/latest | Get latest exchange rates |
+| GET | /api/fx/convert | Convert amount between currencies |
 
 ---
 
-## 8. Выводы для AI-агентов
+### 2.8. Health Routes
+**Found in:** `server/routes/health.js`
 
-### Что уже есть (не создавать заново):
-1. ✅ Система статусов PL (11 статусов, канбан)
-2. ✅ Система документов с историей статусов
-3. ✅ Комментарии к PL
-4. ✅ Калькулятор себестоимости с валютами
-5. ✅ Консолидации с историей
-6. ✅ Аналитика на снапшотах
-7. ✅ Событийная система (timeline)
-
-### Что нужно развивать:
-1. ⚠️ Автоматизация аналитики (cron)
-2. ⚠️ Финансовые агрегации (по клиенту, консолидации)
-3. ⚠️ Улучшение UI warehouses
-4. ⚠️ Предпросмотр документов
-
-### Что отсутствует (можно создавать):
-1. ❌ Регистрация/восстановление пароля
-2. ❌ Массовые операции с PL
-3. ❌ Поиск и фильтрация PL
-4. ❌ Уведомления (email/push)
-5. ❌ Экспорт данных (Excel/PDF)
+| Method | Path | Handler |
+|--------|------|---------|
+| GET | /api/health | Health check |
 
 ---
 
-**Документ создан:** 7 марта 2026  
-**На основе анализа:** 76 файлов, 21 миграции, полный обзор schema и routes
+## 3. Frontend Views
+
+### 3.1. CargoView
+**Found in:** `src/views/CargoView.jsx`
+
+**Features:**
+- Kanban board with 9 columns
+- PL cards with drag & drop
+- Consolidation management
+- Summary drawer
+
+---
+
+### 3.2. ClientsView
+**Found in:** `src/views/ClientsView.jsx`
+
+**Features:**
+- Client list (left sidebar)
+- Client card (right panel)
+- Client PLs list
+- Delete client button
+
+---
+
+### 3.3. AnalyticsPage
+**Found in:** `src/views/AnalyticsPage.jsx`
+
+**Features:**
+- 3 charts: Client dynamics, PL by status, Weight dynamics
+- Date range picker
+- Granularity selector (day/week/month)
+- Meta info display
+
+---
+
+### 3.4. LogisticsView
+**Found in:** `src/views/LogisticsView.jsx`
+
+**Features:**
+- Placeholder view (minimal content)
+
+---
+
+### 3.5. WarehousesView
+**Found in:** `src/views/WarehousesView.jsx`
+
+**Features:**
+- Warehouse list display (minimal UI)
+
+---
+
+## 4. Frontend Components
+
+### 4.1. PLCard
+**Found in:** `src/components/PLCard.jsx`
+
+**Features:**
+- 4 tabs: Info, Documents, Comments, Timeline
+- Form fields: title, weight, volume, places, pickup address, shipper name, contacts
+- Calculator integration
+- Responsible assignment
+- Cargo info copy
+
+---
+
+### 4.2. NewPLModal
+**Found in:** `src/components/pl/NewPLModal.jsx`
+
+**Features:**
+- Client search with suggestions
+- Fields: title, weight, volume, places, incoterm, pickup address
+- Auto-create client if not exists
+
+---
+
+### 4.3. DocsList
+**Found in:** `src/components/pl/DocsList.jsx`
+
+**Features:**
+- Document upload
+- Document list with status
+- Status change (uploaded → checked → approved/rejected)
+- Document delete
+- Status history
+
+---
+
+### 4.4. CommentsCard
+**Found in:** `src/components/CommentsCard.jsx`
+
+**Features:**
+- Comment list
+- Add comment
+- Delete comment
+
+---
+
+### 4.5. CostCalculatorCard
+**Found in:** `src/components/CostCalculatorCard.jsx`
+
+**Features:**
+- 2 legs with amount and currency (USD/KGS/CNY)
+- Auto-calculate $/kg and $/m³
+- Display exchange rates
+- Customs fee input
+- Other fee input
+- Client price input
+- Profit and margin calculation
+- Save calculator snapshot with exchange rates
+
+---
+
+### 4.6. KanbanBoard
+**Found in:** `src/components/kanban/KanbanBoard.jsx`
+
+**Features:**
+- 9 columns based on status pipeline
+- Drag & drop PLs between columns
+- Column counts
+
+---
+
+### 4.7. KanbanPLCard
+**Found in:** `src/components/kanban/KanbanPLCard.jsx`
+
+**Features:**
+- Compact PL info display
+- Drag handle
+- Click to open full card
+
+---
+
+## 5. Status Constants
+
+### 5.1. PL Statuses
+**Found in:** `src/constants/statuses.js`
+
+**List:** draft, awaiting_docs, awaiting_load, to_load, loaded, to_customs, released, kg_customs, collect_payment, closed, cancelled
+
+**Total:** 11 statuses
+
+**Kanban columns (9):**
+1. intake (draft)
+2. collect_docs (awaiting_docs)
+3. collect_cargo (awaiting_load)
+4. loading (to_load, loaded)
+5. cn_formalities (to_customs)
+6. in_transit (released)
+7. kg_customs (kg_customs)
+8. payment (collect_payment)
+9. closed_stage (closed, cancelled)
+
+---
+
+### 5.2. Consolidation Statuses
+**Found in:** `src/constants/statuses.js`, `server/db/schema.js`
+
+**List:** to_load, loaded, to_customs, released, kg_customs, collect_payment, delivered, closed
+
+**Total:** 8 statuses
+
+---
+
+### 5.3. Document Statuses
+**Found in:** `src/components/pl/DocsList.jsx`
+
+**UI statuses:** uploaded, checked_by_logistic, recheck_ok, rejected
+
+**Server statuses:** pending, reviewed, approved, rejected
+
+---
+
+## 6. Features by Category
+
+### 6.1. Authentication
+
+**Implemented:**
+- Login/logout
+- Session management
+- Role-based access (admin, logist, user)
+
+**Found in:**
+- `server/routes/auth.js`
+- `server/db/schema.js` (users)
+- `server/server.js` (authGuard)
+
+**Missing:**
+- User registration UI
+- Password reset
+- Password change UI
+
+---
+
+### 6.2. PL Management
+
+**Implemented:**
+- CRUD operations
+- List with client info
+- Detail card with tabs
+- 11 statuses
+- Kanban board (9 columns)
+- Drag & drop between statuses
+- Drag & drop between columns
+- Responsible assignment
+- Fields: title, weight, volume, places, incoterm, pickup address, shipper name, contacts
+
+**Found in:**
+- `server/routes/pl.js`
+- `src/views/CargoView.jsx`
+- `src/components/PLCard.jsx`
+- `src/components/pl/NewPLModal.jsx`
+- `src/constants/statuses.js`
+
+**Partially implemented:**
+- Warehouse management (FOB selection only)
+
+**Missing:**
+- Bulk operations
+- Search and filter (except by client)
+
+---
+
+### 6.3. Client Management
+
+**Implemented:**
+- CRUD operations
+- Search with transliteration
+- Auto-create on PL creation
+- View all client PLs
+
+**Found in:**
+- `server/routes/clients.js`
+- `src/views/ClientsView.jsx`
+
+**Missing:**
+- Client history log
+- Client segmentation
+
+---
+
+### 6.4. Consolidations
+
+**Implemented:**
+- CRUD operations
+- Add/remove PLs
+- 8 statuses
+- Status history
+
+**Found in:**
+- `server/routes/consolidations.js`
+- `server/db/schema.js`
+- `src/views/CargoView.jsx`
+
+**Missing:**
+- Consolidation visualization (what's inside)
+- Weight/volume aggregation
+
+---
+
+### 6.5. Documents
+
+**Implemented:**
+- File upload
+- Disk storage (uploads/pl/<plId>/)
+- 3 document types: invoice, packing_list, other
+- 4 statuses with history
+- Unique constraint: one type per PL
+
+**Found in:**
+- `server/routes/pl.js` (document endpoints)
+- `server/db/schema.js` (plDocuments, plDocStatusHistory)
+- `src/components/pl/DocsList.jsx`
+- `src/constants/docs.js`
+
+**Missing:**
+- Document preview
+- Document versioning
+
+---
+
+### 6.6. Comments
+
+**Implemented:**
+- CRUD operations
+- UI in PL card
+- Author and timestamp
+
+**Found in:**
+- `server/routes/pl.js`
+- `server/db/schema.js` (plComments)
+- `src/components/CommentsCard.jsx`
+
+---
+
+### 6.7. Timeline / Events
+
+**Implemented:**
+- Event model
+- Event list API
+- Timeline tab in PL card
+- Auto-generated events for: creation, status change, responsible assignment, comment added, document uploaded
+
+**Found in:**
+- `server/db/schema.js` (plEvents)
+- `server/routes/pl.js`
+- `src/components/PLCard.jsx`
+
+---
+
+### 6.8. Calculator
+
+**Implemented:**
+- Client price field
+- JSONB calculator snapshot
+- Cost calculation (2 legs + customs + other)
+- Margin and profit calculation
+- Cargo density (kg/m³)
+- Weight vs volume recommendation
+- 3 currencies: USD, KGS, CNY
+- NBKR exchange rates
+- Rate snapshot on save
+- $/kg and $/m³ from amount
+
+**Found in:**
+- `server/db/schema.js` (PL fields)
+- `server/routes/fx.js`
+- `src/components/CostCalculatorCard.jsx`
+
+**Missing:**
+- Price change history
+- Client financial aggregates
+- Consolidation financial aggregates
+
+---
+
+### 6.9. Analytics
+
+**Implemented:**
+- 3 snapshot tables
+- Analytics API
+- 3 charts in UI
+- Snapshot generation script
+- Granularity support: day, week, month
+
+**Found in:**
+- `server/db/schema.js` (analytics* tables)
+- `server/routes/analytics.js`
+- `server/scripts/build-analytics-snapshots.js`
+- `src/views/AnalyticsPage.jsx`
+
+**Partially implemented:**
+- Automated snapshot generation (script exists, cron not configured)
+
+---
+
+## 7. File Inventory
+
+### 7.1. Backend
+
+| Category | Count | Files |
+|----------|-------|-------|
+| Routes | 8 | auth.js, users.js, clients.js, pl.js, consolidations.js, analytics.js, fx.js, health.js |
+| Schema | 1 | schema.js |
+| Scripts | 1 | build-analytics-snapshots.js |
+| Migrations | 21 | 0000_*.sql through 0020_*.sql |
+
+### 7.2. Frontend
+
+| Category | Count | Key Files |
+|----------|-------|-----------|
+| Views | 5 | CargoView.jsx, ClientsView.jsx, AnalyticsPage.jsx, LogisticsView.jsx, WarehousesView.jsx |
+| Components | 30+ | PLCard.jsx, NewPLModal.jsx, DocsList.jsx, CommentsCard.jsx, CostCalculatorCard.jsx, KanbanBoard.jsx, etc. |
+| Hooks | 3 | useAnalytics.js, useMetrics.js |
+| Constants | 4 | statuses.js, docs.js |
+| API client | 1 | client.js |
+
+---
+
+## 8. Migrations List
+
+**Found in:** `server/drizzle/`
+
+1. 0000_loud_peter_parker.sql
+2. 0001_pink_moira_mactaggert.sql
+3. 0002_right_grey_gargoyle.sql
+4. 0003_wandering_retro_girl.sql
+5. 0004_amusing_slayback.sql
+6. 0005_concerned_daredevil.sql
+7. 0006_striped_thor.sql
+8. 0007_public_gunslinger.sql
+9. 0007_enable_pgcrypto.sql
+10. 0008_eminent_pixie.sql
+11. 0008_unique_doc_per_type.sql
+12. 0009_consolidations_status_enum_v2.sql
+13. 0009_jittery_energizer.sql
+14. 0010_consolidations_tables.sql
+15. 0010_jazzy_nemesis.sql
+16. 0011_consolidations_updated_at_trigger.sql
+17. 0011_nappy_cannonball.sql
+18. 0012_blushing_magneto.sql
+19. 0013_wakeful_tarantula.sql
+20. 0014_spooky_titanium_man.sql
+21. 0015_cute_maria_hill.sql
+22. 0016_add_cons_statuses.sql
+23. 0017_fix_cons_enum.sql
+24. 0018_add_analytics_snapshots.sql
+25. 0019_add_fx_calc_fields.sql
+26. 0020_add_pl_places.sql
+
+**Total:** 26 migration files
+
+---
+
+## 9. Summary
+
+### Entities (13 total)
+1. clients
+2. pl
+3. plDocuments
+4. plDocStatusHistory
+5. plComments
+6. plEvents
+7. consolidations
+8. consolidationPl
+9. consolidationStatusHistory
+10. users
+11. analyticsDailySnapshots
+12. analyticsDailyPlStatus
+13. analyticsDailyWeightStatus
+
+### API Routes (8 total)
+1. /api/auth/*
+2. /api/users
+3. /api/clients/*
+4. /api/pl/*
+5. /api/consolidations/*
+6. /api/analytics
+7. /api/fx/*
+8. /api/health
+
+### Frontend Views (5 total)
+1. CargoView (Kanban)
+2. ClientsView
+3. AnalyticsPage
+4. LogisticsView (placeholder)
+5. WarehousesView (minimal)
+
+### Status Types
+- PL: 11 statuses
+- Consolidations: 8 statuses
+- Documents: 4 statuses
+
+---
+
+**End of document**

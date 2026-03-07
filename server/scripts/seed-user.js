@@ -50,11 +50,19 @@ async function main() {
   const db = drizzle(sql);
 
   try {
-    const [exists] = await db.select().from(users).where(eq(users.login, login)).limit(1);
+    const [exists] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.login, login))
+      .limit(1);
+    
     const passwordHash = await bcrypt.hash(password, 10);
 
     if (exists) {
-      await db.update(users).set({ passwordHash, name, email, phone, role }).where(eq(users.id, exists.id));
+      await db
+        .update(users)
+        .set({ passwordHash, name, email, phone, role })
+        .where(eq(users.id, exists.id));
       console.log(`✅ Обновил пользователя "${login}" (role=${role}).`);
     } else {
       await db.insert(users).values({ login, passwordHash, name, email, phone, role });

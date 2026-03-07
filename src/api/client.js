@@ -723,3 +723,21 @@ export async function changePassword(oldPassword, newPassword) {
   
   return res.json();
 }
+
+export async function uploadAvatar(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const res = await fetch(`${BASE}/users/me/avatar`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error(err.error || err.message || "Failed to upload avatar");
+  }
+  
+  return res.json();
+}

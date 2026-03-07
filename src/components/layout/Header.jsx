@@ -69,7 +69,11 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
                   className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all"
                   title="Открыть профиль"
                 >
-                  {user.name?.charAt(0).toUpperCase()}
+                  {user.avatar ? (
+                    <img src={user.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    user.name?.charAt(0).toUpperCase()
+                  )}
                 </button>
                 
                 {/* Name + Menu toggle */}

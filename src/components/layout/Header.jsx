@@ -62,16 +62,25 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
         <div className="flex items-center gap-3">
           {user && (
             <div className="relative">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 hover:bg-gray-700 rounded-lg p-1.5 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden">
+              <div className="flex items-center gap-2">
+                {/* Avatar - click to open profile directly */}
+                <button
+                  onClick={handleProfileClick}
+                  className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all"
+                  title="Открыть профиль"
+                >
                   {user.name?.charAt(0).toUpperCase()}
-                </div>
-                <span className="text-sm text-gray-300 hidden md:block">{user.name}</span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
-              </button>
+                </button>
+                
+                {/* Name + Menu toggle */}
+                <button
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="flex items-center gap-1 hover:bg-gray-700 rounded-lg px-2 py-1.5 transition-colors"
+                >
+                  <span className="text-sm text-gray-300 hidden md:block">{user.name}</span>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
               
               {showUserMenu && (
                 <div className="absolute right-0 mt-2 w-48 bg-gray-800 border border-gray-700 rounded-xl shadow-lg z-50 overflow-hidden">

@@ -180,8 +180,7 @@ export default function UserProfileModal({ user, onClose, onUpdate }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-auto p-4"
-003e
+        <div className="flex-1 overflow-auto p-4">
           {/* Messages */}
           {error && (
             <div className="mb-4 bg-red-900/20 border border-red-700/50 rounded-lg p-3 text-sm text-red-200 flex items-center gap-2">

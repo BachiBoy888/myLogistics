@@ -15,6 +15,9 @@ export default function KanbanPLCard({
   const cargoName = pl.title || pl.name || pl.cargo_name || "Без названия";
   const weight = pl.weight_kg || pl.weight || 0;
   const volume = pl.volume_cbm || pl.volume || 0;
+  
+  // Инициалы из имени ответственного пользователя
+  const responsibleName = pl.responsible_name || null;
 
   const handleClick = (e) => {
     if (e.shiftKey) {
@@ -42,8 +45,12 @@ export default function KanbanPLCard({
   };
 
   const getInitials = (name) => {
-    if (!name) return "??";
-    return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+    if (!name) return "?";
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) {
+      return parts[0][0].toUpperCase();
+    }
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
   const getAvatarColor = (clientId) => {
@@ -125,8 +132,8 @@ export default function KanbanPLCard({
           ))}
         </div>
 
-        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.client_id)} flex items-center justify-center text-white text-xs font-medium`}>
-          {getInitials(clientName)}
+        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.responsible_user_id)} flex items-center justify-center text-white text-xs font-medium`}>
+          {getInitials(responsibleName)}
         </div>
       </div>
 

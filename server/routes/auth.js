@@ -30,7 +30,16 @@ export default async function authRoutes(app) {
 
       try {
         const [u] = await db
-          .select()
+          .select({
+            id: users.id,
+            login: users.login,
+            passwordHash: users.passwordHash,
+            name: users.name,
+            phone: users.phone,
+            email: users.email,
+            avatar: users.avatar,
+            role: users.role,
+          })
           .from(users)
           .where(eq(users.login, login))
           .limit(1);
@@ -59,6 +68,7 @@ export default async function authRoutes(app) {
             name: u.name,
             phone: u.phone,
             email: u.email,
+            avatar: u.avatar,
             role: u.role,
           });
       } catch (err) {
@@ -85,7 +95,15 @@ export default async function authRoutes(app) {
 
     try {
       const [u] = await db
-        .select()
+        .select({
+          id: users.id,
+          login: users.login,
+          name: users.name,
+          phone: users.phone,
+          email: users.email,
+          avatar: users.avatar,
+          role: users.role,
+        })
         .from(users)
         .where(eq(users.id, req.user.id))
         .limit(1);
@@ -98,6 +116,7 @@ export default async function authRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
+        avatar: u.avatar,
         role: u.role,
       };
     } catch (err) {

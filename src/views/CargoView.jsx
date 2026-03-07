@@ -741,8 +741,8 @@ export default function CargoView({
       {showImport && (
         <ImportModal
           onClose={() => setShowImport(false)}
-          onSuccess={() => {
-            refreshPLs();
+          onSuccess={async () => {
+            await refreshPLs();
             setShowImport(false);
           }}
         />

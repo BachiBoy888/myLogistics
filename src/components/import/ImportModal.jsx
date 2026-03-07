@@ -93,7 +93,7 @@ export default function ImportModal({ onClose, onSuccess }) {
       
       const data = await res.json();
       setResult(data);
-      onSuccess?.(data);
+      await onSuccess?.(data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -213,8 +213,7 @@ export default function ImportModal({ onClose, onSuccess }) {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-700 sticky top-0">
                           <tr>
-                            <th className="text-left p-2 text-gray-300">Имя</th>
-                            <th className="text-left p-2 text-gray-300">Компания</th>
+                            <th className="text-left p-2 text-gray-300">Клиент</th>
                             <th className="text-left p-2 text-gray-300">Статус</th>
                             <th className="text-left p-2 text-gray-300">Действие</th>
                           </tr>
@@ -223,7 +222,6 @@ export default function ImportModal({ onClose, onSuccess }) {
                           {preview.clients.map((c, idx) => (
                             <tr key={idx} className="border-t border-gray-700">
                               <td className="p-2 text-gray-200">{c.data.name}</td>
-                              <td className="p-2 text-gray-400">{c.data.company || '—'}</td>
                               <td className="p-2">
                                 {c.type === 'new' ? (
                                   <span className="inline-flex items-center gap-1 text-green-400">

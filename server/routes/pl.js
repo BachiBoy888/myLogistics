@@ -789,16 +789,12 @@ export default async function plRoutes(fastify) {
       // Подготавливаем данные для Excel
       const exportData = await Promise.all(
         rows.map(async ({ p, c }) => {
-          const calc = p.calculator || {};
-          const calcCost = calc.calcCost || 0;
           const clientPrice = Number(p.clientPrice || 0);
-          const profit = clientPrice - calcCost;
-          const marginPct = calcCost > 0 ? (profit / calcCost) * 100 : 0;
 
           return {
             'Дата создания': p.createdAt ? new Date(p.createdAt).toLocaleString('ru-RU') : '',
             'Номер PL': p.plNumber || '',
-            'Компания клиента': c?.company || '',
+            'Клиент': c?.name || '',
             'Название груза': p.name || '',
             'Вес (кг)': p.weight ? Number(p.weight) : 0,
             'Объём (м³)': p.volume ? Number(p.volume) : 0,
@@ -806,9 +802,6 @@ export default async function plRoutes(fastify) {
             'Инкотерм': p.incoterm || '',
             'Статус': p.status || '',
             'Цена клиента': clientPrice || 0,
-            'Себестоимость': calcCost || 0,
-            'Прибыль': profit || 0,
-            'Маржа %': marginPct / 100, // Для формата процентов в Excel
           };
         })
       );
@@ -822,7 +815,6 @@ export default async function plRoutes(fastify) {
 
       // Форматы для русской локали (запятая вместо точки)
       const numberFmtRU = '# ##0,00';
-      const percentFmtRU = '0,00%';
       const dateFmtRU = 'DD.MM.YYYY HH:MM:SS';
 
       // Применяем форматы к колонкам
@@ -844,11 +836,8 @@ export default async function plRoutes(fastify) {
 
           if (header === 'Дата создания') {
             cell.z = dateFmtRU;
-          } else if (header === 'Вес (кг)' || header === 'Объём (м³)' || header === 'Количество мест' || header === 'Цена клиента' || header === 'Себестоимость' || header === 'Прибыль') {
+          } else if (header === 'Вес (кг)' || header === 'Объём (м³)' || header === 'Количество мест' || header === 'Цена клиента') {
             cell.z = numberFmtRU;
-            cell.t = 'n'; // number type
-          } else if (header === 'Маржа %') {
-            cell.z = percentFmtRU;
             cell.t = 'n'; // number type
           }
         }
@@ -858,7 +847,7 @@ export default async function plRoutes(fastify) {
       const colWidths = [
         { wch: 20 },  // Дата создания
         { wch: 15 },  // Номер PL
-        { wch: 25 },  // Компания клиента
+        { wch: 25 },  // Клиент
         { wch: 30 },  // Название груза
         { wch: 12 },  // Вес (кг)
         { wch: 12 },  // Объём (м³)
@@ -866,9 +855,6 @@ export default async function plRoutes(fastify) {
         { wch: 10 },  // Инкотерм
         { wch: 15 },  // Статус
         { wch: 15 },  // Цена клиента
-        { wch: 15 },  // Себестоимость
-        { wch: 15 },  // Прибыль
-        { wch: 12 },  // Маржа %
       ];
       ws['!cols'] = colWidths;
 

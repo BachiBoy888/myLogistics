@@ -2,7 +2,7 @@
 // Импорт клиентов и PL из Excel
 
 import * as XLSX from 'xlsx';
-import { eq, sql, inArray } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { clients, pl, plEvents } from '../db/schema.js';
 
 // Нормализация строки для сравнения
@@ -10,22 +10,10 @@ function normalizeStr(str = '') {
   return String(str || '').toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
-// Поиск клиента по критериям
-async function findExistingClient(db, { name, company, phone, email }) {
+// Поиск клиента по имени (только по имени, компания игнорируется)
+async function findExistingClient(db, { name, phone, email }) {
   const normalizedName = normalizeStr(name);
   
-  // Сначала ищем по exact match комбинации name + company
-  if (name && company) {
-    const [exact] = await db
-      .select()
-      .from(clients)
-      .where(
-        sql`LOWER(TRIM(${clients.name})) = ${normalizedName} AND LOWER(TRIM(${clients.company})) = ${normalizeStr(company)}`
-      )
-      .limit(1);
-    if (exact) return { client: exact, matchType: 'exact_name_company' };
-  }
-
   // Ищем по exact match name
   if (name) {
     const [byName] = await db
@@ -104,8 +92,7 @@ function getValue(row, headers, possibleNames) {
 // Преобразование строки Excel в объект клиента
 function rowToClient(row, headers) {
   return {
-    name: getValue(row, headers, ['Имя клиента', 'Клиент', 'Name', 'Клиент name']),
-    company: getValue(row, headers, ['Компания клиента', 'Компания', 'Company']),
+    name: getValue(row, headers, ['Клиент', 'Имя клиента', 'Name', 'Клиент name']),
     phone: getValue(row, headers, ['Телефон', 'Phone', 'Тел']),
     phone2: getValue(row, headers, ['Телефон 2', 'Phone 2', 'Доп. телефон']),
     email: getValue(row, headers, ['Email', 'Почта', 'E-mail', 'email']),
@@ -165,14 +152,14 @@ export default async function importRoutes(fastify) {
         summary: { totalRows: rows.length, newClients: 0, existingClients: 0, newPLs: 0, existingPLs: 0 },
       };
 
-      // Собираем уникальных клиентов из файла
-      const clientMap = new Map(); // key -> { data, rows: [] }
+      // Собираем уникальных клиентов из файла (по имени, без учета компании)
+      const clientMap = new Map(); // key (name) -> { data, rows: [] }
       
       for (const { rowIndex, data } of rows) {
         const clientData = rowToClient(data, headers);
         if (!clientData.name) continue;
         
-        const key = normalizeStr(clientData.name + '|' + clientData.company);
+        const key = normalizeStr(clientData.name);
         if (!clientMap.has(key)) {
           clientMap.set(key, { data: clientData, rows: [] });
         }
@@ -211,11 +198,11 @@ export default async function importRoutes(fastify) {
 
         const existing = plData.plNumber ? await findExistingPL(db, plData.plNumber) : null;
         
-        // Находим клиента для этого PL
+        // Находим клиента для этого PL (по имени)
         const clientData = rowToClient(data, headers);
-        const clientKey = normalizeStr(clientData.name + '|' + clientData.company);
+        const clientKey = normalizeStr(clientData.name);
         const clientPreview = preview.clients.find(c => 
-          normalizeStr(c.data.name + '|' + c.data.company) === clientKey
+          normalizeStr(c.data.name) === clientKey
         );
 
         if (existing) {
@@ -261,12 +248,12 @@ export default async function importRoutes(fastify) {
         pls: { created: [], updated: [], skipped: [], errors: [] },
       };
 
-      // Обрабатываем клиентов
-      const clientIdMap = new Map(); // key -> id (существующий или созданный)
+      // Обрабатываем клиентов (без сохранения company)
+      const clientIdMap = new Map(); // key (name) -> id (существующий или созданный)
       
       for (const action of clientActions) {
         const { type, action: operation, data, existing } = action;
-        const key = normalizeStr(data.name + '|' + data.company);
+        const key = normalizeStr(data.name);
 
         try {
           if (type === 'new' && operation === 'create') {
@@ -274,7 +261,6 @@ export default async function importRoutes(fastify) {
               .insert(clients)
               .values({
                 name: data.name,
-                company: data.company || null,
                 phone: data.phone || null,
                 phone2: data.phone2 || null,
                 email: data.email || null,
@@ -292,7 +278,6 @@ export default async function importRoutes(fastify) {
                 .update(clients)
                 .set({
                   name: data.name,
-                  company: data.company || null,
                   phone: data.phone || null,
                   phone2: data.phone2 || null,
                   email: data.email || null,
@@ -310,7 +295,6 @@ export default async function importRoutes(fastify) {
                 .insert(clients)
                 .values({
                   name: data.name + ' (imported)',
-                  company: data.company || null,
                   phone: data.phone || null,
                   phone2: data.phone2 || null,
                   email: data.email || null,
@@ -338,7 +322,7 @@ export default async function importRoutes(fastify) {
         const { type, action: operation, data, existing, clientKey } = action;
 
         try {
-          // Находим clientId
+          // Находим clientId (по имени)
           let clientId = clientIdMap.get(clientKey);
           if (!clientId) {
             // Ищем среди существующих клиентов

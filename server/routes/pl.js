@@ -14,6 +14,7 @@ import {
   plEvents,
 } from '../db/schema.js';
 import { savePLFile, getUploadsRootAbs } from '../services/storage.js';
+import * as XLSX from 'xlsx';
 
 // компактное представление клиента
 function toClientShape(c) {
@@ -773,5 +774,117 @@ export default async function plRoutes(fastify) {
       'PL_EVENTS built'
     );
     return { items: events };
+  });
+
+  // ===== Экспорт PL в Excel =====
+  fastify.get('/export/excel', { preHandler: fastify.authGuard }, async (req, reply) => {
+    try {
+      // Получаем все PL с клиентами и ответственными
+      const rows = await db
+        .select({ p: pl, c: clients })
+        .from(pl)
+        .leftJoin(clients, eq(pl.clientId, clients.id))
+        .orderBy(desc(pl.createdAt));
+
+      // Подготавливаем данные для Excel
+      const exportData = await Promise.all(
+        rows.map(async ({ p, c }) => {
+          const calc = p.calculator || {};
+          const calcCost = calc.calcCost || 0;
+          const clientPrice = Number(p.clientPrice || 0);
+          const profit = clientPrice - calcCost;
+          const marginPct = calcCost > 0 ? (profit / calcCost) * 100 : 0;
+
+          return {
+            'Дата создания': p.createdAt ? new Date(p.createdAt).toLocaleString('ru-RU') : '',
+            'Номер PL': p.plNumber || '',
+            'Компания клиента': c?.company || '',
+            'Название груза': p.name || '',
+            'Вес (кг)': p.weight ? Number(p.weight) : 0,
+            'Объём (м³)': p.volume ? Number(p.volume) : 0,
+            'Количество мест': p.places ? Number(p.places) : 0,
+            'Инкотерм': p.incoterm || '',
+            'Статус': p.status || '',
+            'Цена клиента': clientPrice || 0,
+            'Себестоимость': calcCost || 0,
+            'Прибыль': profit || 0,
+            'Маржа %': marginPct / 100, // Для формата процентов в Excel
+          };
+        })
+      );
+
+      // Создаем workbook и worksheet
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+
+      // Определяем диапазон ячеек
+      const range = XLSX.utils.decode_range(ws['!ref']);
+
+      // Форматы для русской локали (запятая вместо точки)
+      const numberFmtRU = '# ##0,00';
+      const percentFmtRU = '0,00%';
+      const dateFmtRU = 'DD.MM.YYYY HH:MM:SS';
+
+      // Применяем форматы к колонкам
+      for (let row = range.s.r; row <= range.e.r; row++) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+          const cell = ws[cellRef];
+          if (!cell) continue;
+
+          // Заголовок (первая строка)
+          if (row === 0) {
+            cell.s = { font: { bold: true } };
+            continue;
+          }
+
+          // Определяем формат по имени колонки (первая строка)
+          const headerCell = ws[XLSX.utils.encode_cell({ r: 0, c: col })];
+          const header = headerCell?.v || '';
+
+          if (header === 'Дата создания') {
+            cell.z = dateFmtRU;
+          } else if (header === 'Вес (кг)' || header === 'Объём (м³)' || header === 'Количество мест' || header === 'Цена клиента' || header === 'Себестоимость' || header === 'Прибыль') {
+            cell.z = numberFmtRU;
+            cell.t = 'n'; // number type
+          } else if (header === 'Маржа %') {
+            cell.z = percentFmtRU;
+            cell.t = 'n'; // number type
+          }
+        }
+      }
+
+      // Настраиваем ширину колонок
+      const colWidths = [
+        { wch: 20 },  // Дата создания
+        { wch: 15 },  // Номер PL
+        { wch: 25 },  // Компания клиента
+        { wch: 30 },  // Название груза
+        { wch: 12 },  // Вес (кг)
+        { wch: 12 },  // Объём (м³)
+        { wch: 12 },  // Количество мест
+        { wch: 10 },  // Инкотерм
+        { wch: 15 },  // Статус
+        { wch: 15 },  // Цена клиента
+        { wch: 15 },  // Себестоимость
+        { wch: 15 },  // Прибыль
+        { wch: 12 },  // Маржа %
+      ];
+      ws['!cols'] = colWidths;
+
+      // Добавляем worksheet в workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'PL Export');
+
+      // Генерируем буфер
+      const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+      // Отправляем файл
+      reply.header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      reply.header('Content-Disposition', contentDispositionAttachment(`pl_export_${new Date().toISOString().split('T')[0]}.xlsx`));
+      return buf;
+    } catch (err) {
+      req.log.error(err, 'PL export to Excel failed');
+      return reply.status(500).send({ error: 'Export failed' });
+    }
   });
 }

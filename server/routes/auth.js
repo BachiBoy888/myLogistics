@@ -59,6 +59,7 @@ export default async function authRoutes(app) {
             name: u.name,
             phone: u.phone,
             email: u.email,
+            role: u.role,
           });
       } catch (err) {
         req.log.error({ err, route: "/api/auth/login" });
@@ -97,6 +98,7 @@ export default async function authRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
+        role: u.role,
       };
     } catch (err) {
       req.log.error({ err, route: "/api/auth/me" });

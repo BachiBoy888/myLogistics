@@ -26,6 +26,7 @@ import {
 // Модалки
 import ConsolidationCreateModal from "../components/consolidation/ConsolidationCreateModal.jsx";
 import ConsolidationDetailsModal from "../components/consolidation/ConsolidationDetailsModal.jsx";
+import ImportModal from "../components/import/ImportModal.jsx";
 
 // Kanban
 import KanbanBoard from "../components/kanban/KanbanBoard.jsx";
@@ -102,6 +103,7 @@ export default function CargoView({
   const [showNew, setShowNew] = useState(false);
   const [showCreateCons, setShowCreateCons] = useState(false);
   const [openConsId, setOpenConsId] = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   async function refreshPLs({ keepSelected = true } = {}) {
     try {
@@ -571,6 +573,18 @@ export default function CargoView({
               Экспорт Excel
             </button>
           )}
+
+          {currentUser?.role === 'admin' && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+              Импорт Excel
+            </button>
+          )}
         </div>
       </header>
 
@@ -722,6 +736,17 @@ export default function CargoView({
         ctaText={errorModal.ctaText}
         type={errorModal.type}
       />
+
+      {/* Import Modal */}
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onSuccess={() => {
+            refreshPLs();
+            setShowImport(false);
+          }}
+        />
+      )}
     </div>
   );
 }

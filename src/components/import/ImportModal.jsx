@@ -4,13 +4,6 @@
 import React, { useState, useRef } from 'react';
 import { Upload, X, AlertCircle, CheckCircle, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
 
-const ACTION_LABELS = {
-  create: 'Создать',
-  overwrite: 'Перезаписать',
-  create_copy: 'Создать копию',
-  skip: 'Пропустить',
-};
-
 const ACTION_COLORS = {
   create: 'bg-green-100 text-green-700 border-green-300',
   overwrite: 'bg-orange-100 text-orange-700 border-orange-300',
@@ -151,7 +144,7 @@ export default function ImportModal({ onClose, onSuccess }) {
                   {file ? file.name : 'Нажмите для выбора файла .xlsx'}
                 </p>
                 <p className="text-gray-500 text-sm">
-                  Поддерживаются файлы Excel с колонками: Дата, Номер PL, Компания, Груз, Вес, Объём, Статус и др.
+                  Поддерживаются файлы Excel с колонками: ID PL, Номер PL, ID клиента, Клиент, Груз и др.
                 </p>
                 <input
                   ref={fileInputRef}
@@ -328,16 +321,6 @@ export default function ImportModal({ onClose, onSuccess }) {
                                       {p.canMoveClient && (
                                         <option value="move_client">Сменить клиента</option>
                                       )}
-                                      <option value="create_copy">Создать копию</option>
-                                    </>
-                                  )}
-                                </select>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                                      <option value="overwrite">Перезаписать</option>
                                       <option value="create_copy">Создать копию</option>
                                     </>
                                   )}

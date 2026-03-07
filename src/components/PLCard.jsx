@@ -18,8 +18,9 @@ import {
   MessageSquare,
   History,
   Info,
+  UserCog,
 } from "lucide-react";
-import { listPLEvents, assignPLResponsible, listUsers, listPLDocs, listPLComments } from "../api/client.js";
+import { listPLEvents, assignPLResponsible, listUsers, listPLDocs, listPLComments, updatePL } from "../api/client.js";
 import { safeEvents } from "../utils/events.js";
 
 const TABS = [
@@ -130,6 +131,49 @@ export default function PLCard({
   const [logists, setLogists] = useState([]);
   const [logistsLoading, setLogistsLoading] = useState(false);
   const [logistsErr, setLogistsErr] = useState("");
+
+  // ===== Смена клиента
+  const [showClientPicker, setShowClientPicker] = useState(false);
+  const [clientsList, setClientsList] = useState([]);
+  const [clientsLoading, setClientsLoading] = useState(false);
+  const [selectedClientId, setSelectedClientId] = useState(null);
+
+  // Загрузка списка клиентов
+  async function loadClientsList() {
+    if (clientsList.length || clientsLoading) return;
+    try {
+      setClientsLoading(true);
+      const { getClients } = await import("../api/client.js");
+      const rows = await getClients();
+      const arr = (Array.isArray(rows) ? rows : [])
+        .map((c) => ({
+          id: c.id,
+          name: c.name || "Без имени",
+          company: c.company || "",
+        }))
+        .filter((c) => c.id)
+        .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+      setClientsList(arr);
+    } catch (e) {
+      console.error("[PLCard] failed to load clients", e);
+    } finally {
+      setClientsLoading(false);
+    }
+  }
+
+  async function handleChangeClient() {
+    if (!selectedClientId) return;
+    try {
+      await updatePL(pl.id, { client_id: selectedClientId });
+      onUpdate?.({ client_id: selectedClientId });
+      setShowClientPicker(false);
+      // Обновляем страницу чтобы отобразить изменения
+      window.location.reload();
+    } catch (e) {
+      console.error("[PLCard] failed to change client", e);
+      alert("Не удалось сменить клиента");
+    }
+  }
 
   const responsibleName =
     typeof pl?.responsible === "object"
@@ -312,7 +356,18 @@ export default function PLCard({
               <MoreHorizontal className="w-4 h-4" />
             </button>
             {showMenu && (
-              <div className="absolute right-0 mt-2 bg-white border rounded-xl shadow-lg z-50 w-44">
+              <div className="absolute right-0 mt-2 bg-white border rounded-xl shadow-lg z-50 w-56">
+                <button
+                  className="flex items-center gap-2 px-3 py-2 w-full text-left text-sm hover:bg-gray-50 rounded-lg"
+                  onClick={() => {
+                    setShowMenu(false);
+                    setShowClientPicker(true);
+                    loadClientsList();
+                  }}
+                >
+                  <UserCog className="w-4 h-4 text-blue-600" />
+                  Сменить клиента
+                </button>
                 <button
                   className="flex items-center gap-2 px-3 py-2 w-full text-left text-sm text-rose-600 hover:bg-rose-50 rounded-lg"
                   onClick={() => {
@@ -608,6 +663,54 @@ export default function PLCard({
                   </button>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Модалка выбора клиента */}
+      {showClientPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowClientPicker(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-[90vw] max-w-md p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="font-semibold">Выберите клиента</div>
+              <button className="px-2 py-1 border rounded-lg" onClick={() => setShowClientPicker(false)}>
+                Закрыть
+              </button>
+            </div>
+
+            <div className="mb-3 p-2 bg-gray-50 rounded-lg">
+              <div className="text-xs text-gray-500">Текущий клиент:</div>
+              <div className="font-medium">{clientName} (ID: {pl?.client?.id || pl?.client_id || '—'})</div>
+            </div>
+
+            {clientsLoading ? (
+              <div className="text-sm text-gray-500">Загрузка…</div>
+            ) : clientsList.length === 0 ? (
+              <div className="text-sm text-gray-500">Нет доступных клиентов</div>
+            ) : (
+              <>
+                <div className="max-h-72 overflow-auto divide-y rounded-lg border mb-3">
+                  {clientsList.map((c) => (
+                    <button
+                      key={c.id}
+                      className={`w-full text-left px-3 py-2 hover:bg-gray-50 ${selectedClientId === c.id ? 'bg-blue-50 border-blue-200' : ''}`}
+                      onClick={() => setSelectedClientId(c.id)}
+                    >
+                      <div className="font-medium">{c.name}</div>
+                      <div className="text-xs text-gray-500">ID: {c.id}</div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium disabled:bg-gray-300"
+                  disabled={!selectedClientId || selectedClientId === pl?.client?.id}
+                  onClick={handleChangeClient}
+                >
+                  Переместить к выбранному клиенту
+                </button>
+              </>
             )}
           </div>
         </div>

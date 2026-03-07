@@ -80,6 +80,7 @@ function MainApp({ user, onLogout }) {
   const [clients, setClients] = useState([]);
   const [cons, setCons] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // активная вкладка
   const [mode, setMode] = useState("cargo");
@@ -88,22 +89,33 @@ function MainApp({ user, onLogout }) {
   const [openPLId, setOpenPLId] = useState(null);
   const [openClientId, setOpenClientId] = useState(null);
 
+  // функция загрузки данных
+  async function loadData(showLoading = true) {
+    try {
+      if (showLoading) setLoading(true);
+      const [plData, clientData] = await Promise.all([getPL(), getClients()]);
+      setPls(sanitizePls(plData));
+      setClients(Array.isArray(clientData) ? clientData : []);
+    } catch (e) {
+      console.error("Ошибка загрузки с API:", e);
+      if (String(e?.message || "").includes("401")) onLogout?.();
+    } finally {
+      if (showLoading) setLoading(false);
+    }
+  }
+
   // первичная загрузка
   useEffect(() => {
-    async function loadData() {
-      try {
-        const [plData, clientData] = await Promise.all([getPL(), getClients()]);
-        setPls(sanitizePls(plData));
-        setClients(Array.isArray(clientData) ? clientData : []);
-      } catch (e) {
-        console.error("Ошибка загрузки с API:", e);
-        if (String(e?.message || "").includes("401")) onLogout?.();
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, [onLogout]);
+
+  // функция обновления данных
+  async function handleRefresh() {
+    if (isRefreshing) return;
+    setIsRefreshing(true);
+    await loadData(false);
+    setIsRefreshing(false);
+  }
 
   // добавление клиента
   async function handleAddClient(newClient) {
@@ -165,7 +177,7 @@ function MainApp({ user, onLogout }) {
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
-      <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} />
+      <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} onRefresh={handleRefresh} isRefreshing={isRefreshing} />
 
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">
         {mode === "cargo" && (

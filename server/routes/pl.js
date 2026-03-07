@@ -789,44 +789,26 @@ export default async function plRoutes(fastify) {
       // Подготавливаем данные для Excel
       const exportData = await Promise.all(
         rows.map(async ({ p, c }) => {
-          const hydrated = await hydrateResponsible(db, p);
-          
-          // Извлекаем данные из calculator
           const calc = p.calculator || {};
           const calcCost = calc.calcCost || 0;
           const clientPrice = Number(p.clientPrice || 0);
           const profit = clientPrice - calcCost;
-          const marginPct = calcCost > 0 ? ((profit / calcCost) * 100).toFixed(2) : '0.00';
+          const marginPct = calcCost > 0 ? (profit / calcCost) * 100 : 0;
 
           return {
-            'ID PL': p.id,
+            'Дата создания': p.createdAt ? new Date(p.createdAt).toLocaleString('ru-RU') : '',
             'Номер PL': p.plNumber || '',
-            'Название груза': p.name || '',
-            'ID клиента': c?.id || '',
-            'Имя клиента': c?.name || '',
             'Компания клиента': c?.company || '',
-            'Вес (кг)': p.weight || '',
-            'Объём (м³)': p.volume || '',
-            'Количество мест': p.places || '',
+            'Название груза': p.name || '',
+            'Вес (кг)': p.weight ? Number(p.weight) : 0,
+            'Объём (м³)': p.volume ? Number(p.volume) : 0,
+            'Количество мест': p.places ? Number(p.places) : 0,
             'Инкотерм': p.incoterm || '',
-            'Адрес забора': p.pickupAddress || '',
-            'Отправитель': p.shipperName || '',
-            'Контакты отправителя': p.shipperContacts || '',
             'Статус': p.status || '',
-            'Ответственный': hydrated.responsible_name || '',
-            'Цена клиента': clientPrice || '',
-            'Себестоимость': calcCost || '',
-            'Прибыль': profit || '',
-            'Маржа %': marginPct + '%',
-            'Ставка плечо 1': p.leg1AmountUsd || calc.leg1AmountUSD || '',
-            'Ставка плечо 2': p.leg2AmountUsd || calc.leg2AmountUSD || '',
-            'Таможня': calc.customsFee || '',
-            'Прочие сборы': calc.otherFee || '',
-            'Валюта плечо 1': p.leg1Currency || '',
-            'Валюта плечо 2': p.leg2Currency || '',
-            'Курс USD': p.fxUsdKgs || '',
-            'Курс CNY': p.fxCnyKgs || '',
-            'Дата создания': p.createdAt ? new Date(p.createdAt).toISOString() : '',
+            'Цена клиента': clientPrice || 0,
+            'Себестоимость': calcCost || 0,
+            'Прибыль': profit || 0,
+            'Маржа %': marginPct / 100, // Для формата процентов в Excel
           };
         })
       );
@@ -835,36 +817,58 @@ export default async function plRoutes(fastify) {
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(exportData);
 
+      // Определяем диапазон ячеек
+      const range = XLSX.utils.decode_range(ws['!ref']);
+
+      // Форматы для русской локали (запятая вместо точки)
+      const numberFmtRU = '# ##0,00';
+      const percentFmtRU = '0,00%';
+      const dateFmtRU = 'DD.MM.YYYY HH:MM:SS';
+
+      // Применяем форматы к колонкам
+      for (let row = range.s.r; row <= range.e.r; row++) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellRef = XLSX.utils.encode_cell({ r: row, c: col });
+          const cell = ws[cellRef];
+          if (!cell) continue;
+
+          // Заголовок (первая строка)
+          if (row === 0) {
+            cell.s = { font: { bold: true } };
+            continue;
+          }
+
+          // Определяем формат по имени колонки (первая строка)
+          const headerCell = ws[XLSX.utils.encode_cell({ r: 0, c: col })];
+          const header = headerCell?.v || '';
+
+          if (header === 'Дата создания') {
+            cell.z = dateFmtRU;
+          } else if (header === 'Вес (кг)' || header === 'Объём (м³)' || header === 'Количество мест' || header === 'Цена клиента' || header === 'Себестоимость' || header === 'Прибыль') {
+            cell.z = numberFmtRU;
+            cell.t = 'n'; // number type
+          } else if (header === 'Маржа %') {
+            cell.z = percentFmtRU;
+            cell.t = 'n'; // number type
+          }
+        }
+      }
+
       // Настраиваем ширину колонок
       const colWidths = [
-        { wch: 8 },   // ID PL
+        { wch: 20 },  // Дата создания
         { wch: 15 },  // Номер PL
-        { wch: 25 },  // Название груза
-        { wch: 10 },  // ID клиента
-        { wch: 25 },  // Имя клиента
-        { wch: 20 },  // Компания клиента
-        { wch: 12 },  // Вес
-        { wch: 12 },  // Объём
-        { wch: 10 },  // Количество мест
+        { wch: 25 },  // Компания клиента
+        { wch: 30 },  // Название груза
+        { wch: 12 },  // Вес (кг)
+        { wch: 12 },  // Объём (м³)
+        { wch: 12 },  // Количество мест
         { wch: 10 },  // Инкотерм
-        { wch: 30 },  // Адрес забора
-        { wch: 20 },  // Отправитель
-        { wch: 25 },  // Контакты
         { wch: 15 },  // Статус
-        { wch: 20 },  // Ответственный
         { wch: 15 },  // Цена клиента
         { wch: 15 },  // Себестоимость
         { wch: 15 },  // Прибыль
         { wch: 12 },  // Маржа %
-        { wch: 15 },  // Ставка 1
-        { wch: 15 },  // Ставка 2
-        { wch: 12 },  // Таможня
-        { wch: 12 },  // Прочие
-        { wch: 10 },  // Валюта 1
-        { wch: 10 },  // Валюта 2
-        { wch: 10 },  // Курс USD
-        { wch: 10 },  // Курс CNY
-        { wch: 20 },  // Дата создания
       ];
       ws['!cols'] = colWidths;
 

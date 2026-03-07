@@ -1,9 +1,9 @@
 // src/components/user/UserProfileModal.jsx
 // Модальное окно профиля пользователя
 
-import React, { useState, useRef, useEffect } from 'react';
-import { X, User, Phone, Mail, Lock, Camera, CheckCircle, AlertCircle } from 'lucide-react';
-import { updateCurrentUser, uploadAvatar, changePassword } from '../../api/client.js';
+import React, { useState, useEffect } from 'react';
+import { X, User, Phone, Mail, Lock, CheckCircle, AlertCircle } from 'lucide-react';
+import { updateCurrentUser, changePassword } from '../../api/client.js';
 
 export default function UserProfileModal({ user, onClose, onUpdate }) {
   const [activeTab, setActiveTab] = useState('profile');
@@ -24,9 +24,6 @@ export default function UserProfileModal({ user, onClose, onUpdate }) {
     newPassword: '',
     confirmPassword: '',
   });
-  
-  const [avatarPreview, setAvatarPreview] = useState(user?.avatar || null);
-  const fileInputRef = useRef(null);
 
   // Clear messages when tab changes
   useEffect(() => {
@@ -51,48 +48,6 @@ export default function UserProfileModal({ user, onClose, onUpdate }) {
       onUpdate?.(updated);
     } catch (err) {
       setError(err.message || 'Не удалось обновить профиль');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleAvatarClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleAvatarChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    
-    // Проверяем тип файла
-    if (!file.type.startsWith('image/')) {
-      setError('Пожалуйста, выберите изображение');
-      return;
-    }
-    
-    // Проверяем размер (5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      setError('Файл слишком большой. Максимум 5MB');
-      return;
-    }
-    
-    // Показываем превью
-    const reader = new FileReader();
-    reader.onload = (e) => setAvatarPreview(e.target.result);
-    reader.readAsDataURL(file);
-    
-    // Загружаем на сервер
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const result = await uploadAvatar(file);
-      setSuccess('Аватар обновлен');
-      onUpdate?.({ ...user, avatar: result.avatar });
-    } catch (err) {
-      setError(err.message || 'Не удалось загрузить аватар');
-      // Восстанавливаем старый аватар
-      setAvatarPreview(user?.avatar || null);
     } finally {
       setLoading(false);
     }
@@ -197,41 +152,11 @@ export default function UserProfileModal({ user, onClose, onUpdate }) {
 
           {activeTab === 'profile' ? (
             <form onSubmit={handleProfileUpdate} className="space-y-4">
-              {/* Avatar */}
+              {/* Avatar placeholder */}
               <div className="flex flex-col items-center gap-3">
-                <div 
-                  className="relative w-24 h-24 rounded-full overflow-hidden cursor-pointer group"
-                  onClick={handleAvatarClick}
-                >
-                  {avatarPreview ? (
-                    <img 
-                      src={avatarPreview} 
-                      alt="Avatar" 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-medium">
-                      {getInitials(user?.name)}
-                    </div>
-                  )}
-                  <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-8 h-8 text-white" />
-                  </div>
+                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-3xl font-medium">
+                  {getInitials(user?.name)}
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleAvatarChange}
-                />
-                <button
-                  type="button"
-                  onClick={handleAvatarClick}
-                  className="text-sm text-blue-400 hover:text-blue-300"
-                >
-                  {avatarPreview ? 'Изменить аватар' : 'Загрузить аватар'}
-                </button>
               </div>
 
               {/* Login (read-only) */}

@@ -67,11 +67,7 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
                 className="flex items-center gap-2 hover:bg-gray-700 rounded-lg p-1.5 transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium overflow-hidden">
-                  {user.avatar ? (
-                    <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    user.name?.charAt(0).toUpperCase()
-                  )}
+                  {user.name?.charAt(0).toUpperCase()}
                 </div>
                 <span className="text-sm text-gray-300 hidden md:block">{user.name}</span>
                 <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} />

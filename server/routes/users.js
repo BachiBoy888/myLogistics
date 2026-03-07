@@ -130,49 +130,6 @@ export default async function usersRoutes(app) {
     }
   });
 
-  // POST /api/users/me/avatar - загрузить аватар
-  app.post("/me/avatar", async (req, reply) => {
-    try {
-      const file = await req.file();
-      if (!file) {
-        return reply.code(400).send({ error: "bad_request", message: "No file uploaded" });
-      }
-
-      // Проверяем тип файла
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.mimetype)) {
-        return reply.code(400).send({ error: "bad_request", message: "Invalid file type. Allowed: JPEG, PNG, GIF, WebP" });
-      }
-
-      // Проверяем размер (макс 5MB)
-      const buffer = await file.toBuffer();
-      if (buffer.length > 5 * 1024 * 1024) {
-        return reply.code(400).send({ error: "bad_request", message: "File too large. Max 5MB" });
-      }
-
-      // Сохраняем как base64 data URL
-      const base64 = buffer.toString('base64');
-      const avatarUrl = `data:${file.mimetype};base64,${base64}`;
-
-      const [updated] = await db
-        .update(usersTable)
-        .set({ avatar: avatarUrl })
-        .where(eq(usersTable.id, req.user.id))
-        .returning({
-          id: usersTable.id,
-          avatar: usersTable.avatar,
-        });
-
-      return reply.send({
-        id: updated.id,
-        avatar: updated.avatar,
-      });
-    } catch (err) {
-      req.log.error({ err }, "POST /api/users/me/avatar failed");
-      return reply.code(500).send({ error: "internal_server_error", message: "Failed to upload avatar" });
-    }
-  });
-
   // POST /api/users/me/password - сменить пароль
   app.post("/me/password", async (req, reply) => {
     try {

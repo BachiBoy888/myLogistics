@@ -47,6 +47,28 @@ async function findExistingClient(db, { name, phone, email }) {
   return null;
 }
 
+// Поиск клиента по ID
+async function findClientById(db, id) {
+  if (!id) return null;
+  const [existing] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.id, id))
+    .limit(1);
+  return existing;
+}
+
+// Поиск PL по ID
+async function findPLById(db, id) {
+  if (!id) return null;
+  const [existing] = await db
+    .select()
+    .from(pl)
+    .where(eq(pl.id, id))
+    .limit(1);
+  return existing;
+}
+
 // Поиск PL по номеру
 async function findExistingPL(db, plNumber) {
   if (!plNumber) return null;
@@ -91,7 +113,9 @@ function getValue(row, headers, possibleNames) {
 
 // Преобразование строки Excel в объект клиента
 function rowToClient(row, headers) {
+  const idStr = getValue(row, headers, ['ID клиента', 'Client ID', 'ID']);
   return {
+    id: idStr ? parseInt(idStr) || null : null,
     name: getValue(row, headers, ['Клиент', 'Имя клиента', 'Name', 'Клиент name']),
     phone: getValue(row, headers, ['Телефон', 'Phone', 'Тел']),
     phone2: getValue(row, headers, ['Телефон 2', 'Phone 2', 'Доп. телефон']),
@@ -106,6 +130,8 @@ function rowToPL(row, headers) {
   const volumeStr = getValue(row, headers, ['Объём (м³)', 'Объем', 'Volume', 'Объём']);
   const placesStr = getValue(row, headers, ['Количество мест', 'Мест', 'Places', 'Кол-во мест']);
   const clientPriceStr = getValue(row, headers, ['Цена клиента', 'Цена', 'Client price', 'Price']);
+  const plIdStr = getValue(row, headers, ['ID PL', 'PL ID']);
+  const clientIdStr = getValue(row, headers, ['ID клиента', 'Client ID']);
   
   // Парсим числа с учетом русского формата (запятая)
   const parseNum = (s) => {
@@ -116,6 +142,8 @@ function rowToPL(row, headers) {
   };
 
   return {
+    id: plIdStr ? parseInt(plIdStr) || null : null,
+    clientId: clientIdStr ? parseInt(clientIdStr) || null : null,
     plNumber: getValue(row, headers, ['Номер PL', 'PL Number', 'Номер', 'PL']),
     name: getValue(row, headers, ['Название груза', 'Груз', 'Cargo name', 'Name']),
     weight: parseNum(weightStr),
@@ -166,9 +194,28 @@ export default async function importRoutes(fastify) {
         clientMap.get(key).rows.push(rowIndex);
       }
 
-      // Проверяем клиентов на конфликты
+      // Проверяем клиентов на конфликты (по ID, затем по имени)
       for (const [key, { data, rows: rowIndices }] of clientMap) {
-        const existing = await findExistingClient(db, data);
+        let existing = null;
+        let matchType = null;
+        
+        // Сначала проверяем по ID
+        if (data.id) {
+          const byId = await findClientById(db, data.id);
+          if (byId) {
+            existing = byId;
+            matchType = 'ID';
+          }
+        }
+        
+        // Если не нашли по ID, ищем по имени/телефону/email
+        if (!existing) {
+          const found = await findExistingClient(db, data);
+          if (found) {
+            existing = found.client;
+            matchType = found.matchType;
+          }
+        }
         
         if (existing) {
           preview.summary.existingClients++;
@@ -176,8 +223,8 @@ export default async function importRoutes(fastify) {
             type: 'conflict',
             action: 'skip', // default
             data,
-            existing: existing.client,
-            matchType: existing.matchType,
+            existing,
+            matchType,
             rowIndices,
           });
         } else {
@@ -191,17 +238,35 @@ export default async function importRoutes(fastify) {
         }
       }
 
-      // Проверяем PL на конфликты (только по номеру PL)
-      for (const { rowIndex, data } of rows) {
-        const plData = rowToPL(data, headers);
+      // Проверяем PL на конфликты (по ID, затем по номеру)
+      for (const { rowIndex, data: rowData } of rows) {
+        const plData = rowToPL(rowData, headers);
         // Пропускаем строки без номера PL и без названия груза
-        if (!plData.name && !plData.plNumber) continue;
+        if (!plData.name && !plData.plNumber && !plData.id) continue;
 
-        // Проверяем дубликаты только по номеру PL
-        const existing = plData.plNumber ? await findExistingPL(db, plData.plNumber) : null;
+        let existing = null;
+        let conflictBy = null;
         
-        // Находим клиента для этого PL (по имени)
-        const clientData = rowToClient(data, headers);
+        // Сначала проверяем по ID PL
+        if (plData.id) {
+          const byId = await findPLById(db, plData.id);
+          if (byId) {
+            existing = byId;
+            conflictBy = 'ID PL';
+          }
+        }
+        
+        // Если не нашли по ID, ищем по номеру PL
+        if (!existing && plData.plNumber) {
+          const byNumber = await findExistingPL(db, plData.plNumber);
+          if (byNumber) {
+            existing = byNumber;
+            conflictBy = 'номер PL';
+          }
+        }
+        
+        // Находим клиента для этого PL
+        const clientData = rowToClient(rowData, headers);
         const clientKey = normalizeStr(clientData.name);
 
         if (existing) {
@@ -213,7 +278,9 @@ export default async function importRoutes(fastify) {
             existing,
             clientKey,
             rowIndex,
-            conflictBy: 'номер PL',
+            conflictBy,
+            // Добавляем возможность смены клиента
+            canMoveClient: existing.clientId !== plData.clientId && plData.clientId !== null,
           });
         } else {
           preview.summary.newPLs++;
@@ -378,26 +445,64 @@ export default async function importRoutes(fastify) {
             results.pls.created.push({ id: saved.id, plNumber: saved.plNumber });
           } 
           else if (type === 'conflict') {
+            // Находим clientId для возможной смены клиента
+            let newClientId = clientIdMap.get(clientKey);
+            if (!newClientId) {
+              const clientData = action.clientData || {};
+              const found = await findExistingClient(db, clientData);
+              if (found) newClientId = found.client.id;
+            }
+
             if (operation === 'overwrite') {
+              const updateData = {
+                name: data.name || existing.name,
+                weight: data.weight ?? existing.weight,
+                volume: data.volume ?? existing.volume,
+                places: data.places ?? existing.places,
+                incoterm: data.incoterm ?? existing.incoterm,
+                pickupAddress: data.pickupAddress ?? existing.pickupAddress,
+                shipperName: data.shipperName ?? existing.shipperName,
+                shipperContacts: data.shipperContacts ?? existing.shipperContacts,
+                status: data.status ?? existing.status,
+                clientPrice: data.clientPrice ?? existing.clientPrice,
+              };
+              
+              // Если указан новый клиент и он отличается от текущего - меняем клиента
+              if (newClientId && newClientId !== existing.clientId) {
+                updateData.clientId = newClientId;
+              }
+              
               const [updated] = await db
                 .update(pl)
-                .set({
-                  name: data.name || existing.name,
-                  weight: data.weight ?? existing.weight,
-                  volume: data.volume ?? existing.volume,
-                  places: data.places ?? existing.places,
-                  incoterm: data.incoterm ?? existing.incoterm,
-                  pickupAddress: data.pickupAddress ?? existing.pickupAddress,
-                  shipperName: data.shipperName ?? existing.shipperName,
-                  shipperContacts: data.shipperContacts ?? existing.shipperContacts,
-                  status: data.status ?? existing.status,
-                  clientPrice: data.clientPrice ?? existing.clientPrice,
-                })
+                .set(updateData)
                 .where(eq(pl.id, existing.id))
                 .returning();
 
-              results.pls.updated.push({ id: updated.id, plNumber: updated.plNumber });
+              results.pls.updated.push({ id: updated.id, plNumber: updated.plNumber, clientChanged: !!updateData.clientId });
             } 
+            else if (operation === 'move_client') {
+              // Только смена клиента без изменения данных PL
+              if (newClientId && newClientId !== existing.clientId) {
+                const [updated] = await db
+                  .update(pl)
+                  .set({ clientId: newClientId })
+                  .where(eq(pl.id, existing.id))
+                  .returning();
+
+                // Событие смены клиента
+                await db.insert(plEvents).values({
+                  plId: updated.id,
+                  type: 'pl.client_changed',
+                  message: 'Клиент PL изменен через импорт',
+                  meta: { source: 'import', old_client_id: existing.clientId, new_client_id: newClientId },
+                  actorUserId: req.user?.id ?? null,
+                });
+
+                results.pls.updated.push({ id: updated.id, plNumber: updated.plNumber, clientChanged: true });
+              } else {
+                results.pls.skipped.push({ id: existing.id, plNumber: existing.plNumber });
+              }
+            }
             else if (operation === 'create_copy') {
               const [inserted] = await db
                 .insert(pl)

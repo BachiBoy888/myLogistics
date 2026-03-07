@@ -792,8 +792,10 @@ export default async function plRoutes(fastify) {
           const clientPrice = Number(p.clientPrice || 0);
 
           return {
+            'ID PL': p.id,
             'Дата создания': p.createdAt ? new Date(p.createdAt).toLocaleString('ru-RU') : '',
             'Номер PL': p.plNumber || '',
+            'ID клиента': c?.id || '',
             'Клиент': c?.name || '',
             'Название груза': p.name || '',
             'Вес (кг)': p.weight ? Number(p.weight) : 0,
@@ -845,8 +847,10 @@ export default async function plRoutes(fastify) {
 
       // Настраиваем ширину колонок
       const colWidths = [
+        { wch: 8 },   // ID PL
         { wch: 20 },  // Дата создания
         { wch: 15 },  // Номер PL
+        { wch: 8 },   // ID клиента
         { wch: 25 },  // Клиент
         { wch: 30 },  // Название груза
         { wch: 12 },  // Вес (кг)

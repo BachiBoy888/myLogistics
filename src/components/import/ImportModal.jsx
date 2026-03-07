@@ -16,6 +16,7 @@ const ACTION_COLORS = {
   overwrite: 'bg-orange-100 text-orange-700 border-orange-300',
   create_copy: 'bg-blue-100 text-blue-700 border-blue-300',
   skip: 'bg-gray-100 text-gray-700 border-gray-300',
+  move_client: 'bg-purple-100 text-purple-700 border-purple-300',
 };
 
 export default function ImportModal({ onClose, onSuccess }) {
@@ -36,6 +37,10 @@ export default function ImportModal({ onClose, onSuccess }) {
       setPreview(null);
       setResult(null);
       setError(null);
+    }
+    // Сбрасываем input чтобы можно было выбрать тот же файл повторно
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -213,6 +218,7 @@ export default function ImportModal({ onClose, onSuccess }) {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-700 sticky top-0">
                           <tr>
+                            <th className="text-left p-2 text-gray-300">ID</th>
                             <th className="text-left p-2 text-gray-300">Клиент</th>
                             <th className="text-left p-2 text-gray-300">Статус</th>
                             <th className="text-left p-2 text-gray-300">Действие</th>
@@ -221,6 +227,7 @@ export default function ImportModal({ onClose, onSuccess }) {
                         <tbody>
                           {preview.clients.map((c, idx) => (
                             <tr key={idx} className="border-t border-gray-700">
+                              <td className="p-2 text-gray-400 font-mono text-xs">{c.data.id || '—'}</td>
                               <td className="p-2 text-gray-200">{c.data.name}</td>
                               <td className="p-2">
                                 {c.type === 'new' ? (
@@ -278,6 +285,8 @@ export default function ImportModal({ onClose, onSuccess }) {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-700 sticky top-0">
                           <tr>
+                            <th className="text-left p-2 text-gray-300">ID PL</th>
+                            <th className="text-left p-2 text-gray-300">ID клиента</th>
                             <th className="text-left p-2 text-gray-300">Номер</th>
                             <th className="text-left p-2 text-gray-300">Название</th>
                             <th className="text-left p-2 text-gray-300">Статус</th>
@@ -287,6 +296,8 @@ export default function ImportModal({ onClose, onSuccess }) {
                         <tbody>
                           {preview.pls.map((p, idx) => (
                             <tr key={idx} className="border-t border-gray-700">
+                              <td className="p-2 text-gray-400 font-mono text-xs">{p.data.id || '—'}</td>
+                              <td className="p-2 text-gray-400 font-mono text-xs">{p.data.clientId || '—'}</td>
                               <td className="p-2 text-gray-200">{p.data.plNumber || '—'}</td>
                               <td className="p-2 text-gray-400">{p.data.name}</td>
                               <td className="p-2">
@@ -296,7 +307,9 @@ export default function ImportModal({ onClose, onSuccess }) {
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-orange-400">
-                                    <AlertCircle className="w-3 h-3" /> Конфликт
+                                    <AlertCircle className="w-3 h-3" /> 
+                                    {p.conflictBy}
+                                    {p.canMoveClient && ' (можно сменить клиента)'}
                                   </span>
                                 )}
                               </td>
@@ -311,6 +324,19 @@ export default function ImportModal({ onClose, onSuccess }) {
                                   ) : (
                                     <>
                                       <option value="skip">Пропустить</option>
+                                      <option value="overwrite">Перезаписать</option>
+                                      {p.canMoveClient && (
+                                        <option value="move_client">Сменить клиента</option>
+                                      )}
+                                      <option value="create_copy">Создать копию</option>
+                                    </>
+                                  )}
+                                </select>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                                       <option value="overwrite">Перезаписать</option>
                                       <option value="create_copy">Создать копию</option>
                                     </>

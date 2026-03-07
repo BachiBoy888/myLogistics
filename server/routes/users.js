@@ -1,5 +1,5 @@
 // server/routes/users.js
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { users as usersTable } from "../db/schema.js";
 import bcrypt from "bcryptjs";
 
@@ -18,11 +18,23 @@ export default async function usersRoutes(app) {
       let rows;
       if (role) {
         rows = await db
-          .select()
+          .select({
+            id: usersTable.id,
+            name: usersTable.name,
+            role: usersTable.role,
+            email: usersTable.email,
+          })
           .from(usersTable)
           .where(eq(usersTable.role, role));
       } else {
-        rows = await db.select().from(usersTable);
+        rows = await db
+          .select({
+            id: usersTable.id,
+            name: usersTable.name,
+            role: usersTable.role,
+            email: usersTable.email,
+          })
+          .from(usersTable);
       }
 
       const list = (rows || []).map((u) => ({
@@ -30,7 +42,6 @@ export default async function usersRoutes(app) {
         name: u.name || u.login || "Пользователь",
         role: u.role || "",
         email: u.email || null,
-        avatar: u.avatar || null,
       }));
 
       return reply.send(list);
@@ -46,7 +57,15 @@ export default async function usersRoutes(app) {
   app.get("/me", async (req, reply) => {
     try {
       const [u] = await db
-        .select()
+        .select({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          phone: usersTable.phone,
+          email: usersTable.email,
+          role: usersTable.role,
+          createdAt: usersTable.createdAt,
+        })
         .from(usersTable)
         .where(eq(usersTable.id, req.user.id))
         .limit(1);
@@ -61,7 +80,6 @@ export default async function usersRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
-        avatar: u.avatar,
         role: u.role,
         createdAt: u.createdAt,
       });
@@ -74,13 +92,12 @@ export default async function usersRoutes(app) {
   // PATCH /api/users/me - обновить профиль текущего пользователя
   app.patch("/me", async (req, reply) => {
     try {
-      const { name, phone, email, avatar } = req.body || {};
+      const { name, phone, email } = req.body || {};
       
       const updateData = {};
       if (name !== undefined) updateData.name = String(name).trim();
       if (phone !== undefined) updateData.phone = phone ? String(phone).trim() : null;
       if (email !== undefined) updateData.email = email ? String(email).trim().toLowerCase() : null;
-      if (avatar !== undefined) updateData.avatar = avatar ? String(avatar).trim() : null;
 
       if (Object.keys(updateData).length === 0) {
         return reply.code(400).send({ error: "bad_request", message: "No fields to update" });
@@ -90,7 +107,14 @@ export default async function usersRoutes(app) {
         .update(usersTable)
         .set(updateData)
         .where(eq(usersTable.id, req.user.id))
-        .returning();
+        .returning({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          phone: usersTable.phone,
+          email: usersTable.email,
+          role: usersTable.role,
+        });
 
       return reply.send({
         id: updated.id,
@@ -98,7 +122,6 @@ export default async function usersRoutes(app) {
         name: updated.name,
         phone: updated.phone,
         email: updated.email,
-        avatar: updated.avatar,
         role: updated.role,
       });
     } catch (err) {
@@ -135,7 +158,10 @@ export default async function usersRoutes(app) {
         .update(usersTable)
         .set({ avatar: avatarUrl })
         .where(eq(usersTable.id, req.user.id))
-        .returning();
+        .returning({
+          id: usersTable.id,
+          avatar: usersTable.avatar,
+        });
 
       return reply.send({
         id: updated.id,
@@ -162,7 +188,10 @@ export default async function usersRoutes(app) {
 
       // Получаем текущего пользователя с хешем пароля
       const [u] = await db
-        .select()
+        .select({
+          id: usersTable.id,
+          passwordHash: usersTable.passwordHash,
+        })
         .from(usersTable)
         .where(eq(usersTable.id, req.user.id))
         .limit(1);
@@ -202,7 +231,15 @@ export default async function usersRoutes(app) {
       }
 
       const [u] = await db
-        .select()
+        .select({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          phone: usersTable.phone,
+          email: usersTable.email,
+          role: usersTable.role,
+          createdAt: usersTable.createdAt,
+        })
         .from(usersTable)
         .where(eq(usersTable.id, targetId))
         .limit(1);
@@ -217,7 +254,6 @@ export default async function usersRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
-        avatar: u.avatar,
         role: u.role,
         createdAt: u.createdAt,
       });

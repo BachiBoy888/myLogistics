@@ -709,7 +709,7 @@ export async function updateCurrentUser(patch) {
 }
 
 export async function changePassword(oldPassword, newPassword) {
-  const res = await fetch(`${API_BASE}/users/me/password`, {
+  const res = await fetch(`${BASE}/users/me/password`, {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },

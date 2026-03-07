@@ -371,27 +371,6 @@ export default function NewPLModal({
             </label>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="block">
-              <div className="text-sm text-neutral-700 mb-1">Грузоотправитель</div>
-              <input
-                className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black"
-                value={shipperName}
-                onChange={(e) => setShipperName(e.target.value)}
-                placeholder="Компания/контакт"
-              />
-            </label>
-            <label className="block">
-              <div className="text-sm text-neutral-700 mb-1">Контакты отправителя</div>
-              <input
-                className="w-full h-11 border rounded-xl px-3 outline-none focus:border-black"
-                value={shipperContacts}
-                onChange={(e) => setShipperContacts(e.target.value)}
-                placeholder="+996..., WeChat…"
-              />
-            </label>
-          </div>
-
           {err && <div className="text-sm text-rose-600">{err}</div>}
 
           <div className="flex justify-end gap-2 pt-2">

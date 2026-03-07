@@ -21,7 +21,7 @@ async function findExistingClient(db, { name, phone, email }) {
       .from(clients)
       .where(sql`LOWER(TRIM(${clients.name})) = ${normalizedName}`)
       .limit(1);
-    if (byName) return { client: byName, matchType: 'exact_name' };
+    if (byName) return { client: byName, matchType: 'точное совпадение по имени' };
   }
 
   // Ищем по phone
@@ -31,7 +31,7 @@ async function findExistingClient(db, { name, phone, email }) {
       .from(clients)
       .where(sql`REPLACE(REPLACE(REPLACE(${clients.phone}, '-', ''), ' ', ''), '+', '') = REPLACE(REPLACE(REPLACE(${phone}, '-', ''), ' ', ''), '+', '')`)
       .limit(1);
-    if (byPhone) return { client: byPhone, matchType: 'phone' };
+    if (byPhone) return { client: byPhone, matchType: 'телефон' };
   }
 
   // Ищем по email
@@ -191,19 +191,18 @@ export default async function importRoutes(fastify) {
         }
       }
 
-      // Проверяем PL на конфликты
+      // Проверяем PL на конфликты (только по номеру PL)
       for (const { rowIndex, data } of rows) {
         const plData = rowToPL(data, headers);
+        // Пропускаем строки без номера PL и без названия груза
         if (!plData.name && !plData.plNumber) continue;
 
+        // Проверяем дубликаты только по номеру PL
         const existing = plData.plNumber ? await findExistingPL(db, plData.plNumber) : null;
         
         // Находим клиента для этого PL (по имени)
         const clientData = rowToClient(data, headers);
         const clientKey = normalizeStr(clientData.name);
-        const clientPreview = preview.clients.find(c => 
-          normalizeStr(c.data.name) === clientKey
-        );
 
         if (existing) {
           preview.summary.existingPLs++;
@@ -214,6 +213,7 @@ export default async function importRoutes(fastify) {
             existing,
             clientKey,
             rowIndex,
+            conflictBy: 'номер PL',
           });
         } else {
           preview.summary.newPLs++;

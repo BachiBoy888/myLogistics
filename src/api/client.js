@@ -696,3 +696,48 @@ export async function resolveOrCreateClient(name) {
     return null;
   }
 }
+
+/* -------------------
+   USERS / PROFILE
+------------------- */
+export async function getCurrentUser() {
+  return req("/users/me");
+}
+
+export async function updateCurrentUser(patch) {
+  return mutate("/users/me", { method: "PATCH", body: patch }, ["/users/me", "/auth/me"]);
+}
+
+export async function uploadAvatar(file) {
+  const formData = new FormData();
+  formData.append("file", file);
+  
+  const res = await fetch(`${API_BASE}/users/me/avatar`, {
+    method: "POST",
+    credentials: "include",
+    body: formData,
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Upload failed" }));
+    throw new Error(err.error || err.message || "Failed to upload avatar");
+  }
+  
+  return res.json();
+}
+
+export async function changePassword(oldPassword, newPassword) {
+  const res = await fetch(`${API_BASE}/users/me/password`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to change password" }));
+    throw new Error(err.error || err.message || "Failed to change password");
+  }
+  
+  return res.json();
+}

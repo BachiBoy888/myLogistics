@@ -59,6 +59,7 @@ export default async function authRoutes(app) {
             name: u.name,
             phone: u.phone,
             email: u.email,
+            avatar: u.avatar,
             role: u.role,
           });
       } catch (err) {
@@ -98,6 +99,7 @@ export default async function authRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
+        avatar: u.avatar,
         role: u.role,
       };
     } catch (err) {

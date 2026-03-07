@@ -1,8 +1,8 @@
 // src/components/layout/Header.jsx
 import React from "react";
-import { Package, Users, BarChart3, LogOut } from "lucide-react";
+import { Package, Users, BarChart3, LogOut, RefreshCw } from "lucide-react";
 
-export default function Header({ mode, onChangeMode, user, onLogout }) {
+export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, isRefreshing }) {
   const tabs = [
     { key: "cargo", label: "Мои грузы", icon: Package },
     { key: "clients", label: "Мои клиенты", icon: Users },
@@ -18,6 +18,16 @@ export default function Header({ mode, onChangeMode, user, onLogout }) {
             <Package className="w-4 h-4 text-white" />
           </div>
           <span className="text-lg font-semibold text-white">Моя Логистика</span>
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+              title="Обновить данные"
+            >
+              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
         </div>
 
         {/* Navigation */}

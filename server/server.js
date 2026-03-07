@@ -26,6 +26,7 @@ import usersRoutes from "./routes/users.js";
 import healthRoutes from "./routes/health.js";
 import analyticsRoutes from "./routes/analytics.js";
 import fxRoutes from "./routes/fx.js";
+import importRoutes from "./routes/import.js";
 
 // --- вычислим текущую папку (для статики)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -157,6 +158,7 @@ const sql = postgres(DATABASE_URL, {
   await app.register(healthRoutes, { prefix: "/api" });
   await app.register(analyticsRoutes, { prefix: "/api/analytics" });
   await app.register(fxRoutes, { prefix: "/api/fx" });
+  await app.register(importRoutes, { prefix: "/api/import" });
   await app.register(clientsRoutes, { prefix: "/api" });
   await app.register(plRoutes, { prefix: "/api/pl" });
   await app.register(consolidationsRoutes, { prefix: "/api/consolidations" });

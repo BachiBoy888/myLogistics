@@ -243,12 +243,29 @@ export default function CargoView({
 
   const consByStage = useMemo(() => {
     const m = OrderedStages.reduce((acc, k) => ((acc[k] = []), acc), {});
-    safeCons.forEach((c) => {
+    
+    // Если фильтр "Только мои" включен, показываем только консолидации с моими PL
+    let filteredCons = safeCons;
+    if (onlyMy && currentUser) {
+      // Получаем ID PL текущего пользователя
+      const myPLIds = new Set(
+        safePLs
+          .filter((p) => p.responsible?.id === currentUser.id)
+          .map((p) => p.id)
+      );
+      // Фильтруем консолидации - оставляем только те, где есть хотя бы один мой PL
+      filteredCons = safeCons.filter((c) => {
+        const consPLIds = c.pl_ids || [];
+        return consPLIds.some((id) => myPLIds.has(id));
+      });
+    }
+    
+    filteredCons.forEach((c) => {
       const st = stageOf(c?.status ?? "to_load");
       if (m[st]) m[st].push({ ...c, stage: st });
     });
     return m;
-  }, [safeCons]);
+  }, [safeCons, onlyMy, safePLs, currentUser]);
 
   const stats = useMemo(() => {
     const total = safePLs.length;

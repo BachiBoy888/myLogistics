@@ -16,6 +16,7 @@ import { fileURLToPath } from "url";
 
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 import { getUploadsRootAbs } from "./services/storage.js";
 import clientsRoutes from "./routes/clients.js";
@@ -64,6 +65,16 @@ const sql = postgres(DATABASE_URL, {
 });
   const db = drizzle(sql);
   app.decorate("drizzle", db);
+
+  // Автоматический запуск миграций в production/preview
+  if (IS_PROD) {
+    try {
+      await migrate(db, { migrationsFolder: "./drizzle" });
+      console.log("✅ Database migrations applied");
+    } catch (err) {
+      console.error("❌ Migration failed:", err.message);
+    }
+  }
 
   // Плагины
   await app.register(sensible);

@@ -76,6 +76,14 @@ const sql = postgres(DATABASE_URL, {
     }
   }
 
+  // Runtime schema fix: ensure avatar column exists (handles drift between migration state and actual DB)
+  try {
+    await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT`;
+    console.log("✅ Runtime schema check passed");
+  } catch (err) {
+    console.error("❌ Runtime schema fix failed:", err.message);
+  }
+
   // Плагины
   await app.register(sensible);
 
@@ -178,7 +186,12 @@ const sql = postgres(DATABASE_URL, {
   // SPA fallback
   app.setNotFoundHandler((req, reply) => {
     if (req.raw.url?.startsWith("/api")) return reply.notFound();
-    return reply.sendFile("index.html");
+    // favicon.ico and other static files should return 404 instead of error
+    if (req.raw.url === "/favicon.ico") return reply.notFound();
+    if (typeof reply.sendFile === "function") {
+      return reply.sendFile("index.html");
+    }
+    return reply.notFound();
   });
 
   

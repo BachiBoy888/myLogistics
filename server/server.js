@@ -165,7 +165,7 @@ const sql = postgres(DATABASE_URL, {
   await app.register(fastifyStatic, {
     root: distRoot,
     prefix: "/",
-    decorateReply: false,
+    decorateReply: true,
   });
 
   // Health
@@ -183,11 +183,15 @@ const sql = postgres(DATABASE_URL, {
   await app.register(consolidationsRoutes, { prefix: "/api/consolidations" });
   await app.register(usersRoutes, { prefix: "/api/users" });
 
-  // SPA fallback
+  // SPA fallback - serve index.html for all non-API, non-static routes
   app.setNotFoundHandler((req, reply) => {
+    // API routes should return 404
     if (req.raw.url?.startsWith("/api")) return reply.notFound();
-    // favicon.ico and other static files should return 404 instead of error
+    // Static files that don't exist should return 404
+    if (req.raw.url?.startsWith("/uploads/")) return reply.notFound();
+    // Favicon
     if (req.raw.url === "/favicon.ico") return reply.notFound();
+    // For everything else, serve index.html (SPA routing)
     if (typeof reply.sendFile === "function") {
       return reply.sendFile("index.html");
     }

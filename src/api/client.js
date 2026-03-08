@@ -459,7 +459,19 @@ export async function me() {
 
 // Проверка токена первичной авторизации
 export async function verifyFirstLoginToken(token) {
-  return mutate(`/auth/first-login/verify`, { method: "POST", body: { token } }, []);
+  const res = await fetch(`${BASE}/auth/first-login/verify`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Invalid token" }));
+    throw new Error(err.error || err.message || "Invalid token");
+  }
+
+  return res.json();
 }
 
 // Установка пароля при первичной авторизации

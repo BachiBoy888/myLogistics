@@ -46,8 +46,14 @@ function App() {
   const firstLoginToken = urlParams.get('token');
   const isFirstLogin = window.location.pathname === '/first-login' && firstLoginToken;
 
-  // Проверяем сессию при запуске
+  // Проверяем сессию при запуске (только если не first-login)
   useEffect(() => {
+    // Если это first-login страница, не проверяем сессию
+    if (isFirstLogin) {
+      setBoot({ loading: false, user: null });
+      return;
+    }
+
     (async () => {
       try {
         const u = await me();
@@ -56,7 +62,7 @@ function App() {
         setBoot({ loading: false, user: null });
       }
     })();
-  }, []);
+  }, [isFirstLogin]);
 
   if (boot.loading) return <LoadingScreen />;
 

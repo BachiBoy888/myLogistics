@@ -272,11 +272,11 @@ export default function EmployeesModal({ onClose }) {
               {users.map((u) => (
                 <div key={u.id} className="bg-gray-700/50 rounded-lg p-3 flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                    {u.name?.charAt(0).toUpperCase()}
+                    {(u.name || u.login || '?').charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-200 truncate">{u.name}</div>
-                    <div className="text-sm text-gray-400 truncate">@{u.login}</div>
+                    <div className="font-medium text-gray-200 truncate">{u.name || u.login || 'Без имени'}</div>
+                    <div className="text-sm text-gray-400 truncate">@{u.login || 'unknown'}</div>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <span className={`px-2 py-1 rounded text-xs ${

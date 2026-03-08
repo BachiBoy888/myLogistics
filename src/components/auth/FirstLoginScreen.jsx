@@ -26,8 +26,13 @@ export default function FirstLoginScreen({ token, onLogin }) {
 
       try {
         const data = await verifyFirstLoginToken(token);
-        setUser(data);
+        if (!data || !data.id) {
+          setError('Ссылка недействительна или устарела');
+        } else {
+          setUser(data);
+        }
       } catch (err) {
+        console.error('First login verify error:', err);
         setError('Ссылка недействительна или устарела');
       } finally {
         setLoading(false);
@@ -68,8 +73,22 @@ export default function FirstLoginScreen({ token, onLogin }) {
     }
   }
 
+  // Показываем загрузку во время проверки
+  if (verifying || loading) {
+    return (
+      <main className="min-h-[100svh] grid place-items-center bg-[#FAF3DD] p-4">
+        <div className="w-full max-w-[380px] rounded-2xl bg-white shadow-xl p-8 text-center">
+          <div className="w-14 h-14 rounded-xl bg-black text-white grid place-items-center text-xl font-bold mx-auto mb-4">
+            <Package className="w-7 h-7" />
+          </div>
+          <p className="text-neutral-600">Проверка ссылки...</p>
+        </div>
+      </main>
+    );
+  }
+
   // Показываем ошибку если токен невалиден
-  if (!verifying && error && !user) {
+  if (error && !user) {
     return (
       <main className="min-h-[100svh] grid place-items-center bg-[#FAF3DD] p-4">
         <div className="w-full max-w-[380px] rounded-2xl bg-white shadow-xl p-8">

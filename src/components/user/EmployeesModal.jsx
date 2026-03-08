@@ -208,7 +208,7 @@ export default function EmployeesModal({ onClose, currentUser }) {
               <ArrowLeft className="w-5 h-5" />
             </button>
             <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2 flex-1">
-              <User className="w-5 h-5 text-blue-400" /
+              <User className="w-5 h-5 text-blue-400" />
               {isEditing ? 'Редактирование' : 'Карточка сотрудника'}
             </h2>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-200">

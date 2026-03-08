@@ -25,10 +25,13 @@ const UpdateBody = z.object({
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),
+  capacityKg: z.number().optional(),
+  capacityCbm: z.number().optional(),
 });
 
 const SetPLsBody = z.object({
   plIds: z.array(z.number().int()).default([]),
+  plLoadOrders: z.record(z.number().int()).optional(), // { plId: loadOrder }
 });
 
 export default async function consolidationsRoutes(app) {
@@ -70,9 +73,14 @@ export default async function consolidationsRoutes(app) {
       const links = await db
         .select()
         .from(consolidationPl)
-        .where(eq(consolidationPl.consolidationId, id));
+        .where(eq(consolidationPl.consolidationId, id))
+        .orderBy(consolidationPl.loadOrder);
       const plIds = links.map((l) => l.plId);
-      return { ...cons, plIds };
+      const plLoadOrders = links.reduce((acc, l) => {
+        acc[l.plId] = l.loadOrder;
+        return acc;
+      }, {});
+      return { ...cons, plIds, plLoadOrders };
     } catch (e) {
       req.log.error({ e, id }, "CONS_GET error");
       return reply.internalServerError("Get failed");
@@ -171,6 +179,8 @@ export default async function consolidationsRoutes(app) {
           .set({
             ...(body.title ? { title: body.title } : {}),
             ...(body.status ? { status: body.status } : {}),
+            ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
+            ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
             updatedAt: new Date(),
           })
           .where(eq(consolidations.id, id))
@@ -288,8 +298,30 @@ export default async function consolidationsRoutes(app) {
         if (toAdd.length) {
           await db
             .insert(consolidationPl)
-            .values(toAdd.map((plId) => ({ consolidationId: id, plId })))
+            .values(toAdd.map((plId) => ({ 
+              consolidationId: id, 
+              plId,
+              loadOrder: body.plLoadOrders?.[plId] ?? 0 
+            })))
             .onConflictDoNothing();
+        }
+
+        // Обновляем load_order для существующих
+        if (body.plLoadOrders && Object.keys(body.plLoadOrders).length > 0) {
+          for (const [plIdStr, order] of Object.entries(body.plLoadOrders)) {
+            const plId = Number(plIdStr);
+            if (target.has(plId)) {
+              await db
+                .update(consolidationPl)
+                .set({ loadOrder: order })
+                .where(
+                  and(
+                    eq(consolidationPl.consolidationId, id),
+                    eq(consolidationPl.plId, plId)
+                  )
+                );
+            }
+          }
         }
 
         req.log.info({ id, add: toAdd.length, remove: toRemove.length }, "CONS_SET_PL ok");
@@ -302,9 +334,14 @@ export default async function consolidationsRoutes(app) {
         const refreshed = await db
           .select()
           .from(consolidationPl)
-          .where(eq(consolidationPl.consolidationId, id));
+          .where(eq(consolidationPl.consolidationId, id))
+          .orderBy(consolidationPl.loadOrder);
         const plIds = refreshed.map((r) => r.plId);
-        return { consolidation: { ...cons, plIds } };
+        const plLoadOrders = refreshed.reduce((acc, l) => {
+          acc[l.plId] = l.loadOrder;
+          return acc;
+        }, {});
+        return { consolidation: { ...cons, plIds, plLoadOrders } };
       } catch (e) {
         req.log.error({ e, id, body: req.body }, "CONS_SET_PL error");
         return reply.internalServerError("Set PLs failed");

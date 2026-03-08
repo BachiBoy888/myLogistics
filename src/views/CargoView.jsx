@@ -686,21 +686,6 @@ export default function CargoView({
             allPLs={safePLs}
             consAll={safeCons}
             onClose={() => setOpenConsId(null)}
-            onAdvance={async (c) => {
-              const next = consNextStatusOf(c.status);
-              if (!next) return;
-              const plsOfC = safePLs.filter((p) => c.pl_ids.includes(p.id));
-              const rank = (st) => OrderedStages.indexOf(stageOf(st));
-              const needUpgrade = plsOfC.filter((p) => rank(p.status) < rank(next));
-              try {
-                await Promise.all(needUpgrade.map((p) => API.updatePL(p.id, { status: next })));
-                await API.updateCons(c.id, { status: next });
-                setOpenConsId(null);
-                await Promise.all([refreshPLs(), refreshCons()]);
-              } catch (e) {
-                showError("Не удалось перейти к следующему этапу");
-              }
-            }}
             onDissolve={async (c) => {
               try {
                 await API.deleteCons(c.id);
@@ -711,12 +696,20 @@ export default function CargoView({
                 showError("Не удалось расформировать консолидацию");
               }
             }}
-            onSavePLs={async (id, plIds) => {
+            onSavePLs={async (id, plIds, plLoadOrders) => {
               try {
-                await API.setConsPLs(id, plIds.map(Number));
+                await API.setConsPLs(id, plIds.map(Number), plLoadOrders);
                 await Promise.all([refreshCons(), refreshPLs()]);
               } catch (e) {
                 showError("Не удалось сохранить состав консолидации");
+              }
+            }}
+            onUpdateCons={async (id, patch) => {
+              try {
+                await API.updateCons(id, patch);
+                await refreshCons();
+              } catch (e) {
+                showError("Не удалось обновить консолидацию");
               }
             }}
           />

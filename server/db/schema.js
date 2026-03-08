@@ -177,6 +177,8 @@ export const consolidations = pgTable(
     consNumber: text("cons_number").notNull(),  // CONS-YYYY-N
     title: text("title"),
     status: consolidationStatusEnum("status").notNull().default("loaded"),
+    capacityKg: numeric("capacity_kg", { precision: 12, scale: 3 }).default("0"),
+    capacityCbm: numeric("capacity_cbm", { precision: 12, scale: 3 }).default("0"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -196,12 +198,14 @@ export const consolidationPl = pgTable(
     plId: integer("pl_id")
       .notNull()
       .references(() => pl.id, { onDelete: "cascade" }),
+    loadOrder: integer("load_order").default(0), // порядок погрузки
     addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     pk: uniqueIndex("pk_consolidation_pl").on(t.consolidationId, t.plId),
     byPl: index("idx_consolidation_pl_pl").on(t.plId),
     byCons: index("idx_consolidation_pl_cons").on(t.consolidationId),
+    byOrder: index("idx_consolidation_pl_order").on(t.consolidationId, t.loadOrder),
   })
 );
 

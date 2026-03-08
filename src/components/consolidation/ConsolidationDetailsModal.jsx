@@ -280,7 +280,7 @@ export default function ConsolidationDetailsModal({
                       setIsEditing(true);
                     }}
                   >
-                    <Edit3 className="w-4 h-4" /
+                    <Edit3 className="w-4 h-4" />
                     Редактировать
                   </button>
                   <button
@@ -290,7 +290,7 @@ export default function ConsolidationDetailsModal({
                       handleDissolve();
                     }}
                   >
-                    <Trash2 className="w-4 h-4" /
+                    <Trash2 className="w-4 h-4" />
                     Расформировать
                   </button>
                 </div>

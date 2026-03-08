@@ -52,9 +52,92 @@ Node.js + Fastify + Drizzle ORM + PostgreSQL.
 
 ---
 
+
 # Git правила
 
 1. Делать небольшие и понятные коммиты.
 2. Не изменять файлы, не относящиеся к задаче.
 3. Pull Request должен содержать понятное описание изменений.
+
+---
+
+# Database Migration Safety Rules
+
+When modifying the database schema (for example adding a new column to an existing table), the agent must follow the full migration lifecycle. Changing only `schema.js` is not enough.
+
+The agent must ensure that schema, migrations and CI database are always synchronized.
+
+## Required checklist when adding a new column
+
+If a new column is added to an existing table, the agent MUST verify all of the following:
+
+1. **schema.js**
+   - The column is added to the Drizzle schema definition.
+
+2. **Migration SQL**
+   - A migration file exists in `/server/drizzle/`.
+   - Example:
+     ```sql
+     ALTER TABLE users ADD COLUMN first_login_token TEXT;
+     ```
+
+3. **Migration registration**
+   - The migration must be registered in:
+     `server/drizzle/meta/_journal.json`
+   - If the migration is missing from the journal, Drizzle may ignore it.
+
+4. **CI migration path**
+   - CI must execute migrations before any scripts that interact with the database.
+   - Especially before scripts like:
+     `scripts/seed-user.js`
+
+5. **Seed scripts compatibility**
+   - Check scripts in `server/scripts/`.
+   - Ensure inserts do not reference columns that may not yet exist.
+
+6. **ORM queries**
+   - Verify that inserts/selects/updates referencing the table are compatible with the migration state.
+   - Inspect:
+     - routes
+     - auth
+     - users
+     - seed scripts
+
+## CI Failure Rule
+
+If CI fails with an error like:
+
+```
+column "<column_name>" does not exist
+```
+
+The agent must:
+
+1. Check the migration chain
+2. Verify the migration file exists
+3. Verify the migration is registered in `_journal.json`
+4. Verify CI actually runs migrations before seed scripts
+5. Fix the migration lifecycle instead of removing the feature
+
+The agent must **never bypass CI** and must fix the root cause.
+
+## Preview / Runtime Safety
+
+Even if CI is green, the agent must ensure migrations are correctly applied in:
+
+- preview environments
+- staging environments
+
+If runtime logs show schema drift (code expects a column but DB does not have it), the agent must repair the migration chain.
+
+## Forbidden shortcuts
+
+The agent must NOT:
+
+- remove a new feature just to pass CI
+- comment out schema fields
+- bypass migrations
+- ignore database drift
+
+The correct fix is always to repair the migration lifecycle.
 

@@ -17,6 +17,114 @@ const DragHandle = () => (
   </div>
 );
 
+// Transport Layout Component - auto-layout cargo blocks
+function TransportLayout({ pls, totalVolume, capacityVolume }) {
+  // Calculate proportional widths based on volume
+  const layoutItems = useMemo(() => {
+    const effectiveCapacity = Math.max(capacityVolume, totalVolume, 1);
+    
+    return pls.map((p, idx) => {
+      const volume = p.volume_cbm || 0;
+      // Width percentage proportional to volume
+      const widthPercent = (volume / effectiveCapacity) * 100;
+      // Minimum width for visibility, maximum to prevent overflow
+      const clampedWidth = Math.max(8, Math.min(35, widthPercent));
+      
+      return {
+        ...p,
+        widthPercent: clampedWidth,
+        volumeRatio: volume / effectiveCapacity,
+        position: idx + 1,
+      };
+    });
+  }, [pls, totalVolume, capacityVolume]);
+
+  // Group items into rows for compact layout
+  const rows = useMemo(() => {
+    const result = [];
+    let currentRow = [];
+    let currentRowWidth = 0;
+    const maxRowWidth = 98; // Leave small gap
+    
+    layoutItems.forEach((item) => {
+      // If adding this item would exceed row width, start new row
+      if (currentRowWidth + item.widthPercent > maxRowWidth && currentRow.length > 0) {
+        result.push(currentRow);
+        currentRow = [];
+        currentRowWidth = 0;
+      }
+      
+      currentRow.push(item);
+      currentRowWidth += item.widthPercent;
+    });
+    
+    if (currentRow.length > 0) {
+      result.push(currentRow);
+    }
+    
+    return result;
+  }, [layoutItems]);
+
+  // Color intensity based on volume ratio
+  const getColorIntensity = (ratio) => {
+    if (ratio > 0.3) return 'bg-blue-500 border-blue-600';
+    if (ratio > 0.15) return 'bg-blue-400 border-blue-500';
+    return 'bg-blue-300 border-blue-400';
+  };
+
+  if (pls.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {rows.map((row, rowIdx) => (
+        <div key={rowIdx} className="flex gap-1 w-full">
+          {row.map((item) => (
+            <div
+              key={item.id}
+              className={`${getColorIntensity(item.volumeRatio)} rounded border text-white flex flex-col items-center justify-center p-2 transition-all hover:opacity-90`}
+              style={{ 
+                width: `${item.widthPercent}%`,
+                minHeight: rowIdx === 0 ? '70px' : '60px',
+              }}
+              title={`${item.pl_number} — ${item.volume_cbm || 0} м³ (${item.widthPercent.toFixed(0)}%)`}
+            >
+              <span className="font-bold text-sm truncate w-full text-center">
+                {item.pl_number}
+              </span>
+              <span className="text-xs opacity-90">
+                {item.volume_cbm || 0} м³
+              </span>
+              <span className="text-xs opacity-75 mt-0.5">
+                #{item.position}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+      
+      {/* Capacity indicator bar */}
+      {capacityVolume > 0 && (
+        <div className="mt-3 pt-2 border-t border-gray-200">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-500">Заполнение:</span>
+            <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div 
+                className={`h-full rounded-full ${
+                  totalVolume > capacityVolume ? 'bg-red-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(100, (totalVolume / capacityVolume) * 100)}%` }}
+              />
+            </div>
+            <span className={`font-medium ${totalVolume > capacityVolume ? 'text-red-600' : 'text-green-600'}`}>
+              {((totalVolume / capacityVolume) * 100).toFixed(0)}%
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ConsolidationDetailsModal({
   cons,
   allPLs,
@@ -555,44 +663,60 @@ export default function ConsolidationDetailsModal({
                 </div>
               )}
               
-              {/* Visual representation */}
+              {/* Visual representation - Auto Layout */}
               {pickedPLs.length > 0 && (
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                  <div className="text-sm font-medium mb-3">Схема транспорта (вид сверху)</div>
-                  <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 min-h-[120px]">
-                    {/* Direction labels */}
-                    <div className="absolute top-2 left-2 text-xs text-gray-400">Кабина (начало)</div>
-                    <div className="absolute top-2 right-2 text-xs text-gray-400">Задние двери (конец)</div>
-                    
-                    {/* Arrow indicator */}
-                    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 text-xs text-gray-400">
-                      <span>Направление</span>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                      </svg>
-                    </div>
-                    
-                    {/* Horizontal cargo layout */}
-                    <div className="flex flex-row gap-2 mt-8 overflow-x-auto pb-2">
-                      {pickedPLs.map((p, idx) => (
-                        <div 
-                          key={p.id}
-                          className="bg-blue-100 border border-blue-300 rounded p-3 text-sm flex flex-col items-center justify-center min-w-[100px] max-w-[140px] flex-shrink-0"
-                          style={{ 
-                            opacity: 0.7 + (0.3 * (pickedPLs.length - idx) / pickedPLs.length),
-                            minHeight: '80px'
-                          }}
-                        >
-                          <span className="font-medium text-center">{p.pl_number}</span>
-                          <span className="text-xs text-gray-600 text-center mt-1">{p.weight_kg} кг</span>
-                          <span className="text-xs text-blue-600 font-medium mt-1">#{idx + 1}</span>
-                        </div>
-                      ))}
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-medium">Схема транспорта (вид сверху)</div>
+                    <div className="text-xs text-gray-500">
+                      Размеры пропорциональны объёму
                     </div>
                   </div>
                   
-                  <div className="mt-2 text-xs text-gray-500 text-center">
-                    Грузы расположены слева направо: первый слева — ближе к кабине
+                  <div className="relative bg-white border-2 border-gray-300 rounded-lg overflow-hidden">
+                    {/* Transport header with labels */}
+                    <div className="flex items-center justify-between px-3 py-2 bg-gray-100 border-b border-gray-300">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded bg-gray-700 flex items-center justify-center">
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                          </svg>
+                        </div>
+                        <span className="text-xs font-medium text-gray-700">Кабина</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-1 text-xs text-gray-400">
+                        <span>Направление движения</span>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                        </svg>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-medium text-gray-700">Двери</span>
+                        <div className="w-6 h-6 rounded bg-gray-400 flex items-center justify-center">
+                          <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                          </svg>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Cargo layout area */}
+                    <div className="p-3 min-h-[160px]">
+                      <TransportLayout 
+                        pls={pickedPLs} 
+                        totalVolume={stats.sumV}
+                        capacityVolume={Number(capacityCbm) || stats.sumV}
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>Общий объём: {stats.sumV.toFixed(2)} м³</span>
+                    {Number(capacityCbm) > 0 && (
+                      <span>Вместимость: {Number(capacityCbm).toFixed(2)} м³ ({((stats.sumV / Number(capacityCbm)) * 100).toFixed(0)}%)</span>
+                    )}
                   </div>
                 </div>
               )}

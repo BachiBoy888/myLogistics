@@ -17,8 +17,9 @@ export default function KanbanPLCard({
   const volume = pl.volume_cbm || pl.volume || 0;
   
   // Данные ответственного пользователя
-  const responsibleName = pl.responsible_name || null;
-  const responsibleAvatar = pl.responsible_avatar || null;
+  const responsible = pl.responsible || {};
+  const responsibleName = responsible.name || null;
+  const responsibleAvatar = responsible.avatar || null;
   
   // Определяем что показывать в аватаре
   const renderAvatar = () => {
@@ -153,7 +154,7 @@ export default function KanbanPLCard({
           ))}
         </div>
 
-        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.responsible_user_id)} flex items-center justify-center text-white text-xs font-medium overflow-hidden`}>
+        <div className={`w-7 h-7 rounded-full ${getAvatarColor(responsible.id)} flex items-center justify-center text-white text-xs font-medium overflow-hidden`}>
           {renderAvatar()}
         </div>
       </div>

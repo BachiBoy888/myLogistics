@@ -131,6 +131,7 @@ export function normalizePL(s) {
     (s.responsible_user_id && {
       id: s.responsible_user_id,
       name: s.responsible_name || "Логист",
+      avatar: s.responsible_avatar || null,
     });
 
   const serverClientPrice =

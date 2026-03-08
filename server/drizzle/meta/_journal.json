@@ -148,6 +148,13 @@
       "when": 1772740000000,
       "tag": "0020_add_pl_places",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1772745000000,
+      "tag": "0021_add_user_avatar",
+      "breakpoints": true
     }
   ]
 }

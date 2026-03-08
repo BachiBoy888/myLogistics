@@ -1,8 +1,8 @@
 // src/components/layout/Header.jsx
 import React, { useState } from "react";
-import { Package, Users, BarChart3, LogOut, RefreshCw, ChevronDown, User } from "lucide-react";
+import { Package, Users, BarChart3, LogOut, RefreshCw, ChevronDown, User, Users as UsersIcon } from "lucide-react";
 
-export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, isRefreshing, onOpenProfile }) {
+export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, isRefreshing, onOpenProfile, onOpenEmployees }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   
   const tabs = [
@@ -14,6 +14,11 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
   const handleProfileClick = () => {
     setShowUserMenu(false);
     onOpenProfile?.();
+  };
+
+  const handleEmployeesClick = () => {
+    setShowUserMenu(false);
+    onOpenEmployees?.();
   };
 
   return (
@@ -95,6 +100,17 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
                     <User className="w-4 h-4" />
                     Профиль
                   </button>
+                  
+                  {user?.role === 'admin' && (
+                    <button
+                      onClick={handleEmployeesClick}
+                      className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                    >
+                      <UsersIcon className="w-4 h-4" />
+                      Мои сотрудники
+                    </button>
+                  )}
+                  
                   <div className="border-t border-gray-700" />
                   <button
                     onClick={onLogout}

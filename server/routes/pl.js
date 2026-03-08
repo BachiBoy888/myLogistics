@@ -38,10 +38,12 @@ async function hydrateResponsible(db, row) {
   if (!row) return row;
   let responsibleName = null;
   let responsibleAvatar = null;
+  let responsibleIsActive = true;
   if (row.responsibleUserId) {
     const [u] = await db.select().from(users).where(eq(users.id, row.responsibleUserId)).limit(1);
     responsibleName = u?.name ?? null;
     responsibleAvatar = u?.avatar ?? null;
+    responsibleIsActive = u?.isActive === 'true' || u?.isActive === true;
   }
   return {
     ...row,
@@ -49,6 +51,7 @@ async function hydrateResponsible(db, row) {
     responsible_user_id: row.responsibleUserId ?? null,
     responsible_name: responsibleName,
     responsible_avatar: responsibleAvatar,
+    responsible_is_active: responsibleIsActive,
   };
 }
 

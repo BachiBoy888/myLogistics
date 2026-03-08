@@ -39,12 +39,18 @@ export default async function authRoutes(app) {
             email: users.email,
             avatar: users.avatar,
             role: users.role,
+            isActive: users.isActive,
           })
           .from(users)
           .where(eq(users.login, login))
           .limit(1);
 
         if (!u) return reply.unauthorized("Неверный логин или пароль");
+
+        // Проверяем что пользователь активен
+        if (u.isActive === 'false' || u.isActive === false) {
+          return reply.unauthorized("Учётная запись деактивирована. Обратитесь к администратору.");
+        }
 
         const ok = await bcrypt.compare(password, u.passwordHash);
         if (!ok) return reply.unauthorized("Неверный логин или пароль");

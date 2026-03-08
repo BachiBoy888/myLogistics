@@ -132,6 +132,7 @@ export function normalizePL(s) {
       id: s.responsible_user_id,
       name: s.responsible_name || "Логист",
       avatar: s.responsible_avatar || null,
+      isActive: s.responsible_is_active !== false,
     });
 
   const serverClientPrice =
@@ -497,6 +498,28 @@ export async function createUser({ login, name, password, role, phone, email }) 
     { method: "POST", body: { login, name, password, role, phone, email } },
     ["/users"]
   );
+}
+
+export async function updateUser(id, { name, role, phone, email, avatar }) {
+  return mutate(
+    `/users/${id}`,
+    { method: "PATCH", body: { name, role, phone, email, avatar } },
+    ["/users"]
+  );
+}
+
+export async function deactivateUser(id) {
+  const res = await fetch(`${BASE}/users/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to deactivate user" }));
+    throw new Error(err.error || err.message || "Failed to deactivate user");
+  }
+
+  return res.json();
 }
 export async function listConsolidations(params = {}) {
   const q = new URLSearchParams(params).toString();

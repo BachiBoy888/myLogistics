@@ -283,6 +283,7 @@ function MainApp({ user, onLogout }) {
       {showEmployees && currentUser?.role === 'admin' && (
         <EmployeesModal
           onClose={() => setShowEmployees(false)}
+          currentUser={currentUser}
         />
       )}
     </div>

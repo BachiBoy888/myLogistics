@@ -69,7 +69,8 @@ const sql = postgres(DATABASE_URL, {
   // Автоматический запуск миграций в production/preview
   if (IS_PROD) {
     try {
-      await migrate(db, { migrationsFolder: "./drizzle" });
+      const migrationsPath = path.join(__dirname, "drizzle");
+      await migrate(db, { migrationsFolder: migrationsPath });
       console.log("✅ Database migrations applied");
     } catch (err) {
       console.error("❌ Migration failed:", err.message);

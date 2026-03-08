@@ -2,7 +2,7 @@
 // Модалка для управления сотрудниками (только для админа)
 
 import React, { useState, useEffect } from 'react';
-import { X, Users, Plus, User, Mail, Phone, Shield, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Users, Plus, User, Mail, Phone, Shield, CheckCircle, AlertCircle, Copy, Link } from 'lucide-react';
 import { listUsers, createUser } from '../../api/client.js';
 
 export default function EmployeesModal({ onClose }) {
@@ -11,6 +11,8 @@ export default function EmployeesModal({ onClose }) {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [inviteLink, setInviteLink] = useState(null);
+  const [copied, setCopied] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -42,6 +44,7 @@ export default function EmployeesModal({ onClose }) {
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    setInviteLink(null);
 
     if (!formData.login || !formData.name || !formData.password) {
       setError('Логин, имя и пароль обязательны');
@@ -54,7 +57,7 @@ export default function EmployeesModal({ onClose }) {
     }
 
     try {
-      await createUser({
+      const created = await createUser({
         login: formData.login.trim(),
         name: formData.name.trim(),
         password: formData.password,
@@ -63,7 +66,12 @@ export default function EmployeesModal({ onClose }) {
         email: formData.email.trim() || null,
       });
       
-      setSuccess('Сотрудник успешно создан');
+      // Формируем ссылку для первичной авторизации
+      const baseUrl = window.location.origin;
+      const link = `${baseUrl}/first-login?token=${created.firstLoginToken}`;
+      setInviteLink(link);
+      
+      setSuccess('Сотрудник успешно создан. Отправьте ссылку сотруднику для первичной авторизации.');
       setFormData({
         login: '',
         name: '',
@@ -72,10 +80,20 @@ export default function EmployeesModal({ onClose }) {
         phone: '',
         email: '',
       });
-      setShowCreateForm(false);
       loadUsers(); // Перезагружаем список
     } catch (err) {
       setError(err.message || 'Не удалось создать сотрудника');
+    }
+  }
+
+  async function copyToClipboard() {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError('Не удалось скопировать ссылку');
     }
   }
 
@@ -115,6 +133,34 @@ export default function EmployeesModal({ onClose }) {
             <div className="mb-4 bg-green-900/20 border border-green-700/50 rounded-lg p-3 text-sm text-green-200 flex items-center gap-2">
               <CheckCircle className="w-4 h-4" />
               {success}
+            </div>
+          )}
+
+          {/* Invite Link */}
+          {inviteLink && (
+            <div className="mb-6 bg-blue-900/20 border border-blue-700/50 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-blue-200 mb-2 flex items-center gap-2">
+                <Link className="w-4 h-4" />
+                Ссылка для сотрудника
+              </h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={inviteLink}
+                  readOnly
+                  className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-300 font-mono"
+                />
+                <button
+                  onClick={copyToClipboard}
+                  className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm transition-colors"
+                >
+                  <Copy className="w-4 h-4" />
+                  {copied ? 'Скопировано!' : 'Копировать'}
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Отправьте эту ссылку сотруднику. Он сможет войти и установить свой пароль.
+              </p>
             </div>
           )}
 

@@ -42,10 +42,12 @@ export const users = pgTable(
     email: text("email"),
     avatar: text("avatar"),
     role: text("role").notNull().default("user"),
+    firstLoginToken: text("first_login_token"), // для первичной авторизации
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     uqLogin: uniqueIndex("uq_users_login").on(t.login),
+    firstLoginIdx: index("idx_users_first_login_token").on(t.firstLoginToken),
   })
 );
 

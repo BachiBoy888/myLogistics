@@ -2,6 +2,7 @@
 import { eq, sql } from "drizzle-orm";
 import { users as usersTable } from "../db/schema.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 /** Fastify plugin */
 export default async function usersRoutes(app) {
@@ -254,6 +255,9 @@ export default async function usersRoutes(app) {
         return reply.code(409).send({ error: "conflict", message: "Login already exists" });
       }
 
+      // Генерируем токен для первичной авторизации
+      const firstLoginToken = crypto.randomUUID();
+
       // Хешируем пароль
       const passwordHash = await bcrypt.hash(password, 10);
 
@@ -266,6 +270,7 @@ export default async function usersRoutes(app) {
           role: role || 'user',
           phone: phone ? String(phone).trim() : null,
           email: email ? String(email).trim().toLowerCase() : null,
+          firstLoginToken,
         })
         .returning({
           id: usersTable.id,
@@ -274,6 +279,7 @@ export default async function usersRoutes(app) {
           role: usersTable.role,
           phone: usersTable.phone,
           email: usersTable.email,
+          firstLoginToken: usersTable.firstLoginToken,
         });
 
       return reply.code(201).send(created);

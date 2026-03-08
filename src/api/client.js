@@ -442,7 +442,7 @@ export async function deletePLComment(plId, commentId) {
 }
 
 /* -------------------
-   AUTH
+   AUTH / FIRST LOGIN
 ------------------- */
 export async function login({ login, password }) {
   // после логина инвалидация — чтобы /auth/me и прочее не тянулись из кэша
@@ -455,6 +455,28 @@ export async function logout() {
 }
 export async function me() {
   return req(`/auth/me`);
+}
+
+// Проверка токена первичной авторизации
+export async function verifyFirstLoginToken(token) {
+  return mutate(`/auth/first-login/verify`, { method: "POST", body: { token } }, []);
+}
+
+// Установка пароля при первичной авторизации
+export async function setFirstLoginPassword(token, password) {
+  const res = await fetch(`${BASE}/auth/first-login/set-password`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to set password" }));
+    throw new Error(err.error || err.message || "Failed to set password");
+  }
+  
+  return res.json();
 }
 
 export async function createUser({ login, name, password, role, phone, email }) {

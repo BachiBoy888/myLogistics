@@ -20,6 +20,10 @@ export default function KanbanPLCard({
   const responsible = pl.responsible || {};
   const responsibleName = responsible.name || null;
   const responsibleAvatar = responsible.avatar || null;
+  const responsibleIsActive = responsible.isActive !== false; // по умолчанию активен
+  const displayName = responsibleName 
+    ? (responsibleIsActive ? responsibleName : `${responsibleName} (inactive)`)
+    : null;
   
   // Определяем что показывать в аватаре
   const renderAvatar = () => {

@@ -39,12 +39,18 @@ export default async function authRoutes(app) {
             email: users.email,
             avatar: users.avatar,
             role: users.role,
+            isActive: users.isActive,
           })
           .from(users)
           .where(eq(users.login, login))
           .limit(1);
 
         if (!u) return reply.unauthorized("Неверный логин или пароль");
+
+        // Проверяем что пользователь активен
+        if (u.isActive === 'false' || u.isActive === false) {
+          return reply.unauthorized("Учётная запись деактивирована. Обратитесь к администратору.");
+        }
 
         const ok = await bcrypt.compare(password, u.passwordHash);
         if (!ok) return reply.unauthorized("Неверный логин или пароль");
@@ -74,6 +80,139 @@ export default async function authRoutes(app) {
       } catch (err) {
         req.log.error({ err, route: "/api/auth/login" });
         reply.internalServerError("Ошибка авторизации");
+      }
+    }
+  );
+
+  /**
+   * === POST /api/auth/first-login/verify ===
+   * Проверка токена первичной авторизации
+   */
+  app.post(
+    "/first-login/verify",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["token"],
+          properties: {
+            token: { type: "string", minLength: 1 },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const { token } = req.body;
+
+      try {
+        const [u] = await db
+          .select({
+            id: users.id,
+            login: users.login,
+            name: users.name,
+            firstLoginToken: users.firstLoginToken,
+          })
+          .from(users)
+          .where(eq(users.firstLoginToken, token))
+          .limit(1);
+
+        if (!u) {
+          return reply.code(404).send({ error: "not_found", message: "Invalid or expired token" });
+        }
+
+        return reply.send({
+          id: u.id,
+          login: u.login,
+          name: u.name,
+        });
+      } catch (err) {
+        req.log.error({ err, route: "/api/auth/first-login/verify" });
+        reply.internalServerError("Ошибка проверки токена");
+      }
+    }
+  );
+
+  /**
+   * === POST /api/auth/first-login/set-password ===
+   * Установка пароля при первичной авторизации
+   */
+  app.post(
+    "/first-login/set-password",
+    {
+      schema: {
+        body: {
+          type: "object",
+          required: ["token", "password"],
+          properties: {
+            token: { type: "string", minLength: 1 },
+            password: { type: "string", minLength: 6 },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (req, reply) => {
+      const { token, password } = req.body;
+
+      try {
+        // Находим пользователя по токену
+        const [u] = await db
+          .select({
+            id: users.id,
+            login: users.login,
+            name: users.name,
+            phone: users.phone,
+            email: users.email,
+            avatar: users.avatar,
+            role: users.role,
+            firstLoginToken: users.firstLoginToken,
+          })
+          .from(users)
+          .where(eq(users.firstLoginToken, token))
+          .limit(1);
+
+        if (!u) {
+          return reply.code(404).send({ error: "not_found", message: "Invalid or expired token" });
+        }
+
+        // Хешируем новый пароль
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        // Обновляем пароль и удаляем токен первичной авторизации
+        await db
+          .update(users)
+          .set({
+            passwordHash,
+            firstLoginToken: null,
+          })
+          .where(eq(users.id, u.id));
+
+        // Генерация JWT для автоматического входа
+        const jwtToken = app.issueJwt({
+          id: u.id,
+          login: u.login,
+          name: u.name,
+          role: u.role,
+        });
+
+        // Устанавливаем cookie
+        reply
+          .setCookie("token", jwtToken, {
+            ...app.cookieDefaults,
+          })
+          .send({
+            id: u.id,
+            login: u.login,
+            name: u.name,
+            phone: u.phone,
+            email: u.email,
+            avatar: u.avatar,
+            role: u.role,
+          });
+      } catch (err) {
+        req.log.error({ err, route: "/api/auth/first-login/set-password" });
+        reply.internalServerError("Ошибка установки пароля");
       }
     }
   );

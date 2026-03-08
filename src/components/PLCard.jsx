@@ -214,6 +214,7 @@ export default function PLCard({
       setLogistsLoading(true);
       const rows = await listUsers({ role: "logist" });
       const arr = (Array.isArray(rows) ? rows : [])
+        .filter((u) => u.isActive !== false) // только активные логисты
         .map((u) => ({
           id: u.id ?? u.user_id ?? u._id,
           name: u.name ?? u.fullName ?? u.login ?? "Логист",

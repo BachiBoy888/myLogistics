@@ -2,6 +2,7 @@
 import { eq, sql } from "drizzle-orm";
 import { users as usersTable } from "../db/schema.js";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 
 /** Fastify plugin */
 export default async function usersRoutes(app) {
@@ -23,6 +24,8 @@ export default async function usersRoutes(app) {
             name: usersTable.name,
             role: usersTable.role,
             email: usersTable.email,
+            phone: usersTable.phone,
+            isActive: usersTable.isActive,
           })
           .from(usersTable)
           .where(eq(usersTable.role, role));
@@ -33,6 +36,8 @@ export default async function usersRoutes(app) {
             name: usersTable.name,
             role: usersTable.role,
             email: usersTable.email,
+            phone: usersTable.phone,
+            isActive: usersTable.isActive,
           })
           .from(usersTable);
       }
@@ -42,6 +47,8 @@ export default async function usersRoutes(app) {
         name: u.name || u.login || "Пользователь",
         role: u.role || "",
         email: u.email || null,
+        phone: u.phone || null,
+        isActive: u.isActive === 'true' || u.isActive === true,
       }));
 
       return reply.send(list);
@@ -254,6 +261,9 @@ export default async function usersRoutes(app) {
         return reply.code(409).send({ error: "conflict", message: "Login already exists" });
       }
 
+      // Генерируем токен для первичной авторизации
+      const firstLoginToken = crypto.randomUUID();
+
       // Хешируем пароль
       const passwordHash = await bcrypt.hash(password, 10);
 
@@ -266,6 +276,7 @@ export default async function usersRoutes(app) {
           role: role || 'user',
           phone: phone ? String(phone).trim() : null,
           email: email ? String(email).trim().toLowerCase() : null,
+          firstLoginToken,
         })
         .returning({
           id: usersTable.id,
@@ -274,6 +285,7 @@ export default async function usersRoutes(app) {
           role: usersTable.role,
           phone: usersTable.phone,
           email: usersTable.email,
+          firstLoginToken: usersTable.firstLoginToken,
         });
 
       return reply.code(201).send(created);
@@ -299,7 +311,9 @@ export default async function usersRoutes(app) {
           name: usersTable.name,
           phone: usersTable.phone,
           email: usersTable.email,
+          avatar: usersTable.avatar,
           role: usersTable.role,
+          isActive: usersTable.isActive,
           createdAt: usersTable.createdAt,
         })
         .from(usersTable)
@@ -316,12 +330,114 @@ export default async function usersRoutes(app) {
         name: u.name,
         phone: u.phone,
         email: u.email,
+        avatar: u.avatar,
         role: u.role,
+        isActive: u.isActive === 'true' || u.isActive === true,
         createdAt: u.createdAt,
       });
     } catch (err) {
       req.log.error({ err }, "GET /api/users/:id failed");
       return reply.code(500).send({ error: "internal_server_error", message: "Failed to get user" });
+    }
+  });
+
+  // PATCH /api/users/:id - обновить пользователя (только для админов)
+  app.patch("/:id", async (req, reply) => {
+    try {
+      // Проверяем что запрашивает админ
+      if (req.user.role !== 'admin') {
+        return reply.code(403).send({ error: "forbidden", message: "Only admin can update users" });
+      }
+
+      const targetId = req.params.id;
+      const { name, role, phone, email, avatar } = req.body || {};
+
+      const updateData = {};
+      if (name !== undefined) updateData.name = String(name).trim();
+      if (role !== undefined) updateData.role = role;
+      if (phone !== undefined) updateData.phone = phone ? String(phone).trim() : null;
+      if (email !== undefined) updateData.email = email ? String(email).trim().toLowerCase() : null;
+      if (avatar !== undefined) updateData.avatar = avatar || null;
+
+      if (Object.keys(updateData).length === 0) {
+        return reply.code(400).send({ error: "bad_request", message: "No fields to update" });
+      }
+
+      const [updated] = await db
+        .update(usersTable)
+        .set(updateData)
+        .where(eq(usersTable.id, targetId))
+        .returning({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          phone: usersTable.phone,
+          email: usersTable.email,
+          avatar: usersTable.avatar,
+          role: usersTable.role,
+          isActive: usersTable.isActive,
+        });
+
+      if (!updated) {
+        return reply.code(404).send({ error: "not_found", message: "User not found" });
+      }
+
+      return reply.send({
+        id: updated.id,
+        login: updated.login,
+        name: updated.name,
+        phone: updated.phone,
+        email: updated.email,
+        avatar: updated.avatar,
+        role: updated.role,
+        isActive: updated.isActive === 'true' || updated.isActive === true,
+      });
+    } catch (err) {
+      req.log.error({ err }, "PATCH /api/users/:id failed");
+      return reply.code(500).send({ error: "internal_server_error", message: "Failed to update user" });
+    }
+  });
+
+  // DELETE /api/users/:id - деактивировать пользователя (soft delete, только для админов)
+  app.delete("/:id", async (req, reply) => {
+    try {
+      // Проверяем что запрашивает админ
+      if (req.user.role !== 'admin') {
+        return reply.code(403).send({ error: "forbidden", message: "Only admin can deactivate users" });
+      }
+
+      const targetId = req.params.id;
+
+      // Нельзя деактивировать самого себя
+      if (targetId === req.user.id) {
+        return reply.code(400).send({ error: "bad_request", message: "Cannot deactivate yourself" });
+      }
+
+      const [updated] = await db
+        .update(usersTable)
+        .set({ isActive: 'false' })
+        .where(eq(usersTable.id, targetId))
+        .returning({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          isActive: usersTable.isActive,
+        });
+
+      if (!updated) {
+        return reply.code(404).send({ error: "not_found", message: "User not found" });
+      }
+
+      return reply.send({
+        id: updated.id,
+        login: updated.login,
+        name: updated.name,
+        isActive: updated.isActive === 'true' || updated.isActive === true,
+        message: "User deactivated successfully",
+      });
+    } catch (err) {
+      req.log.error({ err }, "DELETE /api/users/:id failed");
+      return reply.code(500).send({ error: "internal_server_error", message: "Failed to deactivate user" });
     }
   });
 }

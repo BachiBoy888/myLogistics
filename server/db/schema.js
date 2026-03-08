@@ -42,10 +42,14 @@ export const users = pgTable(
     email: text("email"),
     avatar: text("avatar"),
     role: text("role").notNull().default("user"),
+    isActive: text("is_active").notNull().default("true"), // 'true' | 'false' - для совместимости с drizzle
+    firstLoginToken: text("first_login_token"), // для первичной авторизации
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     uqLogin: uniqueIndex("uq_users_login").on(t.login),
+    firstLoginIdx: index("idx_users_first_login_token").on(t.firstLoginToken),
+    isActiveIdx: index("idx_users_is_active").on(t.isActive),
   })
 );
 

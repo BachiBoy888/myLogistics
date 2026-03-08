@@ -17,6 +17,7 @@ import {
 // UI / каркас
 import LoadingScreen from "./components/LoadingScreen.jsx";
 import LoginScreen from "./components/auth/LoginScreen.jsx";
+import FirstLoginScreen from "./components/auth/FirstLoginScreen.jsx";
 import Header from "./components/layout/Header.jsx";
 import Footer from "./components/layout/Footer.jsx";
 import UserProfileModal from "./components/user/UserProfileModal.jsx";
@@ -40,8 +41,19 @@ function App() {
   const [boot, setBoot] = useState({ loading: true, user: null });
   console.log("BOOT:", boot);
 
-  // Проверяем сессию при запуске
+  // Проверяем наличие токена первичной авторизации в URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const firstLoginToken = urlParams.get('token');
+  const isFirstLogin = window.location.pathname === '/first-login' && firstLoginToken;
+
+  // Проверяем сессию при запуске (только если не first-login)
   useEffect(() => {
+    // Если это first-login страница, не проверяем сессию
+    if (isFirstLogin) {
+      setBoot({ loading: false, user: null });
+      return;
+    }
+
     (async () => {
       try {
         const u = await me();
@@ -50,9 +62,24 @@ function App() {
         setBoot({ loading: false, user: null });
       }
     })();
-  }, []);
+  }, [isFirstLogin]);
 
   if (boot.loading) return <LoadingScreen />;
+
+  // Если есть токен первичной авторизации — показываем FirstLoginScreen
+  if (isFirstLogin) {
+    return (
+      <FirstLoginScreen
+        token={firstLoginToken}
+        onLogin={async () => {
+          const u = await me().catch(() => null);
+          setBoot({ loading: false, user: u });
+          // Очищаем URL от параметров
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+      />
+    );
+  }
 
   // Пока не залогинен — экран входа
   if (!boot.user) {
@@ -256,6 +283,7 @@ function MainApp({ user, onLogout }) {
       {showEmployees && currentUser?.role === 'admin' && (
         <EmployeesModal
           onClose={() => setShowEmployees(false)}
+          currentUser={currentUser}
         />
       )}
     </div>

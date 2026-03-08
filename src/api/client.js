@@ -132,6 +132,7 @@ export function normalizePL(s) {
       id: s.responsible_user_id,
       name: s.responsible_name || "Логист",
       avatar: s.responsible_avatar || null,
+      isActive: s.responsible_is_active !== false,
     });
 
   const serverClientPrice =
@@ -442,7 +443,7 @@ export async function deletePLComment(plId, commentId) {
 }
 
 /* -------------------
-   AUTH
+   AUTH / FIRST LOGIN
 ------------------- */
 export async function login({ login, password }) {
   // после логина инвалидация — чтобы /auth/me и прочее не тянулись из кэша
@@ -457,12 +458,68 @@ export async function me() {
   return req(`/auth/me`);
 }
 
+// Проверка токена первичной авторизации
+export async function verifyFirstLoginToken(token) {
+  const res = await fetch(`${BASE}/auth/first-login/verify`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Invalid token" }));
+    throw new Error(err.error || err.message || "Invalid token");
+  }
+
+  return res.json();
+}
+
+// Установка пароля при первичной авторизации
+export async function setFirstLoginPassword(token, password) {
+  const res = await fetch(`${BASE}/auth/first-login/set-password`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+  
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to set password" }));
+    throw new Error(err.error || err.message || "Failed to set password");
+  }
+  
+  return res.json();
+}
+
 export async function createUser({ login, name, password, role, phone, email }) {
   return mutate(
     "/users",
     { method: "POST", body: { login, name, password, role, phone, email } },
     ["/users"]
   );
+}
+
+export async function updateUser(id, { name, role, phone, email, avatar }) {
+  return mutate(
+    `/users/${id}`,
+    { method: "PATCH", body: { name, role, phone, email, avatar } },
+    ["/users"]
+  );
+}
+
+export async function deactivateUser(id) {
+  const res = await fetch(`${BASE}/users/${id}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to deactivate user" }));
+    throw new Error(err.error || err.message || "Failed to deactivate user");
+  }
+
+  return res.json();
 }
 export async function listConsolidations(params = {}) {
   const q = new URLSearchParams(params).toString();

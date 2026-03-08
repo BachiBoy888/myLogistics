@@ -33,19 +33,22 @@ function contentDispositionInline(filename) {
   return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
-// обогащение PL именем ответственного (snake-case поля для фронта)
+// обогащение PL данными ответственного (snake-case поля для фронта)
 async function hydrateResponsible(db, row) {
   if (!row) return row;
   let responsibleName = null;
+  let responsibleAvatar = null;
   if (row.responsibleUserId) {
     const [u] = await db.select().from(users).where(eq(users.id, row.responsibleUserId)).limit(1);
     responsibleName = u?.name ?? null;
+    responsibleAvatar = u?.avatar ?? null;
   }
   return {
     ...row,
     clientPrice: row.clientPrice ?? row.client_price ?? null,
     responsible_user_id: row.responsibleUserId ?? null,
     responsible_name: responsibleName,
+    responsible_avatar: responsibleAvatar,
   };
 }
 

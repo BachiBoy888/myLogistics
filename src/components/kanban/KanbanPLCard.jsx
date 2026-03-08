@@ -16,8 +16,38 @@ export default function KanbanPLCard({
   const weight = pl.weight_kg || pl.weight || 0;
   const volume = pl.volume_cbm || pl.volume || 0;
   
-  // Инициалы из имени ответственного пользователя
+  // Данные ответственного пользователя
   const responsibleName = pl.responsible_name || null;
+  const responsibleAvatar = pl.responsible_avatar || null;
+  
+  // Определяем что показывать в аватаре
+  const renderAvatar = () => {
+    // 1. Если есть аватар → показываем фото
+    if (responsibleAvatar) {
+      return (
+        <img 
+          src={responsibleAvatar} 
+          alt={responsibleName || "Аватар"}
+          className="w-full h-full object-cover rounded-full"
+        />
+      );
+    }
+    
+    // 2. Если есть имя → показываем инициалы
+    if (responsibleName) {
+      const getInitials = (name) => {
+        const parts = name.trim().split(/\s+/);
+        if (parts.length === 1) {
+          return parts[0][0].toUpperCase();
+        }
+        return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+      };
+      return getInitials(responsibleName);
+    }
+    
+    // 3. Если нет ответственного → показываем "?"
+    return "?";
+  };
 
   const handleClick = (e) => {
     if (e.shiftKey) {
@@ -42,15 +72,6 @@ export default function KanbanPLCard({
 
   const handleDragEnd = () => {
     setIsDragging(false);
-  };
-
-  const getInitials = (name) => {
-    if (!name) return "?";
-    const parts = name.trim().split(/\s+/);
-    if (parts.length === 1) {
-      return parts[0][0].toUpperCase();
-    }
-    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
   const getAvatarColor = (clientId) => {
@@ -132,8 +153,8 @@ export default function KanbanPLCard({
           ))}
         </div>
 
-        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.responsible_user_id)} flex items-center justify-center text-white text-xs font-medium`}>
-          {getInitials(responsibleName)}
+        <div className={`w-7 h-7 rounded-full ${getAvatarColor(pl.responsible_user_id)} flex items-center justify-center text-white text-xs font-medium overflow-hidden`}>
+          {renderAvatar()}
         </div>
       </div>
 

@@ -457,9 +457,13 @@ export async function me() {
   return req(`/auth/me`);
 }
 
-/* -------------------
-   CONSOLIDATIONS
-------------------- */
+export async function createUser({ login, name, password, role, phone, email }) {
+  return mutate(
+    "/users",
+    { method: "POST", body: { login, name, password, role, phone, email } },
+    ["/users"]
+  );
+}
 export async function listConsolidations(params = {}) {
   const q = new URLSearchParams(params).toString();
   const base = await req(`/consolidations${q ? `?${q}` : ""}`);

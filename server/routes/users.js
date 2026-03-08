@@ -225,6 +225,64 @@ export default async function usersRoutes(app) {
     }
   });
 
+  // POST /api/users - создать нового пользователя (только для админов)
+  app.post("/", async (req, reply) => {
+    try {
+      // Проверяем что запрашивает админ
+      if (req.user.role !== 'admin') {
+        return reply.code(403).send({ error: "forbidden", message: "Only admin can create users" });
+      }
+
+      const { login, name, password, role, phone, email } = req.body || {};
+
+      if (!login || !name || !password) {
+        return reply.code(400).send({ error: "bad_request", message: "login, name and password are required" });
+      }
+
+      if (password.length < 6) {
+        return reply.code(400).send({ error: "bad_request", message: "Password must be at least 6 characters" });
+      }
+
+      // Проверяем что логин не занят
+      const [existing] = await db
+        .select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.login, login))
+        .limit(1);
+
+      if (existing) {
+        return reply.code(409).send({ error: "conflict", message: "Login already exists" });
+      }
+
+      // Хешируем пароль
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      const [created] = await db
+        .insert(usersTable)
+        .values({
+          login: String(login).trim(),
+          name: String(name).trim(),
+          passwordHash,
+          role: role || 'user',
+          phone: phone ? String(phone).trim() : null,
+          email: email ? String(email).trim().toLowerCase() : null,
+        })
+        .returning({
+          id: usersTable.id,
+          login: usersTable.login,
+          name: usersTable.name,
+          role: usersTable.role,
+          phone: usersTable.phone,
+          email: usersTable.email,
+        });
+
+      return reply.code(201).send(created);
+    } catch (err) {
+      req.log.error({ err }, "POST /api/users failed");
+      return reply.code(500).send({ error: "internal_server_error", message: "Failed to create user" });
+    }
+  });
+
   // GET /api/users/:id - получить пользователя по ID (только для админов)
   app.get("/:id", async (req, reply) => {
     try {

@@ -50,7 +50,7 @@ import {
 import { readinessForPL, canAllowToShip } from "../utils/readiness.js";
 
 // Иконки
-import { Package, Search, PlusCircle, X, Filter } from "lucide-react";
+import { Package, Search, PlusCircle, X, Filter, User } from "lucide-react";
 
 export default function CargoView({
   pls,
@@ -83,6 +83,7 @@ export default function CargoView({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [consOnly, setConsOnly] = useState(false);
+  const [onlyMy, setOnlyMy] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPLs, setSelectedPLs] = useState([]);
@@ -186,9 +187,11 @@ export default function CargoView({
       const matchesQuery = !q || haystack.includes(q);
       const matchesStatus =
         statusFilter === "all" || norm(p?.status ?? "draft") === norm(statusFilter);
-      return matchesQuery && matchesStatus;
+      // Фильтр "Только мои" - показывать только PL где текущий пользователь ответственный
+      const matchesOnlyMy = !onlyMy || (p.responsible?.id === currentUser?.id);
+      return matchesQuery && matchesStatus && matchesOnlyMy;
     });
-  }, [safePLs, query, statusFilter]);
+  }, [safePLs, query, statusFilter, onlyMy, currentUser]);
 
   const hydratedDocsRef = useRef(new Set());
   async function hydrateDocsFor(plArray, { limit = 30 } = {}) {
@@ -240,12 +243,29 @@ export default function CargoView({
 
   const consByStage = useMemo(() => {
     const m = OrderedStages.reduce((acc, k) => ((acc[k] = []), acc), {});
-    safeCons.forEach((c) => {
+    
+    // Если фильтр "Только мои" включен, показываем только консолидации с моими PL
+    let filteredCons = safeCons;
+    if (onlyMy && currentUser) {
+      // Получаем ID PL текущего пользователя
+      const myPLIds = new Set(
+        safePLs
+          .filter((p) => p.responsible?.id === currentUser.id)
+          .map((p) => p.id)
+      );
+      // Фильтруем консолидации - оставляем только те, где есть хотя бы один мой PL
+      filteredCons = safeCons.filter((c) => {
+        const consPLIds = c.pl_ids || [];
+        return consPLIds.some((id) => myPLIds.has(id));
+      });
+    }
+    
+    filteredCons.forEach((c) => {
       const st = stageOf(c?.status ?? "to_load");
       if (m[st]) m[st].push({ ...c, stage: st });
     });
     return m;
-  }, [safeCons]);
+  }, [safeCons, onlyMy, safePLs, currentUser]);
 
   const stats = useMemo(() => {
     const total = safePLs.length;
@@ -545,6 +565,18 @@ export default function CargoView({
           >
             <Filter className="w-4 h-4" />
             Консолидации
+          </button>
+
+          <button
+            onClick={() => setOnlyMy(!onlyMy)}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm border ${
+              onlyMy 
+                ? "bg-green-600/20 border-green-500 text-green-400" 
+                : "bg-gray-700 border-gray-600 text-gray-300"
+            }`}
+          >
+            <User className="w-4 h-4" />
+            Только мои
           </button>
 
           <button

@@ -559,24 +559,40 @@ export default function ConsolidationDetailsModal({
               {pickedPLs.length > 0 && (
                 <div className="mt-6 p-4 bg-gray-50 rounded-lg">
                   <div className="text-sm font-medium mb-3">Схема транспорта (вид сверху)</div>
-                  <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 min-h-[200px]">
-                    <div className="absolute top-2 left-2 text-xs text-gray-400">Кабина</div>
-                    <div className="grid grid-cols-1 gap-2 mt-6">
-                      {[...pickedPLs].reverse().map((p, idx) => (
+                  <div className="relative bg-white border-2 border-dashed border-gray-300 rounded-lg p-4 min-h-[120px]">
+                    {/* Direction labels */}
+                    <div className="absolute top-2 left-2 text-xs text-gray-400">Кабина (начало)</div>
+                    <div className="absolute top-2 right-2 text-xs text-gray-400">Задние двери (конец)</div>
+                    
+                    {/* Arrow indicator */}
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-1 text-xs text-gray-400">
+                      <span>Направление</span>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                      </svg>
+                    </div>
+                    
+                    {/* Horizontal cargo layout */}
+                    <div className="flex flex-row gap-2 mt-8 overflow-x-auto pb-2">
+                      {pickedPLs.map((p, idx) => (
                         <div 
                           key={p.id}
-                          className="bg-blue-100 border border-blue-300 rounded p-2 text-sm flex items-center justify-between"
+                          className="bg-blue-100 border border-blue-300 rounded p-3 text-sm flex flex-col items-center justify-center min-w-[100px] max-w-[140px] flex-shrink-0"
                           style={{ 
-                            opacity: 0.7 + (0.3 * (pickedPLs.length - idx) / pickedPLs.length) 
+                            opacity: 0.7 + (0.3 * (pickedPLs.length - idx) / pickedPLs.length),
+                            minHeight: '80px'
                           }}
                         >
-                          <span>{p.pl_number}</span>
-                          <span className="text-xs text-gray-600">{p.weight_kg} кг</span>
+                          <span className="font-medium text-center">{p.pl_number}</span>
+                          <span className="text-xs text-gray-600 text-center mt-1">{p.weight_kg} кг</span>
+                          <span className="text-xs text-blue-600 font-medium mt-1">#{idx + 1}</span>
                         </div>
                       ))}
                     </div>
-                    
-                    <div className="absolute bottom-2 right-2 text-xs text-gray-400">Задние двери</div>
+                  </div>
+                  
+                  <div className="mt-2 text-xs text-gray-500 text-center">
+                    Грузы расположены слева направо: первый слева — ближе к кабине
                   </div>
                 </div>
               )}

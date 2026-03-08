@@ -141,3 +141,25 @@ The agent must NOT:
 
 The correct fix is always to repair the migration lifecycle.
 
+---
+
+# Pull Request Description Rules
+
+При создании Pull Request агент обязан заполнять описание PR.
+
+PR description должен быть написан **на русском языке**.
+
+Агент должен заполнить все разделы:
+
+- Summary
+- Что изменилось
+- Зачем это нужно
+- Как протестировать
+- Риски
+- Скриншоты (если UI)
+- Checklist
+
+Описание должно быть основано на:
+- реализованном Spec
+- фактических изменениях в коде
+- acceptance criteria

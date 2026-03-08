@@ -43,10 +43,16 @@ export default function ConsolidationDetailsModal({
   
   // Drag state
   const [draggedId, setDraggedId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null); // для визуального индикатора drop target
 
   useEffect(() => {
     setPickedIds(cons.pl_ids || []);
-    setPlOrders(cons.pl_load_orders || {});
+    // Инициализируем порядок для всех PL последовательно
+    const initialOrders = {};
+    (cons.pl_ids || []).forEach((id, idx) => {
+      initialOrders[id] = cons.pl_load_orders?.[id] ?? idx;
+    });
+    setPlOrders(initialOrders);
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
     setHasChanges(false);
@@ -121,42 +127,68 @@ export default function ConsolidationDetailsModal({
     setDraggedId(plId);
   }
 
-  function handleDragOver(e, targetId) {
-    e.preventDefault();
+  function handleDragEnter(targetId) {
     if (draggedId === null || draggedId === targetId) return;
+    setDragOverId(targetId);
+  }
+
+  function handleDragLeave(e) {
+    // Проверяем, что мы действительно покидаем элемент, а не входим в дочерний
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX;
+    const y = e.clientY;
+    if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) {
+      setDragOverId(null);
+    }
+  }
+
+  function handleDrop(e, targetId) {
+    e.preventDefault();
+    if (draggedId === null || draggedId === targetId) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
     
-    // Reorder
-    const currentOrder = plOrders[draggedId] || 0;
-    const targetOrder = plOrders[targetId] || 0;
+    // Получаем текущий отсортированный список
+    const currentPls = [...pickedIds]
+      .map(id => ({ id, order: plOrders[id] ?? 0 }))
+      .sort((a, b) => a.order - b.order);
     
-    setPlOrders(prev => {
-      const newOrders = { ...prev };
-      if (currentOrder < targetOrder) {
-        // Moving down: shift items between current and target up by 1
-        Object.keys(newOrders).forEach(key => {
-          const order = newOrders[key];
-          if (order > currentOrder && order <= targetOrder) {
-            newOrders[key] = order - 1;
-          }
-        });
-        newOrders[draggedId] = targetOrder;
-      } else {
-        // Moving up: shift items between target and current down by 1
-        Object.keys(newOrders).forEach(key => {
-          const order = newOrders[key];
-          if (order >= targetOrder && order < currentOrder) {
-            newOrders[key] = order + 1;
-          }
-        });
-        newOrders[draggedId] = targetOrder;
-      }
-      return newOrders;
+    const fromIndex = currentPls.findIndex(p => p.id === draggedId);
+    let toIndex;
+    
+    if (targetId === '__END__') {
+      toIndex = currentPls.length - 1;
+    } else {
+      toIndex = currentPls.findIndex(p => p.id === targetId);
+    }
+    
+    if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+      setDraggedId(null);
+      setDragOverId(null);
+      return;
+    }
+    
+    // Перемещаем элемент
+    const [moved] = currentPls.splice(fromIndex, 1);
+    currentPls.splice(toIndex, 0, moved);
+    
+    // Пересчитываем порядок
+    const newOrders = {};
+    currentPls.forEach((p, idx) => {
+      newOrders[p.id] = idx;
     });
+    
+    setPlOrders(newOrders);
+    setDraggedId(null);
+    setDragOverId(null);
     markChanged();
   }
 
   function handleDragEnd() {
     setDraggedId(null);
+    setDragOverId(null);
   }
 
   async function handleSave() {
@@ -464,38 +496,62 @@ export default function ConsolidationDetailsModal({
                   <p>Нет грузов в консолидации</p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {pickedPLs.map((p, idx) => (
-                    <div
-                      key={p.id}
-                      draggable
-                      onDragStart={() => handleDragStart(p.id)}
-                      onDragOver={(e) => handleDragOver(e, p.id)}
-                      onDragEnd={handleDragEnd}
-                      className={`bg-white border-2 rounded-lg p-4 flex items-center gap-3 cursor-move transition-all ${
-                        draggedId === p.id 
-                          ? 'border-blue-500 shadow-lg opacity-50' 
-                          : 'border-gray-200 hover:border-blue-300'
-                      }`}
-                    >
-                      <DragHandle />
-                      
-                      <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-medium">
-                        {idx + 1}
-                      </div>
-                      
-                      <div className="flex-1">
-                        <div className="font-medium">{p.pl_number}</div>
-                        <div className="text-sm text-gray-500">
-                          {typeof p.client === "string" ? p.client : p.client?.name || "—"} • {p.weight_kg} кг • {p.volume_cbm} м³
+                    <React.Fragment key={p.id}>
+                      {/* Drop indicator before item */}
+                      {dragOverId === p.id && draggedId !== p.id && (
+                        <div className="h-1 bg-blue-500 rounded-full my-1 animate-pulse" />
+                      )}
+                      <div
+                        draggable
+                        onDragStart={() => handleDragStart(p.id)}
+                        onDragEnter={() => handleDragEnter(p.id)}
+                        onDragLeave={handleDragLeave}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => handleDrop(e, p.id)}
+                        onDragEnd={handleDragEnd}
+                        className={`bg-white border-2 rounded-lg p-4 flex items-center gap-3 cursor-move transition-all ${
+                          draggedId === p.id 
+                            ? 'border-blue-500 shadow-lg opacity-50' 
+                            : dragOverId === p.id
+                              ? 'border-blue-400 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-300'
+                        }`}
+                      >
+                        <DragHandle />
+                        
+                        <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-sm font-medium">
+                          {idx + 1}
+                        </div>
+                        
+                        <div className="flex-1">
+                          <div className="font-medium">{p.pl_number}</div>
+                          <div className="text-sm text-gray-500">
+                            {typeof p.client === "string" ? p.client : p.client?.name || "—"} • {p.weight_kg} кг • {p.volume_cbm} м³
+                          </div>
+                        </div>
+                        
+                        <div className="text-xs text-gray-400">
+                          {idx === 0 ? 'Первый' : idx === pickedPLs.length - 1 ? 'Последний' : `Позиция ${idx + 1}`}
                         </div>
                       </div>
-                      
-                      <div className="text-xs text-gray-400">
-                        {idx === 0 ? 'Первый' : idx === pickedPLs.length - 1 ? 'Последний' : `Позиция ${idx + 1}`}
-                      </div>
-                    </div>
+                    </React.Fragment>
                   ))}
+                  {/* Final drop zone */}
+                  <div
+                    onDragEnter={() => handleDragEnter('__END__')}
+                    onDragLeave={handleDragLeave}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => handleDrop(e, '__END__')}
+                    className={`h-12 rounded-lg border-2 border-dashed flex items-center justify-center text-sm transition-colors ${
+                      dragOverId === '__END__' 
+                        ? 'border-blue-500 bg-blue-50 text-blue-600' 
+                        : 'border-gray-300 text-gray-400'
+                    }`}
+                  >
+                    {dragOverId === '__END__' ? 'Отпустите для перемещения в конец' : 'Перетащите сюда для перемещения в конец'}
+                  </div>
                 </div>
               )}
               

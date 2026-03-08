@@ -19,6 +19,7 @@ import LoadingScreen from "./components/LoadingScreen.jsx";
 import LoginScreen from "./components/auth/LoginScreen.jsx";
 import Header from "./components/layout/Header.jsx";
 import Footer from "./components/layout/Footer.jsx";
+import UserProfileModal from "./components/user/UserProfileModal.jsx";
 
 // Вьюхи
 import CargoView from "./views/CargoView.jsx";
@@ -81,6 +82,8 @@ function MainApp({ user, onLogout }) {
   const [cons, setCons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [currentUser, setCurrentUser] = useState(user);
 
   // активная вкладка
   const [mode, setMode] = useState("cargo");
@@ -115,6 +118,11 @@ function MainApp({ user, onLogout }) {
     setIsRefreshing(true);
     await loadData(false);
     setIsRefreshing(false);
+  }
+
+  // обновление пользователя после изменения профиля
+  function handleUserUpdate(updatedUser) {
+    setCurrentUser(prev => ({ ...prev, ...updatedUser }));
   }
 
   // добавление клиента
@@ -177,7 +185,7 @@ function MainApp({ user, onLogout }) {
 
   return (
     <div className="min-h-screen bg-gray-900 flex flex-col">
-      <Header mode={mode} onChangeMode={setMode} user={user} onLogout={onLogout} onRefresh={handleRefresh} isRefreshing={isRefreshing} />
+      <Header mode={mode} onChangeMode={setMode} user={currentUser} onLogout={onLogout} onRefresh={handleRefresh} isRefreshing={isRefreshing} onOpenProfile={() => setShowProfile(true)} />
 
       <main className="flex-1 px-2 sm:px-4 md:px-6 py-4">
         {mode === "cargo" && (
@@ -193,7 +201,7 @@ function MainApp({ user, onLogout }) {
             openPLId={openPLId}
             onConsumeOpenPL={() => setOpenPLId(null)}
             clients={clients}
-            currentUser={user}
+            currentUser={currentUser}
             setClients={setClients}
             api={{
               createClient,
@@ -232,6 +240,15 @@ function MainApp({ user, onLogout }) {
       </main>
 
       <Footer />
+
+      {/* User Profile Modal */}
+      {showProfile && (
+        <UserProfileModal
+          user={currentUser}
+          onClose={() => setShowProfile(false)}
+          onUpdate={handleUserUpdate}
+        />
+      )}
     </div>
   );
 }

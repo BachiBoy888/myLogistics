@@ -169,6 +169,13 @@
       "when": 1772922400000,
       "tag": "0023_add_user_is_active",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1772956800000,
+      "tag": "0024_add_consolidation_capacity",
+      "breakpoints": true
     }
   ]
 }

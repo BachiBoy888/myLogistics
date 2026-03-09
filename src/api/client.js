@@ -196,6 +196,7 @@ export function normalizeCons(s) {
       : Array.isArray(s.plIds)
       ? s.plIds
       : [],
+    pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
     capacity_cbm: s.capacity_cbm ?? s.capacityCbm ?? 0,
     capacity_kg: s.capacity_kg ?? s.capacityKg ?? 0,
     created_at: s.created_at ?? s.createdAt ?? new Date().toISOString(),
@@ -588,12 +589,12 @@ export async function getConsolidationStatusHistory(id) {
   const json = await req(`/consolidations/${id}/status-history`);
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
-export async function setConsolidationPLs(id, targetIds = []) {
+export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {}) {
   const target = Array.from(new Set((targetIds || []).map(Number))).filter(Boolean);
   try {
     const res = await mutate(
       `/consolidations/${id}/pl`,
-      { method: "PUT", body: { plIds: target } },
+      { method: "PUT", body: { plIds: target, plLoadOrders } },
       ["/consolidations", `/consolidations/${id}`]
     );
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);

@@ -3,10 +3,15 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { 
-  X, MoreVertical, Edit3, Trash2, Package, Truck, 
-  ChevronUp, ChevronDown, AlertTriangle, Save, XCircle 
+  X, MoreVertical, Edit3, Trash2, Package, Truck, Calculator,
+  ChevronUp, ChevronDown, AlertTriangle, Save, XCircle, Plus, Trash
 } from "lucide-react";
 import { humanConsStatus, badgeColorByConsStatus, humanStatus } from "../../constants/statuses.js";
+import { 
+  createConsolidationExpense, 
+  updateConsolidationExpense, 
+  deleteConsolidationExpense 
+} from "../../api/client.js";
 
 // Simple drag handle component
 const DragHandle = () => (
@@ -134,7 +139,7 @@ export default function ConsolidationDetailsModal({
   onSavePLs,
   onUpdateCons,
 }) {
-  const [activeTab, setActiveTab] = useState("loading"); // "loading" | "layout"
+  const [activeTab, setActiveTab] = useState("loading"); // "loading" | "layout" | "calculator"
   const [showMenu, setShowMenu] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -147,22 +152,31 @@ export default function ConsolidationDetailsModal({
   // PL management state
   const [pickedIds, setPickedIds] = useState(cons.pl_ids || []);
   const [plOrders, setPlOrders] = useState(cons.pl_load_orders || {});
+  const [plDetails, setPlDetails] = useState(cons.pl_details || {});
   const [saving, setSaving] = useState(false);
   
   // Drag state
   const [draggedId, setDraggedId] = useState(null);
-  const [dragOverId, setDragOverId] = useState(null); // для визуального индикатора drop target
+  const [dragOverId, setDragOverId] = useState(null);
+  
+  // Calculator state
+  const [machineCost, setMachineCost] = useState(cons.machine_cost || 0);
+  const [expenses, setExpenses] = useState(cons.expenses || []);
+  const [newExpense, setNewExpense] = useState({ title: '', comment: '', amount: '' });
+  const [showAddExpense, setShowAddExpense] = useState(false);
 
   useEffect(() => {
     setPickedIds(cons.pl_ids || []);
-    // Инициализируем порядок для всех PL последовательно
     const initialOrders = {};
     (cons.pl_ids || []).forEach((id, idx) => {
       initialOrders[id] = cons.pl_load_orders?.[id] ?? idx;
     });
     setPlOrders(initialOrders);
+    setPlDetails(cons.pl_details || {});
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
+    setMachineCost(cons.machine_cost || 0);
+    setExpenses(cons.expenses || []);
     setHasChanges(false);
   }, [cons.id]);
 
@@ -299,18 +313,136 @@ export default function ConsolidationDetailsModal({
     setDragOverId(null);
   }
 
+  // Calculator functions
+  const totalExpenses = useMemo(() => {
+    return expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+  }, [expenses]);
+
+  const totalMachineCost = useMemo(() => {
+    return Number(machineCost) + totalExpenses;
+  }, [machineCost, totalExpenses]);
+
+  const calculatorStats = useMemo(() => {
+    const pls = pickedPLs;
+    const totalWeight = pls.reduce((s, p) => s + (p.weight_kg || 0), 0);
+    const totalVolume = pls.reduce((s, p) => s + (p.volume_cbm || 0), 0);
+    
+    // Calculate revenue from client prices
+    const revenue = pls.reduce((s, p) => {
+      const detail = plDetails[p.id] || {};
+      return s + (Number(detail.clientPrice) || 0);
+    }, 0);
+    
+    // Calculate leg1 costs (from PL calculator data)
+    const leg1Costs = pls.reduce((s, p) => {
+      // Use PL's leg1 data if available
+      const leg1Amount = p.leg1_amount_usd || p.leg1AmountUsd || p.calculator?.leg1?.amount_usd || 0;
+      return s + (Number(leg1Amount) || 0);
+    }, 0);
+    
+    // Calculate total allocated machine cost
+    const allocatedMachineCost = pls.reduce((s, p) => {
+      const detail = plDetails[p.id] || {};
+      return s + (Number(detail.machineCostShare) || 0);
+    }, 0);
+    
+    const profit = revenue - leg1Costs - totalMachineCost;
+    const margin = revenue > 0 ? (profit / revenue) * 100 : 0;
+    
+    return {
+      revenue,
+      leg1Costs,
+      machineCost: totalMachineCost,
+      allocatedMachineCost,
+      profit,
+      margin,
+      totalWeight,
+      totalVolume,
+    };
+  }, [pickedPLs, plDetails, totalMachineCost]);
+
+  // Auto-allocate machine costs
+  function autoAllocateCosts() {
+    const pls = pickedPLs;
+    if (pls.length === 0 || totalMachineCost === 0) return;
+    
+    const totalWeight = pls.reduce((s, p) => s + (p.weight_kg || 0), 0);
+    const totalVolume = pls.reduce((s, p) => s + (p.volume_cbm || 0), 0);
+    
+    const newDetails = { ...plDetails };
+    
+    pls.forEach((p) => {
+      const weightShare = totalWeight > 0 ? (p.weight_kg || 0) / totalWeight : 0;
+      const volumeShare = totalVolume > 0 ? (p.volume_cbm || 0) / totalVolume : 0;
+      const allocationFactor = Math.max(weightShare, volumeShare);
+      
+      newDetails[p.id] = {
+        ...newDetails[p.id],
+        machineCostShare: Number((totalMachineCost * allocationFactor).toFixed(2)),
+        allocationMode: 'auto',
+      };
+    });
+    
+    setPlDetails(newDetails);
+    markChanged();
+  }
+
+  function updatePLDetail(plId, field, value) {
+    setPlDetails(prev => ({
+      ...prev,
+      [plId]: {
+        ...prev[plId],
+        [field]: value,
+        ...(field === 'machineCostShare' ? { allocationMode: 'manual' } : {}),
+      },
+    }));
+    markChanged();
+  }
+
+  async function handleAddExpense() {
+    if (!newExpense.title || !newExpense.amount) return;
+    
+    try {
+      const created = await createConsolidationExpense(cons.id, {
+        title: newExpense.title,
+        comment: newExpense.comment,
+        amount: Number(newExpense.amount),
+      });
+      setExpenses(prev => [created, ...prev]);
+      setNewExpense({ title: '', comment: '', amount: '' });
+      setShowAddExpense(false);
+      markChanged();
+    } catch (err) {
+      console.error('Failed to add expense:', err);
+    }
+  }
+
+  async function handleDeleteExpense(expenseId) {
+    try {
+      await deleteConsolidationExpense(cons.id, expenseId);
+      setExpenses(prev => prev.filter(e => e.id !== expenseId));
+      markChanged();
+    } catch (err) {
+      console.error('Failed to delete expense:', err);
+    }
+  }
+
   async function handleSave() {
     if (saving) return;
     try {
       setSaving(true);
-      await onSavePLs?.(cons.id, pickedIds, plOrders);
       
-      // Save capacity if changed
-      if (capacityKg !== cons.capacity_kg || capacityCbm !== cons.capacity_cbm) {
-        await onUpdateCons?.(cons.id, {
-          capacityKg: Number(capacityKg) || 0,
-          capacityCbm: Number(capacityCbm) || 0,
-        });
+      // Save PLs with orders and calculator details
+      await onSavePLs?.(cons.id, pickedIds, plOrders, plDetails);
+      
+      // Save capacity and machine cost
+      const consUpdate = {};
+      if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
+      if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
+      if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
+      
+      if (Object.keys(consUpdate).length > 0) {
+        await onUpdateCons?.(cons.id, consUpdate);
       }
       
       setHasChanges(false);
@@ -519,6 +651,17 @@ export default function ConsolidationDetailsModal({
             <Truck className="w-4 h-4" />
             Расположение грузов
           </button>
+          <button
+            className={`flex-1 py-3 text-sm font-medium flex items-center justify-center gap-2 ${
+              activeTab === 'calculator'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+            onClick={() => setActiveTab('calculator')}
+          >
+            <Calculator className="w-4 h-4" />
+            Калькулятор
+          </button>
         </div>
 
         {/* Content */}
@@ -723,6 +866,146 @@ export default function ConsolidationDetailsModal({
             </div>
           )}
         </div>
+
+        {/* Calculator Tab Content */}
+        {activeTab === 'calculator' && (
+          <div className="flex-1 overflow-auto p-4 space-y-6">
+            {/* Summary Block */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm font-medium mb-3">Сводка по консолидации</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div className="bg-white rounded p-3">
+                  <div className="text-xs text-gray-500">Доход</div>
+                  <div className="text-lg font-semibold text-green-600">${calculatorStats.revenue.toFixed(2)}</div>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <div className="text-xs text-gray-500">Расход 1-го плеча</div>
+                  <div className="text-lg font-semibold text-orange-600">${calculatorStats.leg1Costs.toFixed(2)}</div>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <div className="text-xs text-gray-500">Расход машины</div>
+                  <div className="text-lg font-semibold text-orange-600">${calculatorStats.machineCost.toFixed(2)}</div>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <div className="text-xs text-gray-500">Прибыль</div>
+                  <div className={`text-lg font-semibold ${calculatorStats.profit > 0 ? 'text-green-600' : calculatorStats.profit < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                    {calculatorStats.profit > 0 ? '+' : ''}${calculatorStats.profit.toFixed(2)}
+                  </div>
+                </div>
+                <div className="bg-white rounded p-3">
+                  <div className="text-xs text-gray-500">Маржа</div>
+                  <div className={`text-lg font-semibold ${calculatorStats.margin > 20 ? 'text-green-600' : calculatorStats.margin < 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                    {calculatorStats.margin.toFixed(1)}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Machine Costs Block */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="text-sm font-medium mb-3">Расходы машины</div>
+              <div className="mb-4">
+                <label className="text-sm text-gray-600 mb-1 block">Стоимость машины (граница Китая → Кант)</label>
+                <input type="number" value={machineCost} onChange={(e) => { setMachineCost(e.target.value); markChanged(); }} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0.00" />
+              </div>
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">Дополнительные расходы</span>
+                  <button onClick={() => setShowAddExpense(!showAddExpense)} className="text-xs bg-blue-600 text-white px-3 py-1 rounded flex items-center gap-1">
+                    <Plus className="w-3 h-3" /> Добавить
+                  </button>
+                </div>
+                {showAddExpense && (
+                  <div className="bg-white rounded p-3 mb-3 space-y-2">
+                    <input type="text" placeholder="Название" value={newExpense.title} onChange={(e) => setNewExpense({ ...newExpense, title: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+                    <input type="text" placeholder="Комментарий" value={newExpense.comment} onChange={(e) => setNewExpense({ ...newExpense, comment: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+                    <input type="number" placeholder="Сумма" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+                    <div className="flex gap-2">
+                      <button onClick={handleAddExpense} className="bg-green-600 text-white px-4 py-2 rounded text-sm">Добавить</button>
+                      <button onClick={() => setShowAddExpense(false)} className="border px-4 py-2 rounded text-sm">Отмена</button>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {expenses.map((expense) => (
+                    <div key={expense.id} className="bg-white rounded p-3 flex items-center justify-between">
+                      <div>
+                        <div className="font-medium text-sm">{expense.title}</div>
+                        {expense.comment && <div className="text-xs text-gray-500">{expense.comment}</div>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="font-medium">${Number(expense.amount).toFixed(2)}</span>
+                        <button onClick={() => handleDeleteExpense(expense.id)} className="text-red-600 hover:bg-red-50 p-1 rounded"><Trash className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t pt-3 space-y-1">
+                <div className="flex justify-between text-sm"><span>Стоимость машины:</span><span>${Number(machineCost).toFixed(2)}</span></div>
+                <div className="flex justify-between text-sm"><span>Доп. расходы:</span><span>${totalExpenses.toFixed(2)}</span></div>
+                <div className="flex justify-between font-medium border-t pt-2"><span>Итого расходы машины:</span><span>${totalMachineCost.toFixed(2)}</span></div>
+              </div>
+            </div>
+
+            {/* Cargo Table */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="text-sm font-medium">Распределение расходов по грузам</div>
+                <button onClick={autoAllocateCosts} className="text-xs bg-blue-600 text-white px-3 py-1 rounded">Авто-распределить</button>
+              </div>
+              <div className="bg-white rounded-lg overflow-x-auto">
+                <table className="w-full text-sm min-w-[800px]">
+                  <thead className="bg-gray-100">
+                    <tr>
+                      <th className="text-left p-2">PL</th>
+                      <th className="text-left p-2">Клиент</th>
+                      <th className="text-right p-2">Вес/Объём</th>
+                      <th className="text-right p-2">Цена клиенту</th>
+                      <th className="text-right p-2">Расход 1пл</th>
+                      <th className="text-right p-2">Расход маш</th>
+                      <th className="text-right p-2">$/кг</th>
+                      <th className="text-right p-2">Прибыль</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pickedPLs.map((p) => {
+                      const detail = plDetails[p.id] || {};
+                      const clientPrice = Number(detail.clientPrice) || 0;
+                      const leg1Cost = Number(p.leg1_amount_usd || p.leg1AmountUsd || 0);
+                      const machineShare = Number(detail.machineCostShare) || 0;
+                      const profit = clientPrice - leg1Cost - machineShare;
+                      const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
+                      return (
+                        <tr key={p.id} className="hover:bg-gray-50">
+                          <td className="p-2 font-medium">{p.pl_number}</td>
+                          <td className="p-2 text-gray-600">{typeof p.client === 'string' ? p.client : p.client?.name || '—'}</td>
+                          <td className="p-2 text-right text-gray-500">{p.weight_kg}кг / {p.volume_cbm}м³</td>
+                          <td className="p-2"><input type="number" value={detail.clientPrice || ''} onChange={(e) => updatePLDetail(p.id, 'clientPrice', e.target.value)} className="w-20 border rounded px-2 py-1 text-right" placeholder="0" /></td>
+                          <td className="p-2 text-right text-gray-500">${leg1Cost.toFixed(2)}</td>
+                          <td className="p-2"><input type="number" value={detail.machineCostShare || ''} onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} className="w-20 border rounded px-2 py-1 text-right" placeholder="0" /></td>
+                          <td className="p-2 text-right text-gray-500">{usdPerKg.toFixed(2)}</td>
+                          <td className={`p-2 text-right font-medium ${profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-600' : ''}`}>{profit > 0 ? '+' : ''}${profit.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {calculatorStats.allocatedMachineCost !== totalMachineCost && (
+                <div className={`mt-3 p-3 rounded text-sm ${Math.abs(calculatorStats.allocatedMachineCost - totalMachineCost) < 0.01 ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700'}`}>
+                  <div className="flex justify-between">
+                    <span>Распределено: ${calculatorStats.allocatedMachineCost.toFixed(2)}</span>
+                    <span>Всего: ${totalMachineCost.toFixed(2)}</span>
+                  </div>
+                  {Math.abs(calculatorStats.allocatedMachineCost - totalMachineCost) >= 0.01 && (
+                    <div className="mt-1">Осталось распределить: ${(totalMachineCost - calculatorStats.allocatedMachineCost).toFixed(2)}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="border-t p-4 flex items-center justify-between">

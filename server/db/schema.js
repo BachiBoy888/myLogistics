@@ -179,6 +179,7 @@ export const consolidations = pgTable(
     status: consolidationStatusEnum("status").notNull().default("loaded"),
     capacityKg: numeric("capacity_kg", { precision: 12, scale: 3 }).default("0"),
     capacityCbm: numeric("capacity_cbm", { precision: 12, scale: 3 }).default("0"),
+    machineCost: numeric("machine_cost", { precision: 12, scale: 2 }).default("0"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -199,6 +200,9 @@ export const consolidationPl = pgTable(
       .notNull()
       .references(() => pl.id, { onDelete: "cascade" }),
     loadOrder: integer("load_order").default(0), // порядок погрузки
+    clientPrice: numeric("client_price", { precision: 12, scale: 2 }).default("0"),
+    machineCostShare: numeric("machine_cost_share", { precision: 12, scale: 2 }).default("0"),
+    allocationMode: text("allocation_mode").default("auto"),
     addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -225,6 +229,28 @@ export const consolidationStatusHistory = pgTable(
   (t) => ({
     byCons: index("idx_consolidation_status_history_cons").on(t.consolidationId),
     byToStatus: index("idx_consolidation_status_history_to").on(t.toStatus),
+  })
+);
+
+/* =======================
+   Consolidation Expenses (for profit calculator)
+======================= */
+
+export const consolidationExpenses = pgTable(
+  "consolidation_expenses",
+  {
+    id: uuid("id").default(sql`gen_random_uuid()`).primaryKey(),
+    consolidationId: uuid("consolidation_id")
+      .notNull()
+      .references(() => consolidations.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    comment: text("comment"),
+    amount: numeric("amount", { precision: 12, scale: 2 }).default("0"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    byCons: index("idx_consolidation_expenses_cons").on(t.consolidationId),
   })
 );
 

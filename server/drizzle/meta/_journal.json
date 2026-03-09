@@ -176,6 +176,13 @@
       "when": 1772956800000,
       "tag": "0024_add_consolidation_capacity",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1773014400000,
+      "tag": "0025_add_consolidation_calculator",
+      "breakpoints": true
     }
   ]
 }

@@ -197,8 +197,11 @@ export function normalizeCons(s) {
       ? s.plIds
       : [],
     pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
+    pl_details: s.pl_details ?? s.plDetails ?? {},
     capacity_cbm: s.capacity_cbm ?? s.capacityCbm ?? 0,
     capacity_kg: s.capacity_kg ?? s.capacityKg ?? 0,
+    machine_cost: s.machine_cost ?? s.machineCost ?? 0,
+    expenses: s.expenses ?? [],
     created_at: s.created_at ?? s.createdAt ?? new Date().toISOString(),
     updated_at: s.updated_at ?? s.updatedAt ?? new Date().toISOString(),
   };
@@ -589,12 +592,12 @@ export async function getConsolidationStatusHistory(id) {
   const json = await req(`/consolidations/${id}/status-history`);
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
-export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {}) {
+export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {}, plDetails = {}) {
   const target = Array.from(new Set((targetIds || []).map(Number))).filter(Boolean);
   try {
     const res = await mutate(
       `/consolidations/${id}/pl`,
-      { method: "PUT", body: { plIds: target, plLoadOrders } },
+      { method: "PUT", body: { plIds: target, plLoadOrders, plDetails } },
       ["/consolidations", `/consolidations/${id}`]
     );
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
@@ -607,6 +610,36 @@ export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {})
     for (const pid of toRemove) await removePLFromConsolidation(id, pid);
     return getConsolidation(id);
   }
+}
+
+// Consolidation Expenses
+export async function listConsolidationExpenses(consId) {
+  return req(`/consolidations/${consId}/expenses`);
+}
+
+export async function createConsolidationExpense(consId, { title, comment, amount }) {
+  return mutate(
+    `/consolidations/${consId}/expenses`,
+    { method: "POST", body: { title, comment, amount } },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+}
+
+export async function updateConsolidationExpense(consId, expenseId, { title, comment, amount }) {
+  return mutate(
+    `/consolidations/${consId}/expenses/${expenseId}`,
+    { method: "PATCH", body: { title, comment, amount } },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+}
+
+export async function deleteConsolidationExpense(consId, expenseId) {
+  await mutate(
+    `/consolidations/${consId}/expenses/${expenseId}`,
+    { method: "DELETE" },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+  return true;
 }
 
 export async function listUsers(params = {}) {

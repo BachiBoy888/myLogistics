@@ -696,9 +696,9 @@ export default function CargoView({
                 showError("Не удалось расформировать консолидацию");
               }
             }}
-            onSavePLs={async (id, plIds, plLoadOrders) => {
+            onSavePLs={async (id, plIds, plLoadOrders, plDetails) => {
               try {
-                await API.setConsPLs(id, plIds.map(Number), plLoadOrders);
+                await API.setConsPLs(id, plIds.map(Number), plLoadOrders, plDetails);
                 await Promise.all([refreshCons(), refreshPLs()]);
               } catch (e) {
                 showError("Не удалось сохранить состав консолидации");

@@ -302,9 +302,15 @@ export default async function consolidationsRoutes(app) {
     async (req, reply) => {
       const { id } = req.params;
       try {
+        console.log("[DEBUG] PUT /consolidations/:id/pl - raw body:", JSON.stringify(req.body, null, 2));
+        
         const raw = { ...(req.body ?? {}) };
         if (Array.isArray(raw.plIds)) raw.plIds = raw.plIds.map((v) => Number(v));
+        
+        console.log("[DEBUG] After mapping plIds:", raw.plIds);
+        
         const body = SetPLsBody.parse(raw);
+        console.log("[DEBUG] Parsed body:", JSON.stringify(body, null, 2));
 
         // Валидация статусов PL
         if (body.plIds.length) {

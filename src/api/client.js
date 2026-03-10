@@ -204,6 +204,18 @@ export function normalizePL(s) {
 // CONSOLIDATION (сервер → UI)
 export function normalizeCons(s) {
   if (!s) return null;
+  
+  // Normalize pl_details - convert string numeric values to numbers
+  const rawPlDetails = s.pl_details ?? s.plDetails ?? {};
+  const normalizedPlDetails = {};
+  Object.entries(rawPlDetails).forEach(([plId, details]) => {
+    normalizedPlDetails[plId] = {
+      clientPrice: Number(details.clientPrice ?? details.client_price ?? 0) || 0,
+      machineCostShare: Number(details.machineCostShare ?? details.machine_cost_share ?? 0) || 0,
+      allocationMode: details.allocationMode ?? details.allocation_mode ?? 'auto',
+    };
+  });
+  
   return {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
@@ -215,10 +227,10 @@ export function normalizeCons(s) {
       ? s.plIds
       : [],
     pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
-    pl_details: s.pl_details ?? s.plDetails ?? {},
-    capacity_cbm: s.capacity_cbm ?? s.capacityCbm ?? 0,
-    capacity_kg: s.capacity_kg ?? s.capacityKg ?? 0,
-    machine_cost: s.machine_cost ?? s.machineCost ?? 0,
+    pl_details: normalizedPlDetails,
+    capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
+    capacity_kg: Number(s.capacity_kg ?? s.capacityKg ?? 0),
+    machine_cost: Number(s.machine_cost ?? s.machineCost ?? 0),
     expenses: (s.expenses ?? []).map(e => ({
       id: e.id,
       type: e.type ?? 'other',

@@ -18,6 +18,14 @@ export default function PLCostSummary({ pl, onUpdate }) {
     const cp = pl.quote?.client_price || pl.client_price || 0;
     return cp !== 0 ? String(cp) : "";
   });
+  
+  // Leg 1 editable state
+  const [leg1Input, setLeg1Input] = useState(() => {
+    const val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
+    return val !== 0 ? String(val) : "";
+  });
+  const [leg1Currency, setLeg1Currency] = useState(pl.leg1_currency || pl.leg1Currency || "USD");
+  
   const [saving, setSaving] = useState(false);
   const [savedStamp, setSavedStamp] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -26,14 +34,18 @@ export default function PLCostSummary({ pl, onUpdate }) {
   useEffect(() => {
     const cp = pl.quote?.client_price || pl.client_price || 0;
     setClientPrice(cp !== 0 ? String(cp) : "");
+    
+    const leg1Val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
+    setLeg1Input(leg1Val !== 0 ? String(leg1Val) : "");
+    setLeg1Currency(pl.leg1_currency || pl.leg1Currency || "USD");
   }, [pl.id]);
 
   // Get leg costs from PL
-  const leg1Amount = Number(pl.leg1_amount_usd || pl.leg1AmountUsd || pl.calculator?.leg1AmountUSD || 0);
-  const leg2Amount = Number(pl.leg2_amount_usd || pl.leg2AmountUsd || pl.calculator?.leg2AmountUSD || 0);
+  const leg1AmountUsd = Number(pl.leg1_amount_usd || pl.leg1AmountUsd || pl.calculator?.leg1AmountUSD || 0);
+  const leg2AmountUsd = Number(pl.leg2_amount_usd || pl.leg2AmountUsd || pl.calculator?.leg2AmountUSD || 0);
 
   // Calculate totals
-  const costPrice = leg1Amount + leg2Amount;
+  const costPrice = leg1AmountUsd + leg2AmountUsd;
   const cp = Number(clientPrice) || 0;
   const profit = cp - costPrice;
   const marginPct = cp > 0 ? (profit / cp) * 100 : 0;
@@ -42,11 +54,28 @@ export default function PLCostSummary({ pl, onUpdate }) {
     setErrorMsg("");
     setSaving(true);
     try {
+      // Convert leg1 to USD if needed (simplified - in real app would use FX rates)
+      const leg1Val = Number(leg1Input) || 0;
+      const leg1Usd = leg1Currency === 'USD' ? leg1Val : leg1Val; // For now assume USD or already converted
+      
       await updatePL(pl.id, {
         clientPrice: Number(clientPrice) || 0,
+        leg1Amount: leg1Val,
+        leg1Currency: leg1Currency,
+        leg1AmountUsd: leg1Usd,
+        leg1UsdPerKg: pl.weight_kg > 0 ? leg1Usd / pl.weight_kg : 0,
+        leg1UsdPerM3: pl.volume_cbm > 0 ? leg1Usd / pl.volume_cbm : 0,
       });
-      onUpdate?.({ client_price: Number(clientPrice) || 0 });
+      
+      onUpdate?.({ 
+        client_price: Number(clientPrice) || 0,
+        leg1_amount: leg1Val,
+        leg1_currency: leg1Currency,
+        leg1_amount_usd: leg1Usd,
+      });
+      
       setSavedStamp(new Date().toISOString());
+      setTimeout(() => setSavedStamp(null), 2000);
     } catch (e) {
       setErrorMsg(e?.message || "Не удалось сохранить");
     } finally {
@@ -70,36 +99,54 @@ export default function PLCostSummary({ pl, onUpdate }) {
     <div className="space-y-4 text-sm">
       {/* Legs Row */}
       <div className="grid grid-cols-2 gap-4">
-        {/* Leg 1 */}
+        {/* Leg 1 - Editable */}
         <div className="rounded-xl border-2 border-blue-200 p-3 bg-blue-50/50">
           <div className="font-medium mb-2 text-blue-900">1. Ставка до границы (Китай)</div>
           <div className="bg-white rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-1">Стоимость плеча</div>
-            <div className="text-xl font-semibold">${formatMoney(leg1Amount)}</div>
-            {(pl.leg1_currency || pl.leg1Currency) !== 'USD' && (pl.leg1_amount || pl.leg1Amount) > 0 && (
-              <div className="text-xs text-gray-500 mt-1">
-                {formatMoney(pl.leg1_amount || pl.leg1Amount)} {pl.leg1_currency || pl.leg1Currency}
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={leg1Input}
+                onChange={(e) => setLeg1Input(e.target.value)}
+                className="flex-1 border rounded px-2 py-1 text-lg font-semibold"
+                placeholder="0.00"
+              />
+              <select
+                value={leg1Currency}
+                onChange={(e) => setLeg1Currency(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="KGS">KGS</option>
+              </select>
+            </div>
+            {leg1AmountUsd > 0 && leg1Currency !== 'USD' && (
+              <div className="text-xs text-gray-500">
+                ≈ ${formatMoney(leg1AmountUsd)} USD
               </div>
             )}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/кг</div>
-              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg1Amount / pl.weight_kg : 0, 4)}</div>
+              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg1AmountUsd / pl.weight_kg : 0, 4)}</div>
             </div>
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/м³</div>
-              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg1Amount / pl.volume_cbm : 0, 2)}</div>
+              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg1AmountUsd / pl.volume_cbm : 0, 2)}</div>
             </div>
           </div>
         </div>
 
-        {/* Leg 2 */}
+        {/* Leg 2 - Readonly (from consolidation) */}
         <div className="rounded-xl border-2 border-emerald-200 p-3 bg-emerald-50/50">
           <div className="font-medium mb-2 text-emerald-900">2. Ставка с границы до Канта</div>
           <div className="bg-white rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-1">Стоимость плеча</div>
-            <div className="text-xl font-semibold">${formatMoney(leg2Amount)}</div>
+            <div className="text-xl font-semibold">${formatMoney(leg2AmountUsd)}</div>
             {(pl.leg2_currency || pl.leg2Currency) !== 'USD' && (pl.leg2_amount || pl.leg2Amount) > 0 && (
               <div className="text-xs text-gray-500 mt-1">
                 {formatMoney(pl.leg2_amount || pl.leg2Amount)} {pl.leg2_currency || pl.leg2Currency}
@@ -109,11 +156,11 @@ export default function PLCostSummary({ pl, onUpdate }) {
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/кг</div>
-              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg2Amount / pl.weight_kg : 0, 4)}</div>
+              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg2AmountUsd / pl.weight_kg : 0, 4)}</div>
             </div>
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/м³</div>
-              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg2Amount / pl.volume_cbm : 0, 2)}</div>
+              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg2AmountUsd / pl.volume_cbm : 0, 2)}</div>
             </div>
           </div>
         </div>
@@ -137,7 +184,8 @@ export default function PLCostSummary({ pl, onUpdate }) {
           <div className="relative flex-1">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">$</span>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={clientPrice}
               onChange={(e) => setClientPrice(e.target.value)}
               className="w-full border rounded-lg pl-7 pr-3 py-2"

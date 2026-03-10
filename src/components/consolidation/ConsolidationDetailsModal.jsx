@@ -359,9 +359,18 @@ export default function ConsolidationDetailsModal({
       return s + (Number(detail.clientPrice) || 0);
     }, 0);
     
-    // Calculate leg1 costs from PL data
+    // Calculate leg1 costs from PL data - using multiple possible field names
     const leg1Costs = pls.reduce((s, p) => {
-      return s + (Number(p.leg1_amount_usd) || 0);
+      const leg1Usd = Number(
+        p.leg1_amount_usd || 
+        p.leg1AmountUsd || 
+        p.leg1_amount || 
+        p.leg1Amount || 
+        p.calculator?.leg1AmountUSD || 
+        p.calculator?.leg1AmountUsd || 
+        0
+      );
+      return s + leg1Usd;
     }, 0);
     
     // Calculate total allocated machine cost
@@ -554,6 +563,34 @@ export default function ConsolidationDetailsModal({
       </div>
     );
   };
+
+  // Get allocation status display
+  const getAllocationStatus = () => {
+    const diff = calculatorStats.allocatedMachineCost - totalMachineCost;
+    const absDiff = Math.abs(diff);
+    
+    if (absDiff < 0.01) {
+      return {
+        type: 'success',
+        title: 'Распределено полностью',
+        message: '✓ Распределение полное',
+      };
+    } else if (diff < 0) {
+      return {
+        type: 'warning',
+        title: `Осталось распределить: $${(-diff).toFixed(2)}`,
+        message: `Осталось распределить: $${(-diff).toFixed(2)}`,
+      };
+    } else {
+      return {
+        type: 'excess',
+        title: `Излишек распределения: $${diff.toFixed(2)}`,
+        message: `Излишек распределения: $${diff.toFixed(2)}`,
+      };
+    }
+  };
+
+  const allocationStatus = getAllocationStatus();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
@@ -953,7 +990,14 @@ export default function ConsolidationDetailsModal({
                 <div className="text-sm font-medium mb-3">Расходы машины</div>
                 <div className="mb-4">
                   <label className="text-sm text-gray-600 mb-1 block">Стоимость машины (граница Китая → Кант)</label>
-                  <input type="number" value={machineCost} onChange={(e) => { setMachineCost(e.target.value); markChanged(); }} className="w-full border rounded-lg px-3 py-2 text-sm" placeholder="0.00" />
+                  <input 
+                    type="text" 
+                    inputMode="decimal"
+                    value={machineCost} 
+                    onChange={(e) => { setMachineCost(e.target.value); markChanged(); }} 
+                    className="w-full border rounded-lg px-3 py-2 text-sm" 
+                    placeholder="0.00" 
+                  />
                 </div>
                 <div className="mb-4">
                   <div className="flex items-center justify-between mb-2">
@@ -973,7 +1017,7 @@ export default function ConsolidationDetailsModal({
                         <option value="other">Прочие</option>
                       </select>
                       <input type="text" placeholder="Комментарий" value={newExpense.comment} onChange={(e) => setNewExpense({ ...newExpense, comment: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
-                      <input type="number" placeholder="Сумма" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
+                      <input type="text" inputMode="decimal" placeholder="Сумма" value={newExpense.amount} onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })} className="w-full border rounded px-3 py-2 text-sm" />
                       <div className="flex gap-2">
                         <button onClick={handleAddExpense} className="bg-green-600 text-white px-4 py-2 rounded text-sm">Добавить</button>
                         <button onClick={() => setShowAddExpense(false)} className="border px-4 py-2 rounded text-sm">Отмена</button>
@@ -996,7 +1040,7 @@ export default function ConsolidationDetailsModal({
                   </div>
                 </div>
                 <div className="border-t pt-3 space-y-1">
-                  <div className="flex justify-between text-sm"><span>Стоимость машины:</span><span>${Number(machineCost).toFixed(2)}</span></div>
+                  <div className="flex justify-between text-sm"><span>Стоимость машины:</span><span>${Number(machineCost || 0).toFixed(2)}</span></div>
                   <div className="flex justify-between text-sm"><span>Доп. расходы:</span><span>${totalExpenses.toFixed(2)}</span></div>
                   <div className="flex justify-between font-medium border-t pt-2"><span>Итого расходы машины:</span><span>${totalMachineCost.toFixed(2)}</span></div>
                 </div>
@@ -1026,7 +1070,16 @@ export default function ConsolidationDetailsModal({
                       {pickedPLs.map((p) => {
                         const detail = plDetails[p.id] || {};
                         const clientPrice = Number(detail.clientPrice) || 0;
-                        const leg1Cost = Number(p.leg1_amount_usd) || 0;
+                        // Get leg1 cost from PL with multiple fallback options
+                        const leg1Cost = Number(
+                          p.leg1_amount_usd || 
+                          p.leg1AmountUsd || 
+                          p.leg1_amount || 
+                          p.leg1Amount || 
+                          p.calculator?.leg1AmountUSD || 
+                          p.calculator?.leg1AmountUsd || 
+                          0
+                        );
                         const machineShare = Number(detail.machineCostShare) || 0;
                         const profit = clientPrice - leg1Cost - machineShare;
                         const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
@@ -1039,7 +1092,8 @@ export default function ConsolidationDetailsModal({
                             <td className="p-2 text-right text-gray-500">${leg1Cost.toFixed(2)}</td>
                             <td className="p-2">
                               <input 
-                                type="number" 
+                                type="text"
+                                inputMode="decimal"
                                 value={detail.machineCostShare || ''} 
                                 onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
@@ -1054,22 +1108,17 @@ export default function ConsolidationDetailsModal({
                     </tbody>
                   </table>
                 </div>
-                {Math.abs(calculatorStats.allocatedMachineCost - totalMachineCost) >= 0.01 && (
-                  <div className="mt-3 p-3 rounded text-sm bg-yellow-50 text-yellow-700">
+                {calculatorStats.allocatedMachineCost > 0 && (
+                  <div className={`mt-3 p-3 rounded text-sm ${
+                    allocationStatus.type === 'success' ? 'bg-green-50 text-green-700' : 
+                    allocationStatus.type === 'warning' ? 'bg-yellow-50 text-yellow-700' : 
+                    'bg-orange-50 text-orange-700'
+                  }`}>
                     <div className="flex justify-between">
                       <span>Распределено: ${calculatorStats.allocatedMachineCost.toFixed(2)}</span>
                       <span>Всего: ${totalMachineCost.toFixed(2)}</span>
                     </div>
-                    <div className="mt-1">Осталось распределить: ${(totalMachineCost - calculatorStats.allocatedMachineCost).toFixed(2)}</div>
-                  </div>
-                )}
-                {Math.abs(calculatorStats.allocatedMachineCost - totalMachineCost) < 0.01 && calculatorStats.allocatedMachineCost > 0 && (
-                  <div className="mt-3 p-3 rounded text-sm bg-green-50 text-green-700">
-                    <div className="flex justify-between">
-                      <span>Распределено: ${calculatorStats.allocatedMachineCost.toFixed(2)}</span>
-                      <span>Всего: ${totalMachineCost.toFixed(2)}</span>
-                    </div>
-                    <div className="mt-1">✓ Распределение полное</div>
+                    <div className="mt-1 font-medium">{allocationStatus.message}</div>
                   </div>
                 )}
               </div>

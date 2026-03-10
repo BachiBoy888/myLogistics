@@ -234,6 +234,28 @@ export default async function plRoutes(fastify) {
         ...(b.client_price != null && b.clientPrice == null && { clientPrice: toNumMaybe(b.client_price) }),
         // ⬇️ calculator JSONB
         ...(b.calculator != null && { calculator: b.calculator }),
+        // ⬇️ Leg 1 fields
+        ...(b.leg1Amount != null && { leg1Amount: toNumMaybe(b.leg1Amount) }),
+        ...(b.leg1_amount != null && b.leg1Amount == null && { leg1Amount: toNumMaybe(b.leg1_amount) }),
+        ...(b.leg1Currency != null && { leg1Currency: b.leg1Currency }),
+        ...(b.leg1_currency != null && b.leg1Currency == null && { leg1Currency: b.leg1_currency }),
+        ...(b.leg1AmountUsd != null && { leg1AmountUsd: toNumMaybe(b.leg1AmountUsd) }),
+        ...(b.leg1_amount_usd != null && b.leg1AmountUsd == null && { leg1AmountUsd: toNumMaybe(b.leg1_amount_usd) }),
+        ...(b.leg1UsdPerKg != null && { leg1UsdPerKg: toNumMaybe(b.leg1UsdPerKg) }),
+        ...(b.leg1_usd_per_kg != null && b.leg1UsdPerKg == null && { leg1UsdPerKg: toNumMaybe(b.leg1_usd_per_kg) }),
+        ...(b.leg1UsdPerM3 != null && { leg1UsdPerM3: toNumMaybe(b.leg1UsdPerM3) }),
+        ...(b.leg1_usd_per_m3 != null && b.leg1UsdPerM3 == null && { leg1UsdPerM3: toNumMaybe(b.leg1_usd_per_m3) }),
+        // ⬇️ Leg 2 fields
+        ...(b.leg2Amount != null && { leg2Amount: toNumMaybe(b.leg2Amount) }),
+        ...(b.leg2_amount != null && b.leg2Amount == null && { leg2Amount: toNumMaybe(b.leg2_amount) }),
+        ...(b.leg2Currency != null && { leg2Currency: b.leg2Currency }),
+        ...(b.leg2_currency != null && b.leg2Currency == null && { leg2Currency: b.leg2_currency }),
+        ...(b.leg2AmountUsd != null && { leg2AmountUsd: toNumMaybe(b.leg2AmountUsd) }),
+        ...(b.leg2_amount_usd != null && b.leg2AmountUsd == null && { leg2AmountUsd: toNumMaybe(b.leg2_amount_usd) }),
+        ...(b.leg2UsdPerKg != null && { leg2UsdPerKg: toNumMaybe(b.leg2UsdPerKg) }),
+        ...(b.leg2_usd_per_kg != null && b.leg2UsdPerKg == null && { leg2UsdPerKg: toNumMaybe(b.leg2_usd_per_kg) }),
+        ...(b.leg2UsdPerM3 != null && { leg2UsdPerM3: toNumMaybe(b.leg2UsdPerM3) }),
+        ...(b.leg2_usd_per_m3 != null && b.leg2UsdPerM3 == null && { leg2UsdPerM3: toNumMaybe(b.leg2_usd_per_m3) }),
         // ответственный
         ...(b.responsible_user_id != null && { responsibleUserId: b.responsible_user_id || null }),
       };

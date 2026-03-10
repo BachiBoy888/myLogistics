@@ -533,7 +533,10 @@ export default function ConsolidationDetailsModal({
         const rebuiltDetails = {};
         pickedIds.forEach((id) => {
           const pl = allPLs.find(p => p.id === id);
-          const consDetail = freshCons.pl_details?.[id] || {};
+          const consDetail =
+            freshCons.pl_details?.[id] ??
+            freshCons.pl_details?.[String(id)] ??
+            {};
           rebuiltDetails[id] = {
             clientPrice: consDetail.clientPrice || 0,
             leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,

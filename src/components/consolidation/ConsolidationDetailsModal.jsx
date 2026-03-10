@@ -177,14 +177,30 @@ export default function ConsolidationDetailsModal({
     (cons.pl_ids || []).forEach((id) => {
       const pl = allPLs.find(p => p.id === id);
       const consDetail = cons.pl_details?.[id] || {};
+      
+      // Check if saved machineCostShare exists in consolidation data
+      // consDetail.machineCostShare comes from backend as string or null
+      const savedMachineCostShare = consDetail.machineCostShare;
+      const hasSavedValue = savedMachineCostShare != null && savedMachineCostShare !== '';
+      
+      // Leg1 cost (Расход CN) - from PL, readonly
+      const leg1Cost = Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0;
+      
+      // Machine cost share (Расход KG) - two-stage logic:
+      // 1. If saved value exists in consolidation → use it (source of truth after save)
+      // 2. Else fallback to PL second leg (initial load only)
+      // 3. Else 0
+      const machineCostShare = hasSavedValue
+        ? Number(savedMachineCostShare)
+        : Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0;
+      
       initialDetails[id] = {
         // Client price from PL or consolidation
         clientPrice: pl?.quote?.client_price || pl?.client_price || consDetail.clientPrice || 0,
         // Leg1 cost (Расход CN) - from PL, readonly
-        leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-        // Machine cost share (Расход KG) - primary source is consolidation_pl.machineCostShare
-        // Backend stores this in cons.pl_details.machineCostShare
-        machineCostShare: Number(consDetail.machineCostShare ?? 0),
+        leg1Cost,
+        // Machine cost share (Расход KG) - see logic above
+        machineCostShare,
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -255,7 +271,8 @@ export default function ConsolidationDetailsModal({
         [plId]: {
           clientPrice: pl?.quote?.client_price || pl?.client_price || 0,
           leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-          machineCostShare: 0,
+          // For new PL: fallback to PL second leg if exists
+          machineCostShare: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0,
           allocationMode: 'auto',
         }
       }));

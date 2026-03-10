@@ -465,12 +465,15 @@ export default function ConsolidationDetailsModal({
         comment: newExpense.comment,
         amount: Number(newExpense.amount),
       });
-      setExpenses(prev => [created, ...prev]);
-      setNewExpense({ type: 'other', comment: '', amount: '' });
-      setShowAddExpense(false);
-      markChanged();
+      if (created) {
+        setExpenses(prev => [created, ...prev]);
+        setNewExpense({ type: 'other', comment: '', amount: '' });
+        setShowAddExpense(false);
+        markChanged();
+      }
     } catch (err) {
       console.error('Failed to add expense:', err);
+      alert('Ошибка добавления расхода: ' + (err.message || 'Unknown error'));
     }
   }
 
@@ -481,6 +484,7 @@ export default function ConsolidationDetailsModal({
       markChanged();
     } catch (err) {
       console.error('Failed to delete expense:', err);
+      alert('Ошибка удаления расхода: ' + (err.message || 'Unknown error'));
     }
   }
 
@@ -489,8 +493,18 @@ export default function ConsolidationDetailsModal({
     try {
       setSaving(true);
       
+      // Convert plDetails values to numbers for backend
+      const normalizedPlDetails = {};
+      Object.entries(plDetails).forEach(([plId, details]) => {
+        normalizedPlDetails[plId] = {
+          clientPrice: Number(details.clientPrice) || 0,
+          machineCostShare: Number(details.machineCostShare) || 0,
+          allocationMode: details.allocationMode || 'auto',
+        };
+      });
+      
       // Save PLs with orders and calculator details
-      await onSavePLs?.(cons.id, pickedIds, plOrders, plDetails);
+      await onSavePLs?.(cons.id, pickedIds, plOrders, normalizedPlDetails);
       
       // Save capacity and machine cost
       const consUpdate = {};
@@ -503,6 +517,9 @@ export default function ConsolidationDetailsModal({
       }
       
       setHasChanges(false);
+    } catch (err) {
+      console.error('Save failed:', err);
+      alert('Ошибка сохранения: ' + (err.message || 'Unknown error'));
     } finally {
       setSaving(false);
     }

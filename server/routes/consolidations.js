@@ -27,17 +27,17 @@ const UpdateBody = z.object({
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),
-  capacityKg: z.number().optional(),
-  capacityCbm: z.number().optional(),
-  machineCost: z.number().optional(),
+  capacityKg: z.coerce.number().optional(),
+  capacityCbm: z.coerce.number().optional(),
+  machineCost: z.coerce.number().optional(),
 });
 
 const SetPLsBody = z.object({
   plIds: z.array(z.number().int()).default([]),
   plLoadOrders: z.record(z.number().int()).optional(), // { plId: loadOrder }
   plDetails: z.record(z.object({
-    clientPrice: z.number().optional(),
-    machineCostShare: z.number().optional(),
+    clientPrice: z.coerce.number().optional(),
+    machineCostShare: z.coerce.number().optional(),
     allocationMode: z.enum(["auto", "manual"]).optional(),
   })).optional(),
 });

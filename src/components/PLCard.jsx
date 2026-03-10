@@ -1,7 +1,7 @@
 // src/components/PLCard.jsx
 // Карточка PL с вкладками (Сведения / Документы / Комментарии / Хронология)
 import React, { useState, useMemo, useEffect, useCallback } from "react";
-import CostCalculatorCard from "./CostCalculatorCard.jsx";
+import PLCostSummary from "./pl/PLCostSummary.jsx";
 import CommentsCard from "./CommentsCard.jsx";
 import DocsList from "./pl/DocsList.jsx";
 import {
@@ -265,17 +265,6 @@ export default function PLCard({
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
-
-  async function handleSaveQuote(calcCost, clientPrice) {
-    try {
-      await onUpdate({
-        quote: { calc_cost: Number(calcCost) || 0, client_price: Number(clientPrice) || 0 },
-      });
-    } catch (err) {
-      console.error("Ошибка при сохранении цены:", err);
-      alert("Не удалось сохранить стоимость");
-    }
-  }
 
   // ===== Сохранение всех изменений при закрытии
   const handleClose = () => {
@@ -542,7 +531,7 @@ export default function PLCard({
             {/* Калькулятор */}
             <div className="rounded-2xl bg-white shadow-sm border p-3">
               <h3 className="font-semibold mb-2">Калькулятор себестоимости</h3>
-              <CostCalculatorCard pl={pl} onSave={handleSaveQuote} />
+              <PLCostSummary pl={pl} onUpdate={onUpdate} />
             </div>
           </div>
         )}

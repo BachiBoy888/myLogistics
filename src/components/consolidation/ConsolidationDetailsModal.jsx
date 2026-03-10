@@ -172,7 +172,7 @@ export default function ConsolidationDetailsModal({
     });
     setPlOrders(initialOrders);
     
-    // Initialize plDetails with data from PLs (clientPrice from PL, machineCostShare from cons)
+    // Initialize plDetails with data from PLs
     const initialDetails = {};
     (cons.pl_ids || []).forEach((id) => {
       const pl = allPLs.find(p => p.id === id);
@@ -180,8 +180,12 @@ export default function ConsolidationDetailsModal({
       initialDetails[id] = {
         // Client price from PL (readonly in calculator)
         clientPrice: pl?.quote?.client_price || pl?.client_price || consDetail.clientPrice || 0,
-        // Machine cost share from consolidation (editable)
-        machineCostShare: consDetail.machineCostShare || 0,
+        // Leg1 cost (Расход CN) from PL
+        leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
+        // Leg2 cost (Расход KG) from PL - prefill with current PL leg2 value
+        leg2Cost: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || consDetail.machineCostShare || 0) || 0,
+        // Machine cost share is editable - starts with leg2 value
+        machineCostShare: Number(consDetail.machineCostShare || pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0,
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -357,18 +361,10 @@ export default function ConsolidationDetailsModal({
       return s + (Number(detail.clientPrice) || 0);
     }, 0);
     
-    // Calculate leg1 costs from PL data - using multiple possible field names
+    // Calculate leg1 costs (CN) from plDetails
     const leg1Costs = pls.reduce((s, p) => {
-      const leg1Usd = Number(
-        p.leg1_amount_usd || 
-        p.leg1AmountUsd || 
-        p.leg1_amount || 
-        p.leg1Amount || 
-        p.calculator?.leg1AmountUSD || 
-        p.calculator?.leg1AmountUsd || 
-        0
-      );
-      return s + leg1Usd;
+      const detail = plDetails[p.id] || {};
+      return s + (Number(detail.leg1Cost) || 0);
     }, 0);
     
     // Calculate total allocated machine cost
@@ -975,11 +971,11 @@ export default function ConsolidationDetailsModal({
                     <div className="text-lg font-semibold text-green-600">${calculatorStats.revenue.toFixed(2)}</div>
                   </div>
                   <div className="bg-white rounded p-3">
-                    <div className="text-xs text-gray-500">Расход 1-го плеча</div>
+                    <div className="text-xs text-gray-500">Расход CN</div>
                     <div className="text-lg font-semibold text-orange-600">${calculatorStats.leg1Costs.toFixed(2)}</div>
                   </div>
                   <div className="bg-white rounded p-3">
-                    <div className="text-xs text-gray-500">Расход машины</div>
+                    <div className="text-xs text-gray-500">Расход KG</div>
                     <div className="text-lg font-semibold text-orange-600">${calculatorStats.machineCost.toFixed(2)}</div>
                   </div>
                   <div className="bg-white rounded p-3">
@@ -1072,8 +1068,8 @@ export default function ConsolidationDetailsModal({
                         <th className="text-left p-2">Клиент</th>
                         <th className="text-right p-2">Вес/Объём</th>
                         <th className="text-right p-2">Цена клиенту</th>
-                        <th className="text-right p-2">Расход 1пл</th>
-                        <th className="text-right p-2">Расход маш</th>
+                        <th className="text-right p-2">Расход CN</th>
+                        <th className="text-right p-2">Расход KG</th>
                         <th className="text-right p-2">$/кг</th>
                         <th className="text-right p-2">Прибыль</th>
                       </tr>
@@ -1082,17 +1078,12 @@ export default function ConsolidationDetailsModal({
                       {pickedPLs.map((p) => {
                         const detail = plDetails[p.id] || {};
                         const clientPrice = Number(detail.clientPrice) || 0;
-                        // Get leg1 cost from PL with multiple fallback options
-                        const leg1Cost = Number(
-                          p.leg1_amount_usd || 
-                          p.leg1AmountUsd || 
-                          p.leg1_amount || 
-                          p.leg1Amount || 
-                          p.calculator?.leg1AmountUSD || 
-                          p.calculator?.leg1AmountUsd || 
-                          0
-                        );
-                        const machineShare = Number(detail.machineCostShare) || 0;
+                        // Leg1 cost (CN) - preloaded from PL
+                        const leg1Cost = Number(detail.leg1Cost || 0);
+                        // Leg2 cost (KG) - preloaded from PL
+                        const leg2Cost = Number(detail.leg2Cost || 0);
+                        // Machine share is editable
+                        const machineShare = Number(detail.machineCostShare) || leg2Cost || 0;
                         const profit = clientPrice - leg1Cost - machineShare;
                         const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
                         return (
@@ -1106,7 +1097,7 @@ export default function ConsolidationDetailsModal({
                               <input 
                                 type="text"
                                 inputMode="decimal"
-                                value={detail.machineCostShare || ''} 
+                                value={detail.machineCostShare || leg2Cost || ''} 
                                 onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
                                 placeholder="0" 

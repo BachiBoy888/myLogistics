@@ -1,7 +1,7 @@
 // src/components/consolidation/ConsolidationDetailsModal.jsx
 // Улучшенная карточка консолидации с вкладками, лимитами и расположением грузов
 
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { 
   X, MoreVertical, Edit3, Trash2, Package, Truck, Calculator,
   ChevronUp, ChevronDown, AlertTriangle, Save, XCircle, Plus, Trash
@@ -9,6 +9,7 @@ import {
 import { humanConsStatus, badgeColorByConsStatus, humanStatus } from "../../constants/statuses.js";
 import { 
   syncConsolidationExpenses,
+  getConsolidation,
 } from "../../api/client.js";
 
 // Simple drag handle component
@@ -157,9 +158,6 @@ export default function ConsolidationDetailsModal({
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   
-  // Track if we just saved - to prevent useEffect from overwriting saved state
-  const justSavedRef = useRef(false);
-  
   // Calculator state
   const [machineCost, setMachineCost] = useState(cons.machine_cost || 0);
   const [expenses, setExpenses] = useState(cons.expenses || []);
@@ -168,12 +166,6 @@ export default function ConsolidationDetailsModal({
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
-    // Skip re-initialization if we just saved - prevents overwriting saved state with stale cons data
-    if (justSavedRef.current) {
-      justSavedRef.current = false;
-      return;
-    }
-    
     setPickedIds(cons.pl_ids || []);
     const initialOrders = {};
     (cons.pl_ids || []).forEach((id, idx) => {
@@ -518,28 +510,7 @@ export default function ConsolidationDetailsModal({
       });
       
       // Save PLs with orders and calculator details
-      const savedCons = await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
-      
-      // Merge saved backend fields into current frontend state
-      // Backend returns only: clientPrice, machineCostShare, allocationMode
-      // We must preserve local-only fields: leg1Cost
-      if (savedCons?.pl_details) {
-        setPlDetails(prev => {
-          const merged = { ...prev };
-          Object.entries(savedCons.pl_details).forEach(([plId, savedDetail]) => {
-            if (merged[plId]) {
-              merged[plId] = {
-                ...merged[plId],
-                clientPrice: savedDetail.clientPrice,
-                machineCostShare: savedDetail.machineCostShare,
-                allocationMode: savedDetail.allocationMode,
-                // leg1Cost is preserved from existing state
-              };
-            }
-          });
-          return merged;
-        });
-      }
+      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
       
       // Sync expenses (delete old, create new)
       await syncConsolidationExpenses(cons.id, expenses);
@@ -554,8 +525,25 @@ export default function ConsolidationDetailsModal({
         await onUpdateCons?.(cons.id, consUpdate);
       }
       
-      // Mark that we just saved - prevents useEffect from overwriting with stale cons data
-      justSavedRef.current = true;
+      // Fetch fresh consolidation data with full pl_details
+      const freshCons = await getConsolidation(cons.id);
+      
+      // Rebuild plDetails from fresh backend data
+      if (freshCons?.pl_details) {
+        const rebuiltDetails = {};
+        pickedIds.forEach((id) => {
+          const pl = allPLs.find(p => p.id === id);
+          const consDetail = freshCons.pl_details?.[id] || {};
+          rebuiltDetails[id] = {
+            clientPrice: consDetail.clientPrice || 0,
+            leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
+            machineCostShare: consDetail.machineCostShare || 0,
+            allocationMode: consDetail.allocationMode || 'auto',
+          };
+        });
+        setPlDetails(rebuiltDetails);
+      }
+      
       setHasChanges(false);
     } catch (err) {
       console.error('Save failed:', err);

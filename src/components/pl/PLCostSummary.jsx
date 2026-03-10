@@ -26,6 +26,13 @@ export default function PLCostSummary({ pl, onUpdate }) {
   });
   const [leg1Currency, setLeg1Currency] = useState(pl.leg1_currency || pl.leg1Currency || "USD");
   
+  // Leg 2 editable state
+  const [leg2Input, setLeg2Input] = useState(() => {
+    const val = pl.leg2_amount || pl.leg2Amount || pl.calculator?.leg2Amount || 0;
+    return val !== 0 ? String(val) : "";
+  });
+  const [leg2Currency, setLeg2Currency] = useState(pl.leg2_currency || pl.leg2Currency || "USD");
+  
   const [saving, setSaving] = useState(false);
   const [savedStamp, setSavedStamp] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -38,11 +45,19 @@ export default function PLCostSummary({ pl, onUpdate }) {
     const leg1Val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
     setLeg1Input(leg1Val !== 0 ? String(leg1Val) : "");
     setLeg1Currency(pl.leg1_currency || pl.leg1Currency || "USD");
+    
+    const leg2Val = pl.leg2_amount || pl.leg2Amount || pl.calculator?.leg2Amount || 0;
+    setLeg2Input(leg2Val !== 0 ? String(leg2Val) : "");
+    setLeg2Currency(pl.leg2_currency || pl.leg2Currency || "USD");
   }, [pl.id]);
 
-  // Get leg costs from PL
-  const leg1AmountUsd = Number(pl.leg1_amount_usd || pl.leg1AmountUsd || pl.calculator?.leg1AmountUSD || 0);
-  const leg2AmountUsd = Number(pl.leg2_amount_usd || pl.leg2AmountUsd || pl.calculator?.leg2AmountUSD || 0);
+  // Calculate USD values
+  const leg1Val = Number(leg1Input) || 0;
+  const leg2Val = Number(leg2Input) || 0;
+  
+  // For now assume USD or already converted - in real app would use FX rates
+  const leg1AmountUsd = leg1Currency === 'USD' ? leg1Val : leg1Val;
+  const leg2AmountUsd = leg2Currency === 'USD' ? leg2Val : leg2Val;
 
   // Calculate totals
   const costPrice = leg1AmountUsd + leg2AmountUsd;
@@ -54,24 +69,30 @@ export default function PLCostSummary({ pl, onUpdate }) {
     setErrorMsg("");
     setSaving(true);
     try {
-      // Convert leg1 to USD if needed (simplified - in real app would use FX rates)
-      const leg1Val = Number(leg1Input) || 0;
-      const leg1Usd = leg1Currency === 'USD' ? leg1Val : leg1Val; // For now assume USD or already converted
-      
       await updatePL(pl.id, {
         clientPrice: Number(clientPrice) || 0,
+        // Leg 1
         leg1Amount: leg1Val,
         leg1Currency: leg1Currency,
-        leg1AmountUsd: leg1Usd,
-        leg1UsdPerKg: pl.weight_kg > 0 ? leg1Usd / pl.weight_kg : 0,
-        leg1UsdPerM3: pl.volume_cbm > 0 ? leg1Usd / pl.volume_cbm : 0,
+        leg1AmountUsd: leg1AmountUsd,
+        leg1UsdPerKg: pl.weight_kg > 0 ? leg1AmountUsd / pl.weight_kg : 0,
+        leg1UsdPerM3: pl.volume_cbm > 0 ? leg1AmountUsd / pl.volume_cbm : 0,
+        // Leg 2
+        leg2Amount: leg2Val,
+        leg2Currency: leg2Currency,
+        leg2AmountUsd: leg2AmountUsd,
+        leg2UsdPerKg: pl.weight_kg > 0 ? leg2AmountUsd / pl.weight_kg : 0,
+        leg2UsdPerM3: pl.volume_cbm > 0 ? leg2AmountUsd / pl.volume_cbm : 0,
       });
       
       onUpdate?.({ 
         client_price: Number(clientPrice) || 0,
         leg1_amount: leg1Val,
         leg1_currency: leg1Currency,
-        leg1_amount_usd: leg1Usd,
+        leg1_amount_usd: leg1AmountUsd,
+        leg2_amount: leg2Val,
+        leg2_currency: leg2Currency,
+        leg2_amount_usd: leg2AmountUsd,
       });
       
       setSavedStamp(new Date().toISOString());
@@ -141,15 +162,33 @@ export default function PLCostSummary({ pl, onUpdate }) {
           </div>
         </div>
 
-        {/* Leg 2 - Readonly (from consolidation) */}
+        {/* Leg 2 - Editable */}
         <div className="rounded-xl border-2 border-emerald-200 p-3 bg-emerald-50/50">
           <div className="font-medium mb-2 text-emerald-900">2. Ставка с границы до Канта</div>
           <div className="bg-white rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-1">Стоимость плеча</div>
-            <div className="text-xl font-semibold">${formatMoney(leg2AmountUsd)}</div>
-            {(pl.leg2_currency || pl.leg2Currency) !== 'USD' && (pl.leg2_amount || pl.leg2Amount) > 0 && (
-              <div className="text-xs text-gray-500 mt-1">
-                {formatMoney(pl.leg2_amount || pl.leg2Amount)} {pl.leg2_currency || pl.leg2Currency}
+            <div className="flex gap-2 mb-2">
+              <input
+                type="text"
+                inputMode="decimal"
+                value={leg2Input}
+                onChange={(e) => setLeg2Input(e.target.value)}
+                className="flex-1 border rounded px-2 py-1 text-lg font-semibold"
+                placeholder="0.00"
+              />
+              <select
+                value={leg2Currency}
+                onChange={(e) => setLeg2Currency(e.target.value)}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value="USD">USD</option>
+                <option value="CNY">CNY</option>
+                <option value="KGS">KGS</option>
+              </select>
+            </div>
+            {leg2AmountUsd > 0 && leg2Currency !== 'USD' && (
+              <div className="text-xs text-gray-500">
+                ≈ ${formatMoney(leg2AmountUsd)} USD
               </div>
             )}
           </div>

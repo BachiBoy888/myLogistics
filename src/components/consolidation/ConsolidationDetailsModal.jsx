@@ -194,7 +194,7 @@ export default function ConsolidationDetailsModal({
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, allPLs]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -503,9 +503,6 @@ export default function ConsolidationDetailsModal({
         };
       });
       
-      console.log('[DEBUG] handleSave - machineCost:', machineCost, 'expenses:', expenses.length);
-      console.log('[DEBUG] handleSave - normalizedPlDetails:', JSON.stringify(normalizedPlDetails, null, 2));
-      
       // Save PLs with orders and calculator details
       await onSavePLs?.(cons.id, pickedIds, plOrders, normalizedPlDetails);
       
@@ -514,8 +511,6 @@ export default function ConsolidationDetailsModal({
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
-      
-      console.log('[DEBUG] handleSave - consUpdate:', JSON.stringify(consUpdate, null, 2));
       
       if (Object.keys(consUpdate).length > 0) {
         await onUpdateCons?.(cons.id, consUpdate);

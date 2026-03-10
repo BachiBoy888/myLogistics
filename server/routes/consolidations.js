@@ -34,12 +34,12 @@ const UpdateBody = z.object({
 
 const SetPLsBody = z.object({
   plIds: z.array(z.number().int()).default([]),
-  plLoadOrders: z.record(z.number().int()).optional(), // { plId: loadOrder }
-  plDetails: z.record(z.object({
+  plLoadOrders: z.record(z.string(), z.coerce.number()).optional(), // { [plId: string]: loadOrder }
+  plDetails: z.record(z.string(), z.object({
     clientPrice: z.coerce.number().optional(),
     machineCostShare: z.coerce.number().optional(),
     allocationMode: z.enum(["auto", "manual"]).optional(),
-  })).optional(),
+  })).optional(), // { [plId: string]: details }
 });
 
 const ExpenseBody = z.object({

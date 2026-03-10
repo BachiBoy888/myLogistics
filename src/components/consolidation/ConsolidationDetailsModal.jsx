@@ -172,20 +172,19 @@ export default function ConsolidationDetailsModal({
     });
     setPlOrders(initialOrders);
     
-    // Initialize plDetails with data from PLs
+    // Initialize plDetails with data from PLs and consolidation
     const initialDetails = {};
     (cons.pl_ids || []).forEach((id) => {
       const pl = allPLs.find(p => p.id === id);
       const consDetail = cons.pl_details?.[id] || {};
       initialDetails[id] = {
-        // Client price from PL (readonly in calculator)
+        // Client price from PL or consolidation
         clientPrice: pl?.quote?.client_price || pl?.client_price || consDetail.clientPrice || 0,
-        // Leg1 cost (Расход CN) from PL
+        // Leg1 cost (Расход CN) - from PL, readonly
         leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-        // Leg2 cost (Расход KG) from PL - prefill with current PL leg2 value
-        leg2Cost: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || consDetail.machineCostShare || 0) || 0,
-        // Machine cost share is editable - starts with leg2 value
-        machineCostShare: Number(consDetail.machineCostShare ?? pl?.leg2_amount_usd ?? pl?.leg2AmountUsd ?? pl?.leg2_amount ?? pl?.leg2Amount ?? pl?.calculator?.leg2AmountUSD ?? 0) || 0,
+        // Machine cost share (Расход KG) - primary source is consolidation_pl.machineCostShare
+        // Backend stores this in cons.pl_details.machineCostShare
+        machineCostShare: Number(consDetail.machineCostShare ?? 0),
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -255,6 +254,7 @@ export default function ConsolidationDetailsModal({
         ...d,
         [plId]: {
           clientPrice: pl?.quote?.client_price || pl?.client_price || 0,
+          leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
           machineCostShare: 0,
           allocationMode: 'auto',
         }
@@ -494,9 +494,25 @@ export default function ConsolidationDetailsModal({
       // Save PLs with orders and calculator details
       const savedCons = await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
       
-      // Update local plDetails with saved values to ensure sync
+      // Merge saved backend fields into current frontend state
+      // Backend returns only: clientPrice, machineCostShare, allocationMode
+      // We must preserve local-only fields: leg1Cost
       if (savedCons?.pl_details) {
-        setPlDetails(savedCons.pl_details);
+        setPlDetails(prev => {
+          const merged = { ...prev };
+          Object.entries(savedCons.pl_details).forEach(([plId, savedDetail]) => {
+            if (merged[plId]) {
+              merged[plId] = {
+                ...merged[plId],
+                clientPrice: savedDetail.clientPrice,
+                machineCostShare: savedDetail.machineCostShare,
+                allocationMode: savedDetail.allocationMode,
+                // leg1Cost is preserved from existing state
+              };
+            }
+          });
+          return merged;
+        });
       }
       
       // Sync expenses (delete old, create new)
@@ -1083,12 +1099,10 @@ export default function ConsolidationDetailsModal({
                       {pickedPLs.map((p) => {
                         const detail = plDetails[p.id] || {};
                         const clientPrice = Number(detail.clientPrice) || 0;
-                        // Leg1 cost (CN) - preloaded from PL
+                        // Leg1 cost (Расход CN) - from PL, readonly
                         const leg1Cost = Number(detail.leg1Cost || 0);
-                        // Leg2 cost (KG) - preloaded from PL
-                        const leg2Cost = Number(detail.leg2Cost || 0);
-                        // Machine share is editable
-                        const machineShare = Number(detail.machineCostShare) || leg2Cost || 0;
+                        // Machine share (Расход KG) - editable, source of truth from consolidation_pl
+                        const machineShare = Number(detail.machineCostShare ?? 0);
                         const profit = clientPrice - leg1Cost - machineShare;
                         const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
                         return (
@@ -1102,7 +1116,7 @@ export default function ConsolidationDetailsModal({
                               <input 
                                 type="text"
                                 inputMode="decimal"
-                                value={detail.machineCostShare !== undefined ? detail.machineCostShare : (leg2Cost || '')} 
+                                value={machineShare}
                                 onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
                                 placeholder="0" 

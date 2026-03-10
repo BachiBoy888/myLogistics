@@ -185,7 +185,7 @@ export default function ConsolidationDetailsModal({
         // Leg2 cost (Расход KG) from PL - prefill with current PL leg2 value
         leg2Cost: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || consDetail.machineCostShare || 0) || 0,
         // Machine cost share is editable - starts with leg2 value
-        machineCostShare: Number(consDetail.machineCostShare || pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0,
+        machineCostShare: Number(consDetail.machineCostShare ?? pl?.leg2_amount_usd ?? pl?.leg2AmountUsd ?? pl?.leg2_amount ?? pl?.leg2Amount ?? pl?.calculator?.leg2AmountUSD ?? 0) || 0,
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -492,7 +492,12 @@ export default function ConsolidationDetailsModal({
       });
       
       // Save PLs with orders and calculator details
-      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
+      const savedCons = await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
+      
+      // Update local plDetails with saved values to ensure sync
+      if (savedCons?.pl_details) {
+        setPlDetails(savedCons.pl_details);
+      }
       
       // Sync expenses (delete old, create new)
       await syncConsolidationExpenses(cons.id, expenses);
@@ -1097,7 +1102,7 @@ export default function ConsolidationDetailsModal({
                               <input 
                                 type="text"
                                 inputMode="decimal"
-                                value={detail.machineCostShare || leg2Cost || ''} 
+                                value={detail.machineCostShare !== undefined ? detail.machineCostShare : (leg2Cost || '')} 
                                 onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
                                 placeholder="0" 

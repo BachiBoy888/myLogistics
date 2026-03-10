@@ -8,9 +8,7 @@ import {
 } from "lucide-react";
 import { humanConsStatus, badgeColorByConsStatus, humanStatus } from "../../constants/statuses.js";
 import { 
-  createConsolidationExpense, 
-  updateConsolidationExpense, 
-  deleteConsolidationExpense 
+  syncConsolidationExpenses,
 } from "../../api/client.js";
 
 // Simple drag handle component
@@ -459,33 +457,25 @@ export default function ConsolidationDetailsModal({
   async function handleAddExpense() {
     if (!newExpense.amount || Number(newExpense.amount) <= 0) return;
     
-    try {
-      const created = await createConsolidationExpense(cons.id, {
-        type: newExpense.type,
-        comment: newExpense.comment,
-        amount: Number(newExpense.amount),
-      });
-      if (created) {
-        setExpenses(prev => [created, ...prev]);
-        setNewExpense({ type: 'other', comment: '', amount: '' });
-        setShowAddExpense(false);
-        markChanged();
-      }
-    } catch (err) {
-      console.error('Failed to add expense:', err);
-      alert('Ошибка добавления расхода: ' + (err.message || 'Unknown error'));
-    }
+    // Add locally only - will be synced to server on Save
+    const localExpense = {
+      id: 'local_' + Date.now(), // temporary local ID
+      type: newExpense.type,
+      comment: newExpense.comment,
+      amount: Number(newExpense.amount),
+      created_at: new Date().toISOString(),
+    };
+    
+    setExpenses(prev => [localExpense, ...prev]);
+    setNewExpense({ type: 'other', comment: '', amount: '' });
+    setShowAddExpense(false);
+    markChanged();
   }
 
   async function handleDeleteExpense(expenseId) {
-    try {
-      await deleteConsolidationExpense(cons.id, expenseId);
-      setExpenses(prev => prev.filter(e => e.id !== expenseId));
-      markChanged();
-    } catch (err) {
-      console.error('Failed to delete expense:', err);
-      alert('Ошибка удаления расхода: ' + (err.message || 'Unknown error'));
-    }
+    // Delete locally only - will be synced to server on Save
+    setExpenses(prev => prev.filter(e => e.id !== expenseId));
+    markChanged();
   }
 
   async function handleSave() {
@@ -493,18 +483,23 @@ export default function ConsolidationDetailsModal({
     try {
       setSaving(true);
       
-      // Convert plDetails values to numbers for backend
-      const normalizedPlDetails = {};
-      Object.entries(plDetails).forEach(([plId, details]) => {
-        normalizedPlDetails[plId] = {
-          clientPrice: Number(details.clientPrice) || 0,
-          machineCostShare: Number(details.machineCostShare) || 0,
-          allocationMode: details.allocationMode || 'auto',
+      // Ensure plDetails contains entries for all picked PLs
+      const completePlDetails = {};
+      pickedIds.forEach((plId) => {
+        const existing = plDetails[plId] || {};
+        const pl = pickedPLs.find(p => p.id === plId);
+        completePlDetails[plId] = {
+          clientPrice: Number(existing.clientPrice ?? pl?.quote?.client_price ?? pl?.client_price ?? 0) || 0,
+          machineCostShare: Number(existing.machineCostShare ?? 0) || 0,
+          allocationMode: existing.allocationMode || 'auto',
         };
       });
       
       // Save PLs with orders and calculator details
-      await onSavePLs?.(cons.id, pickedIds, plOrders, normalizedPlDetails);
+      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
+      
+      // Sync expenses (delete old, create new)
+      await syncConsolidationExpenses(cons.id, expenses);
       
       // Save capacity and machine cost
       const consUpdate = {};

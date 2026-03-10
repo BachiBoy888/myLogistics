@@ -678,6 +678,28 @@ export async function deleteConsolidationExpense(consId, expenseId) {
   return true;
 }
 
+// Sync all expenses for consolidation (delete old, create new)
+export async function syncConsolidationExpenses(consId, expenses) {
+  // Get current expenses
+  const current = await listConsolidationExpenses(consId);
+  
+  // Delete all current expenses
+  for (const exp of current) {
+    await deleteConsolidationExpense(consId, exp.id);
+  }
+  
+  // Create new expenses
+  for (const exp of expenses) {
+    await createConsolidationExpense(consId, {
+      type: exp.type,
+      comment: exp.comment,
+      amount: Number(exp.amount) || 0,
+    });
+  }
+  
+  return true;
+}
+
 export async function listUsers(params = {}) {
   const query = new URLSearchParams(params).toString();
   return req(`/users${query ? `?${query}` : ""}`, { method: "GET" });

@@ -435,8 +435,11 @@ export default async function consolidationsRoutes(app) {
           .orderBy(desc(consolidationExpenses.createdAt));
         return { consolidation: { ...cons, plIds, plLoadOrders, plDetails, expenses } };
       } catch (e) {
+        console.error('[ERROR] CONS_SET_PL failed:', e);
+        console.error('[ERROR] Stack:', e.stack);
+        console.error('[ERROR] Request body:', JSON.stringify(req.body, null, 2));
         req.log.error({ e, id, body: req.body }, "CONS_SET_PL error");
-        return reply.internalServerError("Set PLs failed");
+        return reply.internalServerError(e.message || "Set PLs failed");
       }
     }
   );

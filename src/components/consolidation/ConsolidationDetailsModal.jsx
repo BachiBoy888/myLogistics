@@ -1,7 +1,7 @@
 // src/components/consolidation/ConsolidationDetailsModal.jsx
 // Улучшенная карточка консолидации с вкладками, лимитами и расположением грузов
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { 
   X, MoreVertical, Edit3, Trash2, Package, Truck, Calculator,
   ChevronUp, ChevronDown, AlertTriangle, Save, XCircle, Plus, Trash
@@ -157,6 +157,9 @@ export default function ConsolidationDetailsModal({
   const [draggedId, setDraggedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   
+  // Track if we just saved - to prevent useEffect from overwriting saved state
+  const justSavedRef = useRef(false);
+  
   // Calculator state
   const [machineCost, setMachineCost] = useState(cons.machine_cost || 0);
   const [expenses, setExpenses] = useState(cons.expenses || []);
@@ -165,6 +168,12 @@ export default function ConsolidationDetailsModal({
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
+    // Skip re-initialization if we just saved - prevents overwriting saved state with stale cons data
+    if (justSavedRef.current) {
+      justSavedRef.current = false;
+      return;
+    }
+    
     setPickedIds(cons.pl_ids || []);
     const initialOrders = {};
     (cons.pl_ids || []).forEach((id, idx) => {
@@ -545,6 +554,8 @@ export default function ConsolidationDetailsModal({
         await onUpdateCons?.(cons.id, consUpdate);
       }
       
+      // Mark that we just saved - prevents useEffect from overwriting with stale cons data
+      justSavedRef.current = true;
       setHasChanges(false);
     } catch (err) {
       console.error('Save failed:', err);

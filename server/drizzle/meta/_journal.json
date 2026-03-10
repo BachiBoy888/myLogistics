@@ -178,11 +178,9 @@
       "breakpoints": true
     },
     {
-      "idx": 25,
+      "idx": 26,
       "version": "7",
-      "when": 1773014400000,
-      "tag": "0025_add_consolidation_calculator",
+      "when": 1773091200000,
+      "tag": "0026_change_expense_title_to_type",
       "breakpoints": true
     }
-  ]
-}

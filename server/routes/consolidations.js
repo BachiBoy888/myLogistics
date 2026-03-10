@@ -6,6 +6,7 @@ import {
   consolidationPl,
   consolidationStatusHistory,
   consolidationExpenses,
+  pl,
 } from "../db/schema.js";
 import { nextConsNumber } from "../services/consolidations.js";
 import {
@@ -42,7 +43,7 @@ const SetPLsBody = z.object({
 });
 
 const ExpenseBody = z.object({
-  title: z.string().min(1),
+  type: z.enum(["customs", "other"]),
   comment: z.string().optional(),
   amount: z.number().min(0),
 });
@@ -386,6 +387,18 @@ export default async function consolidationsRoutes(app) {
                     )
                   );
               }
+              
+              // Синхронизируем machineCostShare в PL.leg2AmountUsd (второе плечо)
+              if (details.machineCostShare !== undefined) {
+                await db
+                  .update(pl)
+                  .set({ 
+                    leg2AmountUsd: String(details.machineCostShare),
+                    leg2Amount: String(details.machineCostShare),
+                    leg2Currency: "USD",
+                  })
+                  .where(eq(pl.id, plId));
+              }
             }
           }
         }
@@ -493,7 +506,7 @@ export default async function consolidationsRoutes(app) {
           .insert(consolidationExpenses)
           .values({
             consolidationId: id,
-            title: body.title,
+            type: body.type,
             comment: body.comment ?? null,
             amount: String(body.amount),
           })
@@ -516,7 +529,7 @@ export default async function consolidationsRoutes(app) {
       try {
         const body = ExpenseBody.partial().parse(req.body ?? {});
         const updateData = {};
-        if (body.title !== undefined) updateData.title = body.title;
+        if (body.type !== undefined) updateData.type = body.type;
         if (body.comment !== undefined) updateData.comment = body.comment;
         if (body.amount !== undefined) updateData.amount = String(body.amount);
         updateData.updatedAt = new Date();

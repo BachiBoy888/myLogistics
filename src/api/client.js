@@ -144,6 +144,14 @@ export function normalizePL(s) {
   const pl_number = s.pl_number ?? s.plNumber ?? s.number ?? "";
   const id = toNumericId(s.id ?? s._id);
 
+  // Leg1 data
+  const leg1Amount = Number(s.leg1Amount ?? s.leg1_amount ?? s.calculator?.leg1Amount ?? 0);
+  const leg1AmountUsd = Number(s.leg1AmountUsd ?? s.leg1_amount_usd ?? s.calculator?.leg1AmountUSD ?? 0);
+  
+  // Leg2 data
+  const leg2Amount = Number(s.leg2Amount ?? s.leg2_amount ?? s.calculator?.leg2Amount ?? 0);
+  const leg2AmountUsd = Number(s.leg2AmountUsd ?? s.leg2_amount_usd ?? s.calculator?.leg2AmountUSD ?? 0);
+
   return {
     id,
     pl_number,
@@ -161,6 +169,16 @@ export function normalizePL(s) {
     incoterm: s.incoterm ?? "EXW",
     fob_warehouse_id: s.fob_warehouse_id ?? s.fobWarehouseId ?? null,
     status: s.status ?? "draft",
+
+    // Leg1 data
+    leg1_amount: leg1Amount,
+    leg1_amount_usd: leg1AmountUsd,
+    leg1_currency: s.leg1Currency ?? s.leg1_currency ?? "USD",
+    
+    // Leg2 data
+    leg2_amount: leg2Amount,
+    leg2_amount_usd: leg2AmountUsd,
+    leg2_currency: s.leg2Currency ?? s.leg2_currency ?? "USD",
 
     // калькулятор (если сервер начал отдавать jsonb)
     calculator:
@@ -190,7 +208,7 @@ export function normalizeCons(s) {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
     title: s.title ?? s.cons_number ?? s.consNumber ?? "",
-    status: s.status ?? "loaded", // синхронизировано с enum consolidation_status_v2
+    status: s.status ?? "loaded",
     pl_ids: Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
@@ -201,7 +219,13 @@ export function normalizeCons(s) {
     capacity_cbm: s.capacity_cbm ?? s.capacityCbm ?? 0,
     capacity_kg: s.capacity_kg ?? s.capacityKg ?? 0,
     machine_cost: s.machine_cost ?? s.machineCost ?? 0,
-    expenses: s.expenses ?? [],
+    expenses: (s.expenses ?? []).map(e => ({
+      id: e.id,
+      type: e.type ?? 'other',
+      comment: e.comment,
+      amount: Number(e.amount) || 0,
+      created_at: e.created_at ?? e.createdAt,
+    })),
     created_at: s.created_at ?? s.createdAt ?? new Date().toISOString(),
     updated_at: s.updated_at ?? s.updatedAt ?? new Date().toISOString(),
   };
@@ -617,10 +641,10 @@ export async function listConsolidationExpenses(consId) {
   return req(`/consolidations/${consId}/expenses`);
 }
 
-export async function createConsolidationExpense(consId, { title, comment, amount }) {
+export async function createConsolidationExpense(consId, { type, comment, amount }) {
   return mutate(
     `/consolidations/${consId}/expenses`,
-    { method: "POST", body: { title, comment, amount } },
+    { method: "POST", body: { type, comment, amount } },
     ["/consolidations", `/consolidations/${consId}`]
   );
 }

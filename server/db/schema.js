@@ -243,7 +243,7 @@ export const consolidationExpenses = pgTable(
     consolidationId: uuid("consolidation_id")
       .notNull()
       .references(() => consolidations.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
+    type: text("type").notNull().default("other"), // 'customs' | 'other'
     comment: text("comment"),
     amount: numeric("amount", { precision: 12, scale: 2 }).default("0"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -245,7 +245,7 @@ export default async function plRoutes(fastify) {
         ...(b.leg1_usd_per_kg != null && b.leg1UsdPerKg == null && { leg1UsdPerKg: toNumMaybe(b.leg1_usd_per_kg) }),
         ...(b.leg1UsdPerM3 != null && { leg1UsdPerM3: toNumMaybe(b.leg1UsdPerM3) }),
         ...(b.leg1_usd_per_m3 != null && b.leg1UsdPerM3 == null && { leg1UsdPerM3: toNumMaybe(b.leg1_usd_per_m3) }),
-        // ⬇️ Leg 2 fields
+        // ⬇️ Leg 2 fields (legacy - keep for backward compatibility)
         ...(b.leg2Amount != null && { leg2Amount: toNumMaybe(b.leg2Amount) }),
         ...(b.leg2_amount != null && b.leg2Amount == null && { leg2Amount: toNumMaybe(b.leg2_amount) }),
         ...(b.leg2Currency != null && { leg2Currency: b.leg2Currency }),
@@ -256,6 +256,13 @@ export default async function plRoutes(fastify) {
         ...(b.leg2_usd_per_kg != null && b.leg2UsdPerKg == null && { leg2UsdPerKg: toNumMaybe(b.leg2_usd_per_kg) }),
         ...(b.leg2UsdPerM3 != null && { leg2UsdPerM3: toNumMaybe(b.leg2UsdPerM3) }),
         ...(b.leg2_usd_per_m3 != null && b.leg2UsdPerM3 == null && { leg2UsdPerM3: toNumMaybe(b.leg2_usd_per_m3) }),
+        // ⬇️ Leg 2 Manual fields (new source of truth for manual leg2)
+        ...(b.leg2ManualAmount != null && { leg2ManualAmount: toNumMaybe(b.leg2ManualAmount) }),
+        ...(b.leg2_manual_amount != null && b.leg2ManualAmount == null && { leg2ManualAmount: toNumMaybe(b.leg2_manual_amount) }),
+        ...(b.leg2ManualCurrency != null && { leg2ManualCurrency: b.leg2ManualCurrency }),
+        ...(b.leg2_manual_currency != null && b.leg2ManualCurrency == null && { leg2ManualCurrency: b.leg2_manual_currency }),
+        ...(b.leg2ManualAmountUsd != null && { leg2ManualAmountUsd: toNumMaybe(b.leg2ManualAmountUsd) }),
+        ...(b.leg2_manual_amount_usd != null && b.leg2ManualAmountUsd == null && { leg2ManualAmountUsd: toNumMaybe(b.leg2_manual_amount_usd) }),
         // ответственный
         ...(b.responsible_user_id != null && { responsibleUserId: b.responsible_user_id || null }),
       };

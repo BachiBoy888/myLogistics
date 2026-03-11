@@ -179,29 +179,31 @@ export default function ConsolidationDetailsModal({
       const pl = allPLs.find(p => p.id === id);
       const consDetail = cons.pl_details?.[id] || {};
       
-      // Check if saved machineCostShare exists in consolidation data
-      // consDetail.machineCostShare comes from backend as string or null
-      const savedMachineCostShare = consDetail.machineCostShare;
-      const hasSavedValue = savedMachineCostShare != null && savedMachineCostShare !== '';
+      // Allocated leg2 (Расход KG) from consolidation calculator
+      // This is the primary source of truth when PL is in consolidation
+      const allocatedLeg2Usd = consDetail.allocatedLeg2Usd;
+      const hasAllocatedValue = allocatedLeg2Usd != null && allocatedLeg2Usd !== '' && allocatedLeg2Usd > 0;
       
       // Leg1 cost (Расход CN) - from PL, readonly
       const leg1Cost = Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0;
       
-      // Machine cost share (Расход KG) - two-stage logic:
-      // 1. If saved value exists in consolidation → use it (source of truth after save)
-      // 2. Else fallback to PL second leg (initial load only)
+      // Effective leg2 (Расход KG) - two-stage logic:
+      // 1. If allocated value exists in consolidation → use it (source of truth after save)
+      // 2. Else fallback to PL manual leg2 (initial load only)
       // 3. Else 0
-      const machineCostShare = hasSavedValue
-        ? Number(savedMachineCostShare)
-        : Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0;
+      const effectiveLeg2Usd = hasAllocatedValue
+        ? Number(allocatedLeg2Usd)
+        : Number(pl?.effective_leg2_usd || pl?.leg2_manual_amount_usd || pl?.leg2_amount_usd || 0) || 0;
       
       initialDetails[id] = {
         // Client price from PL or consolidation
         clientPrice: pl?.quote?.client_price || pl?.client_price || consDetail.clientPrice || 0,
         // Leg1 cost (Расход CN) - from PL, readonly
         leg1Cost,
-        // Machine cost share (Расход KG) - see logic above
-        machineCostShare,
+        // Effective leg2 (Расход KG) - see logic above
+        effectiveLeg2Usd,
+        // Keep track of allocated value separately
+        allocatedLeg2Usd: hasAllocatedValue ? Number(allocatedLeg2Usd) : 0,
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -272,8 +274,9 @@ export default function ConsolidationDetailsModal({
         [plId]: {
           clientPrice: pl?.quote?.client_price || pl?.client_price || 0,
           leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-          // For new PL: fallback to PL second leg if exists
-          machineCostShare: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0,
+          // For new PL: fallback to PL effective leg2 (manual or legacy)
+          effectiveLeg2Usd: Number(pl?.effective_leg2_usd || pl?.leg2_manual_amount_usd || pl?.leg2_amount_usd || 0) || 0,
+          allocatedLeg2Usd: 0, // Will be set after allocation
           allocationMode: 'auto',
         }
       }));
@@ -504,7 +507,8 @@ export default function ConsolidationDetailsModal({
         const pl = pickedPLs.find(p => p.id === plId);
         completePlDetails[plId] = {
           clientPrice: Number(existing.clientPrice ?? pl?.quote?.client_price ?? pl?.client_price ?? 0) || 0,
-          machineCostShare: Number(existing.machineCostShare ?? 0) || 0,
+          // Use effectiveLeg2Usd as the allocated value for backend
+          allocatedLeg2Usd: Number(existing.effectiveLeg2Usd ?? existing.allocatedLeg2Usd ?? 0) || 0,
           allocationMode: existing.allocationMode || 'auto',
         };
       });
@@ -540,7 +544,9 @@ export default function ConsolidationDetailsModal({
           rebuiltDetails[id] = {
             clientPrice: consDetail.clientPrice || 0,
             leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-            machineCostShare: consDetail.machineCostShare || 0,
+            // Use allocatedLeg2Usd from backend as effective leg2
+            effectiveLeg2Usd: consDetail.allocatedLeg2Usd || 0,
+            allocatedLeg2Usd: consDetail.allocatedLeg2Usd || 0,
             allocationMode: consDetail.allocationMode || 'auto',
           };
         });

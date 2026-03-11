@@ -37,7 +37,7 @@ const SetPLsBody = z.object({
   plLoadOrders: z.record(z.string(), z.coerce.number()).optional(), // { [plId: string]: loadOrder }
   plDetails: z.record(z.string(), z.object({
     clientPrice: z.coerce.number().optional(),
-    machineCostShare: z.coerce.number().optional(),
+    allocatedLeg2Usd: z.coerce.number().optional(), // New field name for allocated KG
     allocationMode: z.enum(["auto", "manual"]).optional(),
   })).optional(), // { [plId: string]: details }
 });
@@ -102,7 +102,7 @@ export default async function consolidationsRoutes(app) {
       const plDetails = links.reduce((acc, l) => {
         acc[l.plId] = {
           clientPrice: l.clientPrice,
-          machineCostShare: l.machineCostShare,
+          allocatedLeg2Usd: l.allocatedLeg2Usd ?? l.machineCostShare, // Support new and legacy fields
           allocationMode: l.allocationMode,
         };
         return acc;
@@ -373,7 +373,11 @@ export default async function consolidationsRoutes(app) {
             if (target.has(plId)) {
               const updateData = {};
               if (details.clientPrice !== undefined) updateData.clientPrice = String(details.clientPrice);
-              if (details.machineCostShare !== undefined) updateData.machineCostShare = String(details.machineCostShare);
+              if (details.allocatedLeg2Usd !== undefined) {
+                updateData.allocatedLeg2Usd = String(details.allocatedLeg2Usd);
+                // Also update legacy field for backward compatibility
+                updateData.machineCostShare = String(details.allocatedLeg2Usd);
+              }
               if (details.allocationMode) updateData.allocationMode = details.allocationMode;
               
               if (Object.keys(updateData).length > 0) {
@@ -388,13 +392,18 @@ export default async function consolidationsRoutes(app) {
                   );
               }
               
-              // Синхронизируем machineCostShare в PL.leg2AmountUsd (второе плечо)
-              if (details.machineCostShare !== undefined) {
+              // Синхронизируем allocatedLeg2Usd в PL.leg2ManualAmountUsd (explicit manual field)
+              // This allows PL card to show the allocated value when in consolidation
+              if (details.allocatedLeg2Usd !== undefined) {
                 await db
                   .update(pl)
                   .set({ 
-                    leg2AmountUsd: String(details.machineCostShare),
-                    leg2Amount: String(details.machineCostShare),
+                    leg2ManualAmountUsd: String(details.allocatedLeg2Usd),
+                    leg2ManualAmount: String(details.allocatedLeg2Usd),
+                    leg2ManualCurrency: "USD",
+                    // Also sync to legacy fields for backward compatibility
+                    leg2AmountUsd: String(details.allocatedLeg2Usd),
+                    leg2Amount: String(details.allocatedLeg2Usd),
                     leg2Currency: "USD",
                   })
                   .where(eq(pl.id, plId));
@@ -423,7 +432,7 @@ export default async function consolidationsRoutes(app) {
         const plDetails = refreshed.reduce((acc, l) => {
           acc[l.plId] = {
             clientPrice: l.clientPrice,
-            machineCostShare: l.machineCostShare,
+            allocatedLeg2Usd: l.allocatedLeg2Usd ?? l.machineCostShare,
             allocationMode: l.allocationMode,
           };
           return acc;

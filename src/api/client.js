@@ -599,7 +599,8 @@ export async function listConsolidations(params = {}) {
 }
 export async function getConsolidation(id) {
   const json = await req(`/consolidations/${id}`);
-  return normalizeCons(json);
+  // Backend returns { consolidation: {...} } or direct object
+  return normalizeCons(json?.consolidation ?? json);
 }
 export async function createConsolidation({ title, plIds = [] } = {}) {
   const cons = await mutate(

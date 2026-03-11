@@ -391,7 +391,7 @@ export default function ConsolidationDetailsModal({
     // Calculate total allocated machine cost
     const allocatedMachineCost = pls.reduce((s, p) => {
       const detail = plDetails[p.id] || {};
-      return s + (Number(detail.machineCostShare) || 0);
+      return s + (Number(detail.effectiveLeg2Usd) || 0);
     }, 0);
     
     const profit = revenue - leg1Costs - totalMachineCost;
@@ -438,7 +438,7 @@ export default function ConsolidationDetailsModal({
         // Last item gets remainder to ensure exact match
         newDetails[alloc.plId] = {
           ...newDetails[alloc.plId],
-          machineCostShare: Number((totalMachineCost - distributed).toFixed(2)),
+          effectiveLeg2Usd: Number((totalMachineCost - distributed).toFixed(2)),
           allocationMode: 'auto',
         };
       } else {
@@ -449,7 +449,7 @@ export default function ConsolidationDetailsModal({
         distributed += roundedShare;
         newDetails[alloc.plId] = {
           ...newDetails[alloc.plId],
-          machineCostShare: roundedShare,
+          effectiveLeg2Usd: roundedShare,
           allocationMode: 'auto',
         };
       }
@@ -465,7 +465,7 @@ export default function ConsolidationDetailsModal({
       [plId]: {
         ...prev[plId],
         [field]: value,
-        ...(field === 'machineCostShare' ? { allocationMode: 'manual' } : {}),
+        ...(field === 'effectiveLeg2Usd' ? { allocationMode: 'manual' } : {}),
       },
     }));
     markChanged();
@@ -1126,10 +1126,10 @@ export default function ConsolidationDetailsModal({
                         const clientPrice = Number(detail.clientPrice) || 0;
                         // Leg1 cost (Расход CN) - from PL, readonly
                         const leg1Cost = Number(detail.leg1Cost || 0);
-                        // Machine share (Расход KG) - editable, source of truth from consolidation_pl
-                        const machineShare = Number(detail.machineCostShare ?? 0);
-                        const profit = clientPrice - leg1Cost - machineShare;
-                        const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
+                        // Effective leg2 (Расход KG) - editable, source of truth
+                        const effectiveLeg2Usd = Number(detail.effectiveLeg2Usd ?? 0);
+                        const profit = clientPrice - leg1Cost - effectiveLeg2Usd;
+                        const usdPerKg = (p.weight_kg || 0) > 0 ? effectiveLeg2Usd / p.weight_kg : 0;
                         return (
                           <tr key={p.id} className="hover:bg-gray-50">
                             <td className="p-2 font-medium">{p.pl_number}</td>
@@ -1141,8 +1141,8 @@ export default function ConsolidationDetailsModal({
                               <input 
                                 type="text"
                                 inputMode="decimal"
-                                value={machineShare}
-                                onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
+                                value={effectiveLeg2Usd}
+                                onChange={(e) => updatePLDetail(p.id, 'effectiveLeg2Usd', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
                                 placeholder="0" 
                               />

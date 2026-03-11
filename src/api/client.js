@@ -144,6 +144,14 @@ export function normalizePL(s) {
   const pl_number = s.pl_number ?? s.plNumber ?? s.number ?? "";
   const id = toNumericId(s.id ?? s._id);
 
+  // Leg1 data
+  const leg1Amount = Number(s.leg1Amount ?? s.leg1_amount ?? s.calculator?.leg1Amount ?? 0);
+  const leg1AmountUsd = Number(s.leg1AmountUsd ?? s.leg1_amount_usd ?? s.calculator?.leg1AmountUSD ?? 0);
+  
+  // Leg2 data
+  const leg2Amount = Number(s.leg2Amount ?? s.leg2_amount ?? s.calculator?.leg2Amount ?? 0);
+  const leg2AmountUsd = Number(s.leg2AmountUsd ?? s.leg2_amount_usd ?? s.calculator?.leg2AmountUSD ?? 0);
+
   return {
     id,
     pl_number,
@@ -161,6 +169,16 @@ export function normalizePL(s) {
     incoterm: s.incoterm ?? "EXW",
     fob_warehouse_id: s.fob_warehouse_id ?? s.fobWarehouseId ?? null,
     status: s.status ?? "draft",
+
+    // Leg1 data
+    leg1_amount: leg1Amount,
+    leg1_amount_usd: leg1AmountUsd,
+    leg1_currency: s.leg1Currency ?? s.leg1_currency ?? "USD",
+    
+    // Leg2 data
+    leg2_amount: leg2Amount,
+    leg2_amount_usd: leg2AmountUsd,
+    leg2_currency: s.leg2Currency ?? s.leg2_currency ?? "USD",
 
     // калькулятор (если сервер начал отдавать jsonb)
     calculator:
@@ -186,19 +204,40 @@ export function normalizePL(s) {
 // CONSOLIDATION (сервер → UI)
 export function normalizeCons(s) {
   if (!s) return null;
+  
+  // Normalize pl_details - convert string numeric values to numbers
+  const rawPlDetails = s.pl_details ?? s.plDetails ?? {};
+  const normalizedPlDetails = {};
+  Object.entries(rawPlDetails).forEach(([plId, details]) => {
+    normalizedPlDetails[plId] = {
+      clientPrice: Number(details.clientPrice ?? details.client_price ?? 0) || 0,
+      machineCostShare: Number(details.machineCostShare ?? details.machine_cost_share ?? 0) || 0,
+      allocationMode: details.allocationMode ?? details.allocation_mode ?? 'auto',
+    };
+  });
+  
   return {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
     title: s.title ?? s.cons_number ?? s.consNumber ?? "",
-    status: s.status ?? "loaded", // синхронизировано с enum consolidation_status_v2
+    status: s.status ?? "loaded",
     pl_ids: Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
       ? s.plIds
       : [],
     pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
-    capacity_cbm: s.capacity_cbm ?? s.capacityCbm ?? 0,
-    capacity_kg: s.capacity_kg ?? s.capacityKg ?? 0,
+    pl_details: normalizedPlDetails,
+    capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
+    capacity_kg: Number(s.capacity_kg ?? s.capacityKg ?? 0),
+    machine_cost: Number(s.machine_cost ?? s.machineCost ?? 0),
+    expenses: (s.expenses ?? []).map(e => ({
+      id: e.id,
+      type: e.type ?? 'other',
+      comment: e.comment,
+      amount: Number(e.amount) || 0,
+      created_at: e.created_at ?? e.createdAt,
+    })),
     created_at: s.created_at ?? s.createdAt ?? new Date().toISOString(),
     updated_at: s.updated_at ?? s.updatedAt ?? new Date().toISOString(),
   };
@@ -589,12 +628,12 @@ export async function getConsolidationStatusHistory(id) {
   const json = await req(`/consolidations/${id}/status-history`);
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
-export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {}) {
+export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {}, plDetails = {}) {
   const target = Array.from(new Set((targetIds || []).map(Number))).filter(Boolean);
   try {
     const res = await mutate(
       `/consolidations/${id}/pl`,
-      { method: "PUT", body: { plIds: target, plLoadOrders } },
+      { method: "PUT", body: { plIds: target, plLoadOrders, plDetails } },
       ["/consolidations", `/consolidations/${id}`]
     );
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
@@ -607,6 +646,58 @@ export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {})
     for (const pid of toRemove) await removePLFromConsolidation(id, pid);
     return getConsolidation(id);
   }
+}
+
+// Consolidation Expenses
+export async function listConsolidationExpenses(consId) {
+  return req(`/consolidations/${consId}/expenses`);
+}
+
+export async function createConsolidationExpense(consId, { type, comment, amount }) {
+  return mutate(
+    `/consolidations/${consId}/expenses`,
+    { method: "POST", body: { type, comment, amount } },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+}
+
+export async function updateConsolidationExpense(consId, expenseId, { title, comment, amount }) {
+  return mutate(
+    `/consolidations/${consId}/expenses/${expenseId}`,
+    { method: "PATCH", body: { title, comment, amount } },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+}
+
+export async function deleteConsolidationExpense(consId, expenseId) {
+  await mutate(
+    `/consolidations/${consId}/expenses/${expenseId}`,
+    { method: "DELETE" },
+    ["/consolidations", `/consolidations/${consId}`]
+  );
+  return true;
+}
+
+// Sync all expenses for consolidation (delete old, create new)
+export async function syncConsolidationExpenses(consId, expenses) {
+  // Get current expenses
+  const current = await listConsolidationExpenses(consId);
+  
+  // Delete all current expenses
+  for (const exp of current) {
+    await deleteConsolidationExpense(consId, exp.id);
+  }
+  
+  // Create new expenses
+  for (const exp of expenses) {
+    await createConsolidationExpense(consId, {
+      type: exp.type,
+      comment: exp.comment,
+      amount: Number(exp.amount) || 0,
+    });
+  }
+  
+  return true;
 }
 
 export async function listUsers(params = {}) {

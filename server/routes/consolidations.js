@@ -5,6 +5,8 @@ import {
   consolidations,
   consolidationPl,
   consolidationStatusHistory,
+  consolidationExpenses,
+  pl,
 } from "../db/schema.js";
 import { nextConsNumber } from "../services/consolidations.js";
 import {
@@ -25,13 +27,25 @@ const UpdateBody = z.object({
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),
-  capacityKg: z.number().optional(),
-  capacityCbm: z.number().optional(),
+  capacityKg: z.coerce.number().optional(),
+  capacityCbm: z.coerce.number().optional(),
+  machineCost: z.coerce.number().optional(),
 });
 
 const SetPLsBody = z.object({
   plIds: z.array(z.number().int()).default([]),
-  plLoadOrders: z.record(z.number().int()).optional(), // { plId: loadOrder }
+  plLoadOrders: z.record(z.string(), z.coerce.number()).optional(), // { [plId: string]: loadOrder }
+  plDetails: z.record(z.string(), z.object({
+    clientPrice: z.coerce.number().optional(),
+    machineCostShare: z.coerce.number().optional(),
+    allocationMode: z.enum(["auto", "manual"]).optional(),
+  })).optional(), // { [plId: string]: details }
+});
+
+const ExpenseBody = z.object({
+  type: z.enum(["customs", "other"]),
+  comment: z.string().optional(),
+  amount: z.number().min(0),
 });
 
 export default async function consolidationsRoutes(app) {
@@ -70,17 +84,44 @@ export default async function consolidationsRoutes(app) {
         .from(consolidations)
         .where(eq(consolidations.id, id));
       if (!cons) return reply.notFound("Consolidation not found");
+      
+      // Get PL links with calculator fields
       const links = await db
         .select()
         .from(consolidationPl)
         .where(eq(consolidationPl.consolidationId, id))
         .orderBy(consolidationPl.loadOrder);
+      
       const plIds = links.map((l) => l.plId);
       const plLoadOrders = links.reduce((acc, l) => {
         acc[l.plId] = l.loadOrder;
         return acc;
       }, {});
-      return { ...cons, plIds, plLoadOrders };
+      
+      // Get PL details for calculator
+      const plDetails = links.reduce((acc, l) => {
+        acc[l.plId] = {
+          clientPrice: l.clientPrice,
+          machineCostShare: l.machineCostShare,
+          allocationMode: l.allocationMode,
+        };
+        return acc;
+      }, {});
+      
+      // Get expenses
+      const expenses = await db
+        .select()
+        .from(consolidationExpenses)
+        .where(eq(consolidationExpenses.consolidationId, id))
+        .orderBy(desc(consolidationExpenses.createdAt));
+      
+      return { 
+        ...cons, 
+        plIds, 
+        plLoadOrders,
+        plDetails,
+        expenses,
+      };
     } catch (e) {
       req.log.error({ e, id }, "CONS_GET error");
       return reply.internalServerError("Get failed");
@@ -181,6 +222,7 @@ export default async function consolidationsRoutes(app) {
             ...(body.status ? { status: body.status } : {}),
             ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
             ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
+            ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),
             updatedAt: new Date(),
           })
           .where(eq(consolidations.id, id))
@@ -324,6 +366,43 @@ export default async function consolidationsRoutes(app) {
           }
         }
 
+        // Обновляем calculator details для PL
+        if (body.plDetails && Object.keys(body.plDetails).length > 0) {
+          for (const [plIdStr, details] of Object.entries(body.plDetails)) {
+            const plId = Number(plIdStr);
+            if (target.has(plId)) {
+              const updateData = {};
+              if (details.clientPrice !== undefined) updateData.clientPrice = String(details.clientPrice);
+              if (details.machineCostShare !== undefined) updateData.machineCostShare = String(details.machineCostShare);
+              if (details.allocationMode) updateData.allocationMode = details.allocationMode;
+              
+              if (Object.keys(updateData).length > 0) {
+                await db
+                  .update(consolidationPl)
+                  .set(updateData)
+                  .where(
+                    and(
+                      eq(consolidationPl.consolidationId, id),
+                      eq(consolidationPl.plId, plId)
+                    )
+                  );
+              }
+              
+              // Синхронизируем machineCostShare в PL.leg2AmountUsd (второе плечо)
+              if (details.machineCostShare !== undefined) {
+                await db
+                  .update(pl)
+                  .set({ 
+                    leg2AmountUsd: String(details.machineCostShare),
+                    leg2Amount: String(details.machineCostShare),
+                    leg2Currency: "USD",
+                  })
+                  .where(eq(pl.id, plId));
+              }
+            }
+          }
+        }
+
         req.log.info({ id, add: toAdd.length, remove: toRemove.length }, "CONS_SET_PL ok");
 
         // Вернём актуальный объект
@@ -341,10 +420,26 @@ export default async function consolidationsRoutes(app) {
           acc[l.plId] = l.loadOrder;
           return acc;
         }, {});
-        return { consolidation: { ...cons, plIds, plLoadOrders } };
+        const plDetails = refreshed.reduce((acc, l) => {
+          acc[l.plId] = {
+            clientPrice: l.clientPrice,
+            machineCostShare: l.machineCostShare,
+            allocationMode: l.allocationMode,
+          };
+          return acc;
+        }, {});
+        const expenses = await db
+          .select()
+          .from(consolidationExpenses)
+          .where(eq(consolidationExpenses.consolidationId, id))
+          .orderBy(desc(consolidationExpenses.createdAt));
+        return { consolidation: { ...cons, plIds, plLoadOrders, plDetails, expenses } };
       } catch (e) {
+        console.error('[ERROR] CONS_SET_PL failed:', e);
+        console.error('[ERROR] Stack:', e.stack);
+        console.error('[ERROR] Request body:', JSON.stringify(req.body, null, 2));
         req.log.error({ e, id, body: req.body }, "CONS_SET_PL error");
-        return reply.internalServerError("Set PLs failed");
+        return reply.internalServerError(e.message || "Set PLs failed");
       }
     }
   );
@@ -385,4 +480,107 @@ export default async function consolidationsRoutes(app) {
       return reply.internalServerError("History failed");
     }
   });
+
+  // EXPENSES: LIST
+  app.get("/:id/expenses", async (req, reply) => {
+    const { id } = req.params;
+    try {
+      const rows = await db
+        .select()
+        .from(consolidationExpenses)
+        .where(eq(consolidationExpenses.consolidationId, id))
+        .orderBy(desc(consolidationExpenses.createdAt));
+      return rows;
+    } catch (e) {
+      req.log.error({ e, id }, "CONS_EXPENSES_LIST error");
+      return reply.internalServerError("List expenses failed");
+    }
+  });
+
+  // EXPENSES: CREATE
+  app.post(
+    "/:id/expenses",
+    { preHandler: app.authGuard },
+    async (req, reply) => {
+      const { id } = req.params;
+      try {
+        const body = ExpenseBody.parse(req.body ?? {});
+        const [created] = await db
+          .insert(consolidationExpenses)
+          .values({
+            consolidationId: id,
+            type: body.type,
+            comment: body.comment ?? null,
+            amount: String(body.amount),
+          })
+          .returning();
+        req.log.info({ id, expenseId: created.id }, "CONS_EXPENSE_CREATE ok");
+        return reply.code(201).send(created);
+      } catch (e) {
+        req.log.error({ e, id, body: req.body }, "CONS_EXPENSE_CREATE error");
+        return reply.internalServerError("Create expense failed");
+      }
+    }
+  );
+
+  // EXPENSES: UPDATE
+  app.patch(
+    "/:id/expenses/:expenseId",
+    { preHandler: app.authGuard },
+    async (req, reply) => {
+      const { id, expenseId } = req.params;
+      try {
+        const body = ExpenseBody.partial().parse(req.body ?? {});
+        const updateData = {};
+        if (body.type !== undefined) updateData.type = body.type;
+        if (body.comment !== undefined) updateData.comment = body.comment;
+        if (body.amount !== undefined) updateData.amount = String(body.amount);
+        updateData.updatedAt = new Date();
+
+        const [updated] = await db
+          .update(consolidationExpenses)
+          .set(updateData)
+          .where(
+            and(
+              eq(consolidationExpenses.id, expenseId),
+              eq(consolidationExpenses.consolidationId, id)
+            )
+          )
+          .returning();
+
+        if (!updated) return reply.notFound("Expense not found");
+        req.log.info({ id, expenseId }, "CONS_EXPENSE_UPDATE ok");
+        return updated;
+      } catch (e) {
+        req.log.error({ e, id, expenseId, body: req.body }, "CONS_EXPENSE_UPDATE error");
+        return reply.internalServerError("Update expense failed");
+      }
+    }
+  );
+
+  // EXPENSES: DELETE
+  app.delete(
+    "/:id/expenses/:expenseId",
+    { preHandler: app.authGuard },
+    async (req, reply) => {
+      const { id, expenseId } = req.params;
+      try {
+        const res = await db
+          .delete(consolidationExpenses)
+          .where(
+            and(
+              eq(consolidationExpenses.id, expenseId),
+              eq(consolidationExpenses.consolidationId, id)
+            )
+          )
+          .returning();
+        if (!res.length) return reply.notFound("Expense not found");
+        req.log.info({ id, expenseId }, "CONS_EXPENSE_DELETE ok");
+        return { ok: true };
+      } catch (e) {
+        req.log.error({ e, id, expenseId }, "CONS_EXPENSE_DELETE error");
+        return reply.internalServerError("Delete expense failed");
+      }
+    }
+  );
 }

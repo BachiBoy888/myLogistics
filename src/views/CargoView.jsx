@@ -21,6 +21,7 @@ import {
   listPLDocs as apiListPLDocs,
   assignPLResponsible,
   resolveOrCreateClient,
+  getPLById,
 } from "../api/client";
 
 // Модалки
@@ -87,6 +88,10 @@ export default function CargoView({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPLs, setSelectedPLs] = useState([]);
+  
+  // Fresh PL detail state - fetched individually when opening PL card
+  const [selectedPLDetail, setSelectedPLDetail] = useState(null);
+  const [isLoadingPLDetail, setIsLoadingPLDetail] = useState(false);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState({
@@ -163,6 +168,30 @@ export default function CargoView({
   useEffect(() => {
     refreshPLs({ keepSelected: true });
   }, []);
+
+  // Fetch fresh PL detail when opening PL card
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedPLDetail(null);
+      return;
+    }
+    
+    async function fetchPLDetail() {
+      setIsLoadingPLDetail(true);
+      try {
+        const freshPL = await getPLById(selectedId);
+        setSelectedPLDetail(freshPL);
+      } catch (e) {
+        console.error('Failed to fetch PL detail:', e);
+        // Fallback to list data if detail fetch fails
+        setSelectedPLDetail(null);
+      } finally {
+        setIsLoadingPLDetail(false);
+      }
+    }
+    
+    fetchPLDetail();
+  }, [selectedId]);
 
   const clientNameOf = (pl) =>
     typeof pl?.client === "string"
@@ -288,8 +317,8 @@ export default function CargoView({
   }, [safePLs, groupedByStage]);
 
   const selected = useMemo(
-    () => safePLs.find((p) => p.id === selectedId) ?? null,
-    [safePLs, selectedId]
+    () => selectedPLDetail ?? safePLs.find((p) => p.id === selectedId) ?? null,
+    [safePLs, selectedId, selectedPLDetail]
   );
 
   const handlePLMove = useCallback(
@@ -700,6 +729,15 @@ export default function CargoView({
               try {
                 await API.setConsPLs(id, plIds.map(Number), plLoadOrders, plDetails);
                 await Promise.all([refreshCons(), refreshPLs()]);
+                // If a PL is currently open and was in the saved consolidation, refresh its detail
+                if (selectedId && plIds.map(Number).includes(Number(selectedId))) {
+                  try {
+                    const freshPL = await getPLById(selectedId);
+                    setSelectedPLDetail(freshPL);
+                  } catch (e) {
+                    console.error('Failed to refresh PL detail after save:', e);
+                  }
+                }
               } catch (e) {
                 showError("Не удалось сохранить состав консолидации");
               }

@@ -60,7 +60,7 @@ export default function PLCard({
     shipper_contacts: pl.shipper_contacts ?? "",
   });
 
-  // Обновляем formData когда меняется pl (только при открытии нового PL)
+  // Обновляем formData когда меняется pl - синхронизируем все поля включая consolidation-данные
   useEffect(() => {
     setFormData({
       title: pl.title ?? "",
@@ -71,7 +71,11 @@ export default function PLCard({
       shipper_name: pl.shipper_name ?? "",
       shipper_contacts: pl.shipper_contacts ?? "",
     });
-  }, [pl.id]);
+    // Reset tab to info when opening different PL
+    setActiveTab("info");
+    // Reset menu state
+    setShowMenu(false);
+  }, [pl.id, pl.effective_leg2_usd, pl.leg2_manual_amount_usd]);
 
   // ===== Консолидация для PL
   const consOfPL = useMemo(

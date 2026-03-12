@@ -398,6 +398,12 @@ export default function CargoView({
     });
   }, []);
 
+  // Stable close handler to prevent stale closures and force fresh state
+  const handleClosePLCard = useCallback(() => {
+    setSelectedId(null);
+    setSelectedPLDetail(null); // Clear detail to force fresh fetch next time
+  }, []);
+
   async function savePLPatch(id, patch) {
     const isLocalOnly =
       patch &&
@@ -678,16 +684,17 @@ export default function CargoView({
         <div>Перетащите карточку для смены этапа • Shift+Click для множественного выбора</div>
       </div>
 
-      {/* PL Modal */}
+      {/* PL Modal - key forces remount for clean state */}
       {selected && (
-        <Modal onClose={() => setSelectedId(null)}>
+        <Modal key={`pl-modal-${selected.id}`} onClose={handleClosePLCard}>
           <PLCard
+            key={`pl-card-${selected.id}`}
             pl={selected}
             warehouses={warehouses}
             onUpdate={(patch) => savePLPatch(selected.id, patch)}
             onNext={(newStatus) => handleUpdateStatus(selected.id, newStatus)}
             onDelete={() => handleDeletePL(selected.id)}
-            onClose={() => setSelectedId(null)}
+            onClose={handleClosePLCard}
             cons={safeCons}
             ui={{ Chip, ProgressBar, Card, Label, LabelInput }}
             helpers={{
@@ -699,7 +706,7 @@ export default function CargoView({
               badgeColorByStatus,
             }}
             navigateToClient={(clientId, clientName) => {
-              setSelectedId(null);
+              handleClosePLCard();
               goToClients?.(clientId, clientName);
             }}
             currentUser={currentUser}
@@ -725,30 +732,37 @@ export default function CargoView({
                 showError("Не удалось расформировать консолидацию");
               }
             }}
-            onSavePLs={async (id, plIds, plLoadOrders, plDetails) => {
+            onSavePLs={async (id, plIds, plLoadOrders, plDetails, { skipRefresh = false } = {}) => {
               try {
                 await API.setConsPLs(id, plIds.map(Number), plLoadOrders, plDetails);
-                await Promise.all([refreshCons(), refreshPLs()]);
-                // If a PL is currently open and was in the saved consolidation, refresh its detail
-                if (selectedId && plIds.map(Number).includes(Number(selectedId))) {
-                  try {
-                    const freshPL = await getPLById(selectedId);
-                    setSelectedPLDetail(freshPL);
-                  } catch (e) {
-                    console.error('Failed to refresh PL detail after save:', e);
+                if (!skipRefresh) {
+                  await Promise.all([refreshCons(), refreshPLs()]);
+                  // If a PL is currently open and was in the saved consolidation, refresh its detail
+                  if (selectedId && plIds.map(Number).includes(Number(selectedId))) {
+                    try {
+                      const freshPL = await getPLById(selectedId);
+                      setSelectedPLDetail(freshPL);
+                    } catch (e) {
+                      console.error('Failed to refresh PL detail after save:', e);
+                    }
                   }
                 }
               } catch (e) {
                 showError("Не удалось сохранить состав консолидации");
               }
             }}
-            onUpdateCons={async (id, patch) => {
+            onUpdateCons={async (id, patch, { skipRefresh = false } = {}) => {
               try {
                 await API.updateCons(id, patch);
-                await refreshCons();
+                if (!skipRefresh) {
+                  await refreshCons();
+                }
               } catch (e) {
                 showError("Не удалось обновить консолидацию");
               }
+            }}
+            onRefresh={async () => {
+              await Promise.all([refreshCons(), refreshPLs()]);
             }}
           />
         </Modal>

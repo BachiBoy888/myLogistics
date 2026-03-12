@@ -137,6 +137,7 @@ export default function ConsolidationDetailsModal({
   onDissolve,
   onSavePLs,
   onUpdateCons,
+  onRefresh,
 }) {
   const [activeTab, setActiveTab] = useState("loading"); // "loading" | "layout" | "calculator"
   const [showMenu, setShowMenu] = useState(false);
@@ -166,6 +167,10 @@ export default function ConsolidationDetailsModal({
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
+    // Skip re-initialization during save to prevent overwriting local state
+    // with potentially stale prop data before final refresh completes
+    if (saving) return;
+    
     setPickedIds(cons.pl_ids || []);
     const initialOrders = {};
     (cons.pl_ids || []).forEach((id, idx) => {
@@ -214,7 +219,7 @@ export default function ConsolidationDetailsModal({
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -513,27 +518,41 @@ export default function ConsolidationDetailsModal({
         };
       });
       
-      // Save PLs with orders and calculator details
-      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
+      // ===== DETERMINISTIC SAVE SEQUENCE =====
+      // Order: 1) capacity/machineCost → 2) expenses → 3) plDetails
+      // All writes happen before any UI refresh to prevent flicker
       
-      // Sync expenses (delete old, create new)
-      await syncConsolidationExpenses(cons.id, expenses);
-      
-      // Save capacity and machine cost
+      // Step 1: Update capacity and machine cost first (PATCH)
       const consUpdate = {};
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
-        await onUpdateCons?.(cons.id, consUpdate);
+        await onUpdateCons?.(cons.id, consUpdate, { skipRefresh: true });
       }
       
-      // Fetch fresh consolidation data with full pl_details
+      // Step 2: Sync expenses (PUT replaces all)
+      await syncConsolidationExpenses(cons.id, expenses);
+      
+      // Step 3: Save PLs with orders and calculator details (this is the final write)
+      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails, { skipRefresh: true });
+      
+      // Step 4: SINGLE final fetch after ALL writes complete
+      // This ensures we get consistent final state, not intermediate
       const freshCons = await getConsolidation(cons.id);
       
-      // Rebuild plDetails from fresh backend data
-      if (freshCons?.pl_details) {
+      // Step 5: Rebuild ALL local state from SINGLE fresh source of truth
+      if (freshCons) {
+        // Update capacity state
+        setCapacityKg(freshCons.capacity_kg || 0);
+        setCapacityCbm(freshCons.capacity_cbm || 0);
+        
+        // Update machine cost and expenses from final state
+        setMachineCost(freshCons.machine_cost || 0);
+        setExpenses(freshCons.expenses || []);
+        
+        // Rebuild plDetails from fresh backend data
         const rebuiltDetails = {};
         pickedIds.forEach((id) => {
           const pl = allPLs.find(p => p.id === id);
@@ -552,6 +571,10 @@ export default function ConsolidationDetailsModal({
         });
         setPlDetails(rebuiltDetails);
       }
+      
+      // Step 6: Trigger ONE final parent refresh to update lists
+      // This happens AFTER all local state is updated, so no flicker occurs
+      await onRefresh?.();
       
       setHasChanges(false);
     } catch (err) {

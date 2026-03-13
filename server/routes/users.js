@@ -440,4 +440,29 @@ export default async function usersRoutes(app) {
       return reply.code(500).send({ error: "internal_server_error", message: "Failed to deactivate user" });
     }
   });
+
+  // GET /api/users/:id/avatar - получить аватар пользователя (lazy loading)
+  // Возвращает либо base64 аватар, либо 404 если аватара нет
+  app.get("/:id/avatar", async (req, reply) => {
+    try {
+      const userId = req.params.id;
+      
+      const [user] = await db
+        .select({ avatar: usersTable.avatar })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .limit(1);
+
+      if (!user || !user.avatar) {
+        return reply.code(404).send({ error: "not_found", message: "Avatar not found" });
+      }
+
+      // Если аватар является data URL (base64), возвращаем как есть
+      // В будущем здесь можно добавить генерацию thumbnail на лету
+      return reply.send({ avatar: user.avatar });
+    } catch (err) {
+      req.log.error({ err }, "GET /api/users/:id/avatar failed");
+      return reply.code(500).send({ error: "internal_server_error", message: "Failed to get avatar" });
+    }
+  });
 }

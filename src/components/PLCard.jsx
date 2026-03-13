@@ -83,10 +83,11 @@ export default function PLCard({
     [cons, pl.id]
   );
 
-  // ===== Хронология
+  // ===== Хронология - lazy load только при открытии вкладки
   const [events, setEvents] = useState([]);
-  const [evLoading, setEvLoading] = useState(true);
+  const [evLoading, setEvLoading] = useState(false);
   const [evError, setEvError] = useState("");
+  const [eventsLoaded, setEventsLoaded] = useState(false);
 
   async function refreshEvents() {
     try {
@@ -99,6 +100,7 @@ export default function PLCard({
           s.dropped > 0 && console.warn("[PLCard] dropped invalid events", pl.id, s),
       });
       setEvents(sanitized);
+      setEventsLoaded(true);
     } catch (e) {
       setEvError("Не удалось загрузить события");
       console.error("[PLCard] events fetch error", e);
@@ -106,29 +108,62 @@ export default function PLCard({
       setEvLoading(false);
     }
   }
+  // Загружаем события только при открытии вкладки timeline
   useEffect(() => {
-    if (pl?.id) refreshEvents();
+    if (activeTab === "timeline" && pl?.id && !eventsLoaded) {
+      refreshEvents();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pl?.id]);
+  }, [activeTab, pl?.id]);
 
-  // ===== Документы и комментарии - загружаем сразу для каунтеров
+  // ===== Документы и комментарии - lazy load только при открытии вкладок
+  const [docs, setDocs] = useState([]);
   const [docsCount, setDocsCount] = useState(0);
-  const [commentsCount, setCommentsCount] = useState(0);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsLoaded, setDocsLoaded] = useState(false);
 
-  // Загружаем счётчики сразу при открытии PL
+  const [comments, setComments] = useState([]);
+  const [commentsCount, setCommentsCount] = useState(0);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+
+  // Загружаем документы только при открытии вкладки docs
   useEffect(() => {
-    if (!pl?.id) return;
-    
-    // Загружаем документы
-    listPLDocs(pl.id).then(list => {
-      setDocsCount(Array.isArray(list) ? list.length : 0);
-    }).catch(() => setDocsCount(0));
-    
-    // Загружаем комментарии
-    listPLComments(pl.id).then(rows => {
-      setCommentsCount(Array.isArray(rows) ? rows.length : 0);
-    }).catch(() => setCommentsCount(0));
-  }, [pl?.id]);
+    if (activeTab === "docs" && pl?.id && !docsLoaded) {
+      setDocsLoading(true);
+      listPLDocs(pl.id)
+        .then(list => {
+          const docList = Array.isArray(list) ? list : [];
+          setDocs(docList);
+          setDocsCount(docList.length);
+          setDocsLoaded(true);
+        })
+        .catch(() => {
+          setDocs([]);
+          setDocsCount(0);
+        })
+        .finally(() => setDocsLoading(false));
+    }
+  }, [activeTab, pl?.id, docsLoaded]);
+
+  // Загружаем комментарии только при открытии вкладки comments
+  useEffect(() => {
+    if (activeTab === "comments" && pl?.id && !commentsLoaded) {
+      setCommentsLoading(true);
+      listPLComments(pl.id)
+        .then(rows => {
+          const commList = Array.isArray(rows) ? rows : [];
+          setComments(commList);
+          setCommentsCount(commList.length);
+          setCommentsLoaded(true);
+        })
+        .catch(() => {
+          setComments([]);
+          setCommentsCount(0);
+        })
+        .finally(() => setCommentsLoading(false));
+    }
+  }, [activeTab, pl?.id, commentsLoaded]);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);

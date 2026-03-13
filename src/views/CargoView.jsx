@@ -330,12 +330,16 @@ export default function CargoView({
 
   const selected = useMemo(
     () => {
-      // Guard: don't open modal if no PL is selected, even if detail exists
-      if (!selectedId) return null;
-      return selectedPLDetail ?? safePLs.find((p) => p.id === selectedId) ?? null;
+      // Только fresh данные из API. Не используем fallback из списка.
+      // Calculator должен показываться только с актуальными данными.
+      if (!selectedId || !selectedPLDetail) return null;
+      return selectedPLDetail;
     },
-    [safePLs, selectedId, selectedPLDetail]
+    [selectedId, selectedPLDetail]
   );
+
+  // Состояние загрузки для показа skeleton
+  const isPLLoading = selectedId !== null && (isLoadingPLDetail || !selectedPLDetail);
 
   const handlePLMove = useCallback(
     async (plId, targetStage, isCons = false) => {
@@ -702,6 +706,31 @@ export default function CargoView({
       </div>
 
       {/* PL Modal - key forces remount for clean state */}
+      {/* Loading Skeleton - показываем пока загружаются fresh данные */}
+      {isPLLoading && (
+        <Modal key="pl-modal-loading" onClose={handleClosePLCard}>
+          <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-4xl w-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
+              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+            </div>
+            {/* Калькулятор skeleton */}
+            <div className="mt-6 p-4 border rounded-xl bg-gray-50">
+              <div className="h-5 w-48 bg-gray-300 rounded animate-pulse mb-4" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="h-20 bg-gray-200 rounded animate-pulse" />
+                <div className="h-20 bg-gray-200 rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Actual PL Card - только после загрузки fresh данных */}
       {selected && (
         <Modal key={`pl-modal-${selected.id}`} onClose={handleClosePLCard}>
           <PLCard

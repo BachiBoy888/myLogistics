@@ -34,15 +34,18 @@ function contentDispositionInline(filename) {
 }
 
 // обогащение PL данными ответственного (snake-case поля для фронта)
+// Оптимизировано: не возвращаем base64 аватар, только thumbnail URL или null
 async function hydrateResponsible(db, row) {
   if (!row) return row;
   let responsibleName = null;
-  let responsibleAvatar = null;
+  let responsibleAvatarUrl = null;
   let responsibleIsActive = true;
   if (row.responsibleUserId) {
     const [u] = await db.select().from(users).where(eq(users.id, row.responsibleUserId)).limit(1);
     responsibleName = u?.name ?? null;
-    responsibleAvatar = u?.avatar ?? null;
+    // Не возвращаем base64 аватар в PL payload
+    // Вместо этого возвращаем null или URL для lazy loading
+    // responsibleAvatarUrl = u?.avatar ? `/api/users/${u.id}/avatar` : null;
     responsibleIsActive = u?.isActive === 'true' || u?.isActive === true;
   }
   return {
@@ -50,7 +53,7 @@ async function hydrateResponsible(db, row) {
     clientPrice: row.clientPrice ?? row.client_price ?? null,
     responsible_user_id: row.responsibleUserId ?? null,
     responsible_name: responsibleName,
-    responsible_avatar: responsibleAvatar,
+    responsible_avatar: null, // Убран base64 payload
     responsible_is_active: responsibleIsActive,
   };
 }

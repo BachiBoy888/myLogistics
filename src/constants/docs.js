@@ -27,3 +27,6 @@ export const DOC_TYPES = [
     filePrefix: "predecl",
   },
 ];
+
+// Additional documents type - for user-uploaded custom documents
+export const ADDITIONAL_DOC_TYPE = "additional";

@@ -11,7 +11,6 @@ import {
 import { nextConsNumber } from "../services/consolidations.js";
 import {
   ensureAllPLsAreToLoad,
-  assertPLsNotBehind,
   CONS_PIPELINE,
 } from "../services/cons-validators.js";
 
@@ -189,22 +188,39 @@ export default async function consolidationsRoutes(app) {
             .where(eq(consolidations.id, id));
           if (!before) return { notFound: true };
 
+          // Validate status transition is valid in pipeline
           if (body.status) {
             const fromIdx = CONS_PIPELINE.indexOf(before.status);
             const toIdx = CONS_PIPELINE.indexOf(body.status);
-            const isMovingBackward = toIdx < fromIdx;
             
             if (fromIdx === -1 || toIdx === -1) {
               throw new Error(`Недопустимый статус: ${before.status} или ${body.status}`);
             }
+            // Note: We allow any valid pipeline transition now.
+            // PL status sync happens automatically below.
+          }
+
+          // If status is changing, sync PLs FIRST (before updating consolidation)
+          // This ensures atomicity and avoids validation conflicts
+          if (body.status && before.status !== body.status) {
+            // Get all PLs in this consolidation
+            const plLinks = await tx
+              .select({ plId: consolidationPl.plId })
+              .from(consolidationPl)
+              .where(eq(consolidationPl.consolidationId, id));
             
-            if (isMovingBackward) {
-              await assertPLsNotBehind(tx, id, body.status, true);
-            } else {
-              await assertPLsNotBehind(tx, id, body.status, false);
+            const plIds = plLinks.map((l) => l.plId);
+            
+            // Sync all PLs to the new status FIRST
+            if (plIds.length > 0) {
+              await tx
+                .update(pl)
+                .set({ status: body.status, updatedAt: new Date() })
+                .where(inArray(pl.id, plIds));
             }
           }
 
+          // Now update the consolidation
           const [after] = await tx
             .update(consolidations)
             .set({
@@ -218,7 +234,7 @@ export default async function consolidationsRoutes(app) {
             .where(eq(consolidations.id, id))
             .returning();
 
-          // Only sync PLs if status is actually changing
+          // Write history only if status actually changed
           if (body.status && before.status !== body.status) {
             await tx.insert(consolidationStatusHistory).values({
               consolidationId: id,
@@ -227,20 +243,6 @@ export default async function consolidationsRoutes(app) {
               note: body.note ?? null,
               changedBy: body.changedBy ?? req.user?.name ?? null,
             });
-
-            // Sync all PLs in this consolidation to the new status
-            const plLinks = await tx
-              .select({ plId: consolidationPl.plId })
-              .from(consolidationPl)
-              .where(eq(consolidationPl.consolidationId, id));
-            
-            const plIds = plLinks.map((l) => l.plId);
-            if (plIds.length > 0) {
-              await tx
-                .update(pl)
-                .set({ status: body.status, updatedAt: new Date() })
-                .where(inArray(pl.id, plIds));
-            }
           }
 
           return { after };

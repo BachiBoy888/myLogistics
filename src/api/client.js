@@ -148,9 +148,17 @@ export function normalizePL(s) {
   const leg1Amount = Number(s.leg1Amount ?? s.leg1_amount ?? s.calculator?.leg1Amount ?? 0);
   const leg1AmountUsd = Number(s.leg1AmountUsd ?? s.leg1_amount_usd ?? s.calculator?.leg1AmountUSD ?? 0);
   
-  // Leg2 data
+  // Leg2 manual data (new explicit source of truth)
+  const leg2ManualAmount = Number(s.leg2ManualAmount ?? s.leg2_manual_amount ?? 0);
+  const leg2ManualAmountUsd = Number(s.leg2ManualAmountUsd ?? s.leg2_manual_amount_usd ?? 0);
+  const leg2ManualCurrency = s.leg2ManualCurrency ?? s.leg2_manual_currency ?? "USD";
+  
+  // Leg2 legacy data (backward compatibility)
   const leg2Amount = Number(s.leg2Amount ?? s.leg2_amount ?? s.calculator?.leg2Amount ?? 0);
   const leg2AmountUsd = Number(s.leg2AmountUsd ?? s.leg2_amount_usd ?? s.calculator?.leg2AmountUSD ?? 0);
+  
+  // Effective leg2: use manual if set, otherwise legacy
+  const effectiveLeg2Usd = leg2ManualAmountUsd > 0 ? leg2ManualAmountUsd : leg2AmountUsd;
 
   return {
     id,
@@ -175,10 +183,18 @@ export function normalizePL(s) {
     leg1_amount_usd: leg1AmountUsd,
     leg1_currency: s.leg1Currency ?? s.leg1_currency ?? "USD",
     
-    // Leg2 data
+    // Leg2 manual data (new source of truth)
+    leg2_manual_amount: leg2ManualAmount,
+    leg2_manual_amount_usd: leg2ManualAmountUsd,
+    leg2_manual_currency: leg2ManualCurrency,
+    
+    // Leg2 legacy data (backward compatibility)
     leg2_amount: leg2Amount,
     leg2_amount_usd: leg2AmountUsd,
     leg2_currency: s.leg2Currency ?? s.leg2_currency ?? "USD",
+    
+    // Effective leg2 (unified view)
+    effective_leg2_usd: effectiveLeg2Usd,
 
     // калькулятор (если сервер начал отдавать jsonb)
     calculator:
@@ -211,7 +227,8 @@ export function normalizeCons(s) {
   Object.entries(rawPlDetails).forEach(([plId, details]) => {
     normalizedPlDetails[plId] = {
       clientPrice: Number(details.clientPrice ?? details.client_price ?? 0) || 0,
-      machineCostShare: Number(details.machineCostShare ?? details.machine_cost_share ?? 0) || 0,
+      // Support both new allocatedLeg2Usd and legacy machineCostShare
+      allocatedLeg2Usd: Number(details.allocatedLeg2Usd ?? details.allocated_leg2_usd ?? details.machineCostShare ?? details.machine_cost_share ?? 0) || 0,
       allocationMode: details.allocationMode ?? details.allocation_mode ?? 'auto',
     };
   });
@@ -582,7 +599,8 @@ export async function listConsolidations(params = {}) {
 }
 export async function getConsolidation(id) {
   const json = await req(`/consolidations/${id}`);
-  return normalizeCons(json);
+  // Backend returns { consolidation: {...} } or direct object
+  return normalizeCons(json?.consolidation ?? json);
 }
 export async function createConsolidation({ title, plIds = [] } = {}) {
   const cons = await mutate(

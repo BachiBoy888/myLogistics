@@ -190,6 +190,20 @@
       "when": 1773091200000,
       "tag": "0026_change_expense_title_to_type",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1773177600000,
+      "tag": "0027_add_leg2_source_of_truth_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1773264000000,
+      "tag": "0028_add_consolidation_client_price_snapshot",
+      "breakpoints": true
     }
   ]
 }

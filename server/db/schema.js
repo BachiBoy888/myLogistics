@@ -91,6 +91,14 @@ export const pl = pgTable(
     leg2AmountUsd: numeric("leg2_amount_usd", { precision: 15, scale: 2 }).default("0"),
     leg2UsdPerKg: numeric("leg2_usd_per_kg", { precision: 15, scale: 4 }).default("0"),
     leg2UsdPerM3: numeric("leg2_usd_per_m3", { precision: 15, scale: 4 }).default("0"),
+
+    // ⬇️ Explicit manual leg2 source of truth (for PLs not in active consolidation)
+    // When PL is NOT in a consolidation, these are the editable leg2 values
+    // When PL IS in a consolidation, effective leg2 comes from consolidation_pl.allocated_leg2_usd
+    leg2ManualAmount: numeric("leg2_manual_amount", { precision: 15, scale: 2 }).default("0"),
+    leg2ManualCurrency: text("leg2_manual_currency").default("USD"),
+    leg2ManualAmountUsd: numeric("leg2_manual_amount_usd", { precision: 15, scale: 2 }).default("0"),
+
     fxSource: text("fx_source"),
     fxDate: text("fx_date"),
     fxUsdKgs: numeric("fx_usd_kgs", { precision: 10, scale: 4 }),
@@ -201,7 +209,9 @@ export const consolidationPl = pgTable(
       .references(() => pl.id, { onDelete: "cascade" }),
     loadOrder: integer("load_order").default(0), // порядок погрузки
     clientPrice: numeric("client_price", { precision: 12, scale: 2 }).default("0"),
-    machineCostShare: numeric("machine_cost_share", { precision: 12, scale: 2 }).default("0"),
+    clientPriceSnapshot: numeric("client_price_snapshot", { precision: 12, scale: 2 }).default("0"), // snapshot at consolidation time
+    machineCostShare: numeric("machine_cost_share", { precision: 12, scale: 2 }).default("0"), // legacy field, migrated to allocatedLeg2Usd
+    allocatedLeg2Usd: numeric("allocated_leg2_usd", { precision: 12, scale: 2 }).default("0"), // allocated KG cost from calculator
     allocationMode: text("allocation_mode").default("auto"),
     addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
   },

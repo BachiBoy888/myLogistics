@@ -19,25 +19,33 @@ export default function PLCostSummary({ pl, onUpdate }) {
     return cp !== 0 ? String(cp) : "";
   });
   
-  // Leg 1 editable state
+  // Leg 1 editable state - reads from effective_leg1_usd if available
   const [leg1Input, setLeg1Input] = useState(() => {
     const val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
     return val !== 0 ? String(val) : "";
   });
   const [leg1Currency, setLeg1Currency] = useState(pl.leg1_currency || pl.leg1Currency || "USD");
   
-  // Leg 2 editable state
+  // Leg 2 editable state - MUST read from effective_leg2_usd for consolidation updates
   const [leg2Input, setLeg2Input] = useState(() => {
-    const val = pl.leg2_amount || pl.leg2Amount || pl.calculator?.leg2Amount || 0;
+    // Priority: effective_leg2_usd (consolidation-aware) > manual > legacy > calculator
+    const val = pl.effective_leg2_usd 
+      || pl.leg2_manual_amount_usd 
+      || pl.leg2_amount 
+      || pl.leg2Amount 
+      || pl.calculator?.leg2Amount 
+      || 0;
     return val !== 0 ? String(val) : "";
   });
-  const [leg2Currency, setLeg2Currency] = useState(pl.leg2_currency || pl.leg2Currency || "USD");
+  const [leg2Currency, setLeg2Currency] = useState(
+    pl.leg2_manual_currency || pl.leg2_currency || pl.leg2Currency || "USD"
+  );
   
   const [saving, setSaving] = useState(false);
   const [savedStamp, setSavedStamp] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Update when pl changes
+  // Update when pl changes - CRITICAL: must sync from effective_leg2_usd for consolidation updates
   useEffect(() => {
     const cp = pl.quote?.client_price || pl.client_price || 0;
     setClientPrice(cp !== 0 ? String(cp) : "");
@@ -46,10 +54,18 @@ export default function PLCostSummary({ pl, onUpdate }) {
     setLeg1Input(leg1Val !== 0 ? String(leg1Val) : "");
     setLeg1Currency(pl.leg1_currency || pl.leg1Currency || "USD");
     
-    const leg2Val = pl.leg2_amount || pl.leg2Amount || pl.calculator?.leg2Amount || 0;
+    // Leg2: prioritize effective_leg2_usd (consolidation-aware) for fresh data
+    const leg2Val = pl.effective_leg2_usd 
+      || pl.leg2_manual_amount_usd 
+      || pl.leg2_amount 
+      || pl.leg2Amount 
+      || pl.calculator?.leg2Amount 
+      || 0;
     setLeg2Input(leg2Val !== 0 ? String(leg2Val) : "");
-    setLeg2Currency(pl.leg2_currency || pl.leg2Currency || "USD");
-  }, [pl.id]);
+    setLeg2Currency(
+      pl.leg2_manual_currency || pl.leg2_currency || pl.leg2Currency || "USD"
+    );
+  }, [pl.id, pl.effective_leg2_usd, pl.leg2_manual_amount_usd]);
 
   // Calculate USD values
   const leg1Val = Number(leg1Input) || 0;

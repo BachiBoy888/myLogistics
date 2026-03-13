@@ -11,7 +11,6 @@ import {
 import { nextConsNumber } from "../services/consolidations.js";
 import {
   ensureAllPLsAreToLoad,
-  assertPLsNotBehind,
   CONS_PIPELINE,
 } from "../services/cons-validators.js";
 
@@ -37,7 +36,7 @@ const SetPLsBody = z.object({
   plLoadOrders: z.record(z.string(), z.coerce.number()).optional(), // { [plId: string]: loadOrder }
   plDetails: z.record(z.string(), z.object({
     clientPrice: z.coerce.number().optional(),
-    machineCostShare: z.coerce.number().optional(),
+    allocatedLeg2Usd: z.coerce.number().optional(), // New field name for allocated KG
     allocationMode: z.enum(["auto", "manual"]).optional(),
   })).optional(), // { [plId: string]: details }
 });
@@ -102,7 +101,7 @@ export default async function consolidationsRoutes(app) {
       const plDetails = links.reduce((acc, l) => {
         acc[l.plId] = {
           clientPrice: l.clientPrice,
-          machineCostShare: l.machineCostShare,
+          allocatedLeg2Usd: l.allocatedLeg2Usd ?? l.machineCostShare, // Support new and legacy fields
           allocationMode: l.allocationMode,
         };
         return acc;
@@ -180,68 +179,86 @@ export default async function consolidationsRoutes(app) {
       const { id } = req.params;
       try {
         const body = UpdateBody.parse(req.body ?? {});
-        const [before] = await db
-          .select()
-          .from(consolidations)
-          .where(eq(consolidations.id, id));
-        if (!before) return reply.notFound("Consolidation not found");
+        
+        // Use transaction for atomicity
+        const result = await db.transaction(async (tx) => {
+          const [before] = await tx
+            .select()
+            .from(consolidations)
+            .where(eq(consolidations.id, id));
+          if (!before) return { notFound: true };
 
-        if (body.status) {
-          const fromIdx = CONS_PIPELINE.indexOf(before.status);
-          const toIdx = CONS_PIPELINE.indexOf(body.status);
-          const isMovingBackward = toIdx < fromIdx;
-          
-          // Проверяем, что статусы валидны
-          if (fromIdx === -1 || toIdx === -1) {
-            return reply.badRequest(
-              `Недопустимый статус: ${before.status} или ${body.status}`
-            );
-          }
-          
-          // При движении назад разрешаем, но проверяем PL
-          if (isMovingBackward) {
-            try {
-              await assertPLsNotBehind(db, id, body.status, true);
-            } catch (e) {
-              return reply.badRequest(e.message);
+          // Validate status transition is valid in pipeline
+          if (body.status) {
+            const fromIdx = CONS_PIPELINE.indexOf(before.status);
+            const toIdx = CONS_PIPELINE.indexOf(body.status);
+            
+            if (fromIdx === -1 || toIdx === -1) {
+              throw new Error(`Недопустимый статус: ${before.status} или ${body.status}`);
             }
-          } else {
-            // При движении вперед стандартная проверка
-            try {
-              await assertPLsNotBehind(db, id, body.status, false);
-            } catch (e) {
-              return reply.badRequest(e.message);
+            // Note: We allow any valid pipeline transition now.
+            // PL status sync happens automatically below.
+          }
+
+          // If status is changing, sync PLs FIRST (before updating consolidation)
+          // This ensures atomicity and avoids validation conflicts
+          if (body.status && before.status !== body.status) {
+            // Get all PLs in this consolidation
+            const plLinks = await tx
+              .select({ plId: consolidationPl.plId })
+              .from(consolidationPl)
+              .where(eq(consolidationPl.consolidationId, id));
+            
+            const plIds = plLinks.map((l) => l.plId);
+            
+            // Sync all PLs to the new status FIRST
+            if (plIds.length > 0) {
+              await tx
+                .update(pl)
+                .set({ status: body.status, updatedAt: new Date() })
+                .where(inArray(pl.id, plIds));
             }
           }
-        }
 
-        const [after] = await db
-          .update(consolidations)
-          .set({
-            ...(body.title ? { title: body.title } : {}),
-            ...(body.status ? { status: body.status } : {}),
-            ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
-            ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
-            ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(consolidations.id, id))
-          .returning();
+          // Now update the consolidation
+          const [after] = await tx
+            .update(consolidations)
+            .set({
+              ...(body.title ? { title: body.title } : {}),
+              ...(body.status ? { status: body.status } : {}),
+              ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
+              ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
+              ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(consolidations.id, id))
+            .returning();
 
-        if (body.status && before.status !== body.status) {
-          await db.insert(consolidationStatusHistory).values({
-            consolidationId: id,
-            fromStatus: before.status,
-            toStatus: body.status,
-            note: body.note ?? null,
-            changedBy: body.changedBy ?? req.user?.name ?? null,
-          });
+          // Write history only if status actually changed
+          if (body.status && before.status !== body.status) {
+            await tx.insert(consolidationStatusHistory).values({
+              consolidationId: id,
+              fromStatus: before.status,
+              toStatus: body.status,
+              note: body.note ?? null,
+              changedBy: body.changedBy ?? req.user?.name ?? null,
+            });
+          }
+
+          return { after };
+        });
+
+        if (result.notFound) {
+          return reply.notFound("Consolidation not found");
         }
 
         req.log.info({ id, status: body.status }, "CONS_UPDATE ok");
-        return after;
+        return result.after;
       } catch (e) {
         req.log.error({ e, id, body: req.body }, "CONS_UPDATE error");
+        if (e.message?.includes("Недопустимый статус")) {
+          return reply.badRequest(e.message);
+        }
         return reply.internalServerError(e?.message || "Update failed");
       }
     }
@@ -373,7 +390,11 @@ export default async function consolidationsRoutes(app) {
             if (target.has(plId)) {
               const updateData = {};
               if (details.clientPrice !== undefined) updateData.clientPrice = String(details.clientPrice);
-              if (details.machineCostShare !== undefined) updateData.machineCostShare = String(details.machineCostShare);
+              if (details.allocatedLeg2Usd !== undefined) {
+                updateData.allocatedLeg2Usd = String(details.allocatedLeg2Usd);
+                // Also update legacy field for backward compatibility
+                updateData.machineCostShare = String(details.allocatedLeg2Usd);
+              }
               if (details.allocationMode) updateData.allocationMode = details.allocationMode;
               
               if (Object.keys(updateData).length > 0) {
@@ -388,13 +409,18 @@ export default async function consolidationsRoutes(app) {
                   );
               }
               
-              // Синхронизируем machineCostShare в PL.leg2AmountUsd (второе плечо)
-              if (details.machineCostShare !== undefined) {
+              // Синхронизируем allocatedLeg2Usd в PL.leg2ManualAmountUsd (explicit manual field)
+              // This allows PL card to show the allocated value when in consolidation
+              if (details.allocatedLeg2Usd !== undefined) {
                 await db
                   .update(pl)
                   .set({ 
-                    leg2AmountUsd: String(details.machineCostShare),
-                    leg2Amount: String(details.machineCostShare),
+                    leg2ManualAmountUsd: String(details.allocatedLeg2Usd),
+                    leg2ManualAmount: String(details.allocatedLeg2Usd),
+                    leg2ManualCurrency: "USD",
+                    // Also sync to legacy fields for backward compatibility
+                    leg2AmountUsd: String(details.allocatedLeg2Usd),
+                    leg2Amount: String(details.allocatedLeg2Usd),
                     leg2Currency: "USD",
                   })
                   .where(eq(pl.id, plId));
@@ -423,7 +449,7 @@ export default async function consolidationsRoutes(app) {
         const plDetails = refreshed.reduce((acc, l) => {
           acc[l.plId] = {
             clientPrice: l.clientPrice,
-            machineCostShare: l.machineCostShare,
+            allocatedLeg2Usd: l.allocatedLeg2Usd ?? l.machineCostShare,
             allocationMode: l.allocationMode,
           };
           return acc;

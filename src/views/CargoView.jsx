@@ -17,10 +17,12 @@ import {
   createConsolidation as apiCreateCons,
   updateConsolidation as apiUpdateCons,
   deleteConsolidation as apiDeleteCons,
+  getConsolidation as apiGetCons,
   setConsolidationPLs as apiSetConsPLs,
   listPLDocs as apiListPLDocs,
   assignPLResponsible,
   resolveOrCreateClient,
+  getPLById,
 } from "../api/client";
 
 // Модалки
@@ -73,6 +75,7 @@ export default function CargoView({
     deletePL: api?.deletePL,
     createClient: api?.createClient,
     listCons: api?.fetchCons || api?.listCons || apiListCons,
+    getCons: api?.getConsolidation || apiGetCons,
     createCons: api?.createConsolidation || apiCreateCons,
     updateCons: api?.updateConsolidation || apiUpdateCons,
     deleteCons: api?.deleteConsolidation || apiDeleteCons,
@@ -87,6 +90,14 @@ export default function CargoView({
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [selectedPLs, setSelectedPLs] = useState([]);
+  
+  // Fresh PL detail state - fetched individually when opening PL card
+  const [selectedPLDetail, setSelectedPLDetail] = useState(null);
+  const [isLoadingPLDetail, setIsLoadingPLDetail] = useState(false);
+
+  // Fresh Consolidation detail state - fetched individually when opening consolidation
+  const [selectedConsDetail, setSelectedConsDetail] = useState(null);
+  const [isLoadingConsDetail, setIsLoadingConsDetail] = useState(false);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState({
@@ -163,6 +174,78 @@ export default function CargoView({
   useEffect(() => {
     refreshPLs({ keepSelected: true });
   }, []);
+
+  // Fetch fresh PL detail when opening PL card
+  useEffect(() => {
+    if (!selectedId) {
+      setSelectedPLDetail(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+    const requestId = selectedId;
+
+    async function fetchPLDetail() {
+      setIsLoadingPLDetail(true);
+      try {
+        const freshPL = await getPLById(selectedId);
+        // Guard: ignore stale response if ID changed or aborted
+        if (abortController.signal.aborted || selectedId !== requestId) {
+          return;
+        }
+        setSelectedPLDetail(freshPL);
+      } catch (e) {
+        if (abortController.signal.aborted) return;
+        setSelectedPLDetail(null);
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsLoadingPLDetail(false);
+        }
+      }
+    }
+
+    fetchPLDetail();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [selectedId]);
+
+  // Fetch fresh Consolidation detail when opening consolidation modal
+  useEffect(() => {
+    if (!openConsId) {
+      setSelectedConsDetail(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+    const requestId = openConsId;
+
+    async function fetchConsDetail() {
+      setIsLoadingConsDetail(true);
+      try {
+        const freshCons = await API.getCons(openConsId);
+        // Guard: ignore stale response if ID changed or aborted
+        if (abortController.signal.aborted || openConsId !== requestId) {
+          return;
+        }
+        setSelectedConsDetail(freshCons);
+      } catch (e) {
+        if (abortController.signal.aborted) return;
+        setSelectedConsDetail(null);
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsLoadingConsDetail(false);
+        }
+      }
+    }
+
+    fetchConsDetail();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [openConsId]);
 
   const clientNameOf = (pl) =>
     typeof pl?.client === "string"
@@ -288,9 +371,29 @@ export default function CargoView({
   }, [safePLs, groupedByStage]);
 
   const selected = useMemo(
-    () => safePLs.find((p) => p.id === selectedId) ?? null,
-    [safePLs, selectedId]
+    () => {
+      // Только fresh данные из API. Не используем fallback из списка.
+      // Calculator должен показываться только с актуальными данными.
+      if (!selectedId || !selectedPLDetail) return null;
+      return selectedPLDetail;
+    },
+    [selectedId, selectedPLDetail]
   );
+
+  // Состояние загрузки для показа skeleton
+  const isPLLoading = selectedId !== null && (isLoadingPLDetail || !selectedPLDetail);
+
+  // Только fresh данные консолидации из API. Не используем fallback из списка.
+  const selectedCons = useMemo(
+    () => {
+      if (!openConsId || !selectedConsDetail) return null;
+      return selectedConsDetail;
+    },
+    [openConsId, selectedConsDetail]
+  );
+
+  // Состояние загрузки консолидации для показа skeleton
+  const isConsLoading = openConsId !== null && (isLoadingConsDetail || !selectedConsDetail);
 
   const handlePLMove = useCallback(
     async (plId, targetStage, isCons = false) => {
@@ -326,15 +429,8 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
-        // Find ALL PLs inside this consolidation
-        const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
-        
         try {
-          // Сначала обновляем все PL внутри консолидации до нового статуса
-          // Это нужно чтобы бэкенд разрешил движение назад
-          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
-          
-          // Затем обновляем саму консолидацию
+          // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
           
           await Promise.all([refreshPLs(), refreshCons()]);
@@ -367,6 +463,12 @@ export default function CargoView({
       }
       return [...prev, plId];
     });
+  }, []);
+
+  // Stable close handler to prevent stale closures and force fresh state
+  const handleClosePLCard = useCallback(() => {
+    setSelectedId(null);
+    setSelectedPLDetail(null);
   }, []);
 
   async function savePLPatch(id, patch) {
@@ -510,7 +612,9 @@ export default function CargoView({
     const handleEsc = (e) => {
       if (e.key === "Escape") {
         setSelectedId(null);
+        setSelectedPLDetail(null); // Ensure detail is cleared on Escape
         setOpenConsId(null);
+        setSelectedConsDetail(null); // Ensure cons detail is cleared on Escape
         setShowNew(false);
         setShowCreateCons(false);
         setSelectedPLs([]);
@@ -649,16 +753,42 @@ export default function CargoView({
         <div>Перетащите карточку для смены этапа • Shift+Click для множественного выбора</div>
       </div>
 
-      {/* PL Modal */}
+      {/* PL Modal - key forces remount for clean state */}
+      {/* Loading Skeleton - показываем пока загружаются fresh данные */}
+      {isPLLoading && (
+        <Modal key="pl-modal-loading" onClose={handleClosePLCard}>
+          <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-4xl w-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
+              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+            </div>
+            {/* Калькулятор skeleton */}
+            <div className="mt-6 p-4 border rounded-xl bg-gray-50">
+              <div className="h-5 w-48 bg-gray-300 rounded animate-pulse mb-4" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="h-20 bg-gray-200 rounded animate-pulse" />
+                <div className="h-20 bg-gray-200 rounded animate-pulse" />
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Actual PL Card - только после загрузки fresh данных */}
       {selected && (
-        <Modal onClose={() => setSelectedId(null)}>
+        <Modal key={`pl-modal-${selected.id}`} onClose={handleClosePLCard}>
           <PLCard
+            key={`pl-card-${selected.id}`}
             pl={selected}
             warehouses={warehouses}
             onUpdate={(patch) => savePLPatch(selected.id, patch)}
             onNext={(newStatus) => handleUpdateStatus(selected.id, newStatus)}
             onDelete={() => handleDeletePL(selected.id)}
-            onClose={() => setSelectedId(null)}
+            onClose={handleClosePLCard}
             cons={safeCons}
             ui={{ Chip, ProgressBar, Card, Label, LabelInput }}
             helpers={{
@@ -670,7 +800,7 @@ export default function CargoView({
               badgeColorByStatus,
             }}
             navigateToClient={(clientId, clientName) => {
-              setSelectedId(null);
+              handleClosePLCard();
               goToClients?.(clientId, clientName);
             }}
             currentUser={currentUser}
@@ -679,10 +809,27 @@ export default function CargoView({
       )}
 
       {/* Cons Modal */}
-      {openConsId && (
+      {/* Loading Skeleton for Consolidation */}
+      {isConsLoading && (
+        <Modal onClose={() => setOpenConsId(null)}>
+          <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-4xl w-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
+              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Actual Consolidation Detail - только после загрузки fresh данных */}
+      {selectedCons && (
         <Modal onClose={() => setOpenConsId(null)}>
           <ConsolidationDetailsModal
-            cons={safeCons.find((c) => c.id === openConsId)}
+            cons={selectedCons}
             allPLs={safePLs}
             consAll={safeCons}
             onClose={() => setOpenConsId(null)}
@@ -690,26 +837,66 @@ export default function CargoView({
               try {
                 await API.deleteCons(c.id);
                 setOpenConsId(null);
+                setSelectedConsDetail(null);
                 await refreshCons();
                 await refreshPLs({ keepSelected: true });
               } catch (e) {
                 showError("Не удалось расформировать консолидацию");
               }
             }}
-            onSavePLs={async (id, plIds, plLoadOrders, plDetails) => {
+            onSavePLs={async (id, plIds, plLoadOrders, plDetails, { skipRefresh = false } = {}) => {
               try {
                 await API.setConsPLs(id, plIds.map(Number), plLoadOrders, plDetails);
-                await Promise.all([refreshCons(), refreshPLs()]);
+                if (!skipRefresh) {
+                  await Promise.all([refreshCons(), refreshPLs()]);
+                  // Refresh fresh detail for this consolidation
+                  try {
+                    const freshCons = await API.getCons(id);
+                    setSelectedConsDetail(freshCons);
+                  } catch (e) {
+                    console.error('Failed to refresh cons detail after save:', e);
+                  }
+                  // If a PL is currently open and was in the saved consolidation, refresh its detail
+                  if (selectedId && plIds.map(Number).includes(Number(selectedId))) {
+                    try {
+                      const freshPL = await getPLById(selectedId);
+                      setSelectedPLDetail(freshPL);
+                    } catch (e) {
+                      console.error('Failed to refresh PL detail after save:', e);
+                    }
+                  }
+                }
               } catch (e) {
                 showError("Не удалось сохранить состав консолидации");
               }
             }}
-            onUpdateCons={async (id, patch) => {
+            onUpdateCons={async (id, patch, { skipRefresh = false } = {}) => {
               try {
                 await API.updateCons(id, patch);
-                await refreshCons();
+                if (!skipRefresh) {
+                  await refreshCons();
+                  // Refresh fresh detail for this consolidation
+                  try {
+                    const freshCons = await API.getCons(id);
+                    setSelectedConsDetail(freshCons);
+                  } catch (e) {
+                    console.error('Failed to refresh cons detail after update:', e);
+                  }
+                }
               } catch (e) {
                 showError("Не удалось обновить консолидацию");
+              }
+            }}
+            onRefresh={async () => {
+              await Promise.all([refreshCons(), refreshPLs()]);
+              // Refresh fresh detail
+              if (openConsId) {
+                try {
+                  const freshCons = await API.getCons(openConsId);
+                  setSelectedConsDetail(freshCons);
+                } catch (e) {
+                  console.error('Failed to refresh cons detail:', e);
+                }
               }
             }}
           />

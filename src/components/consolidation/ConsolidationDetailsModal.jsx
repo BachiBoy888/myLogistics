@@ -137,6 +137,7 @@ export default function ConsolidationDetailsModal({
   onDissolve,
   onSavePLs,
   onUpdateCons,
+  onRefresh,
 }) {
   const [activeTab, setActiveTab] = useState("loading"); // "loading" | "layout" | "calculator"
   const [showMenu, setShowMenu] = useState(false);
@@ -166,6 +167,10 @@ export default function ConsolidationDetailsModal({
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
+    // Skip re-initialization during save to prevent overwriting local state
+    // with potentially stale prop data before final refresh completes
+    if (saving) return;
+    
     setPickedIds(cons.pl_ids || []);
     const initialOrders = {};
     (cons.pl_ids || []).forEach((id, idx) => {
@@ -179,29 +184,31 @@ export default function ConsolidationDetailsModal({
       const pl = allPLs.find(p => p.id === id);
       const consDetail = cons.pl_details?.[id] || {};
       
-      // Check if saved machineCostShare exists in consolidation data
-      // consDetail.machineCostShare comes from backend as string or null
-      const savedMachineCostShare = consDetail.machineCostShare;
-      const hasSavedValue = savedMachineCostShare != null && savedMachineCostShare !== '';
+      // Allocated leg2 (Расход KG) from consolidation calculator
+      // This is the primary source of truth when PL is in consolidation
+      const allocatedLeg2Usd = consDetail.allocatedLeg2Usd;
+      const hasAllocatedValue = allocatedLeg2Usd != null && allocatedLeg2Usd !== '' && allocatedLeg2Usd > 0;
       
       // Leg1 cost (Расход CN) - from PL, readonly
       const leg1Cost = Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0;
       
-      // Machine cost share (Расход KG) - two-stage logic:
-      // 1. If saved value exists in consolidation → use it (source of truth after save)
-      // 2. Else fallback to PL second leg (initial load only)
+      // Effective leg2 (Расход KG) - two-stage logic:
+      // 1. If allocated value exists in consolidation → use it (source of truth after save)
+      // 2. Else fallback to PL manual leg2 (initial load only)
       // 3. Else 0
-      const machineCostShare = hasSavedValue
-        ? Number(savedMachineCostShare)
-        : Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0;
+      const effectiveLeg2Usd = hasAllocatedValue
+        ? Number(allocatedLeg2Usd)
+        : Number(pl?.effective_leg2_usd || pl?.leg2_manual_amount_usd || pl?.leg2_amount_usd || 0) || 0;
       
       initialDetails[id] = {
         // Client price from PL or consolidation
         clientPrice: pl?.quote?.client_price || pl?.client_price || consDetail.clientPrice || 0,
         // Leg1 cost (Расход CN) - from PL, readonly
         leg1Cost,
-        // Machine cost share (Расход KG) - see logic above
-        machineCostShare,
+        // Effective leg2 (Расход KG) - see logic above
+        effectiveLeg2Usd,
+        // Keep track of allocated value separately
+        allocatedLeg2Usd: hasAllocatedValue ? Number(allocatedLeg2Usd) : 0,
         allocationMode: consDetail.allocationMode || 'auto',
       };
     });
@@ -212,7 +219,7 @@ export default function ConsolidationDetailsModal({
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -272,8 +279,9 @@ export default function ConsolidationDetailsModal({
         [plId]: {
           clientPrice: pl?.quote?.client_price || pl?.client_price || 0,
           leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-          // For new PL: fallback to PL second leg if exists
-          machineCostShare: Number(pl?.leg2_amount_usd || pl?.leg2AmountUsd || pl?.leg2_amount || pl?.leg2Amount || pl?.calculator?.leg2AmountUSD || 0) || 0,
+          // For new PL: fallback to PL effective leg2 (manual or legacy)
+          effectiveLeg2Usd: Number(pl?.effective_leg2_usd || pl?.leg2_manual_amount_usd || pl?.leg2_amount_usd || 0) || 0,
+          allocatedLeg2Usd: 0, // Will be set after allocation
           allocationMode: 'auto',
         }
       }));
@@ -388,7 +396,7 @@ export default function ConsolidationDetailsModal({
     // Calculate total allocated machine cost
     const allocatedMachineCost = pls.reduce((s, p) => {
       const detail = plDetails[p.id] || {};
-      return s + (Number(detail.machineCostShare) || 0);
+      return s + (Number(detail.effectiveLeg2Usd) || 0);
     }, 0);
     
     const profit = revenue - leg1Costs - totalMachineCost;
@@ -435,7 +443,7 @@ export default function ConsolidationDetailsModal({
         // Last item gets remainder to ensure exact match
         newDetails[alloc.plId] = {
           ...newDetails[alloc.plId],
-          machineCostShare: Number((totalMachineCost - distributed).toFixed(2)),
+          effectiveLeg2Usd: Number((totalMachineCost - distributed).toFixed(2)),
           allocationMode: 'auto',
         };
       } else {
@@ -446,7 +454,7 @@ export default function ConsolidationDetailsModal({
         distributed += roundedShare;
         newDetails[alloc.plId] = {
           ...newDetails[alloc.plId],
-          machineCostShare: roundedShare,
+          effectiveLeg2Usd: roundedShare,
           allocationMode: 'auto',
         };
       }
@@ -462,7 +470,7 @@ export default function ConsolidationDetailsModal({
       [plId]: {
         ...prev[plId],
         [field]: value,
-        ...(field === 'machineCostShare' ? { allocationMode: 'manual' } : {}),
+        ...(field === 'effectiveLeg2Usd' ? { allocationMode: 'manual' } : {}),
       },
     }));
     markChanged();
@@ -504,32 +512,47 @@ export default function ConsolidationDetailsModal({
         const pl = pickedPLs.find(p => p.id === plId);
         completePlDetails[plId] = {
           clientPrice: Number(existing.clientPrice ?? pl?.quote?.client_price ?? pl?.client_price ?? 0) || 0,
-          machineCostShare: Number(existing.machineCostShare ?? 0) || 0,
+          // Use effectiveLeg2Usd as the allocated value for backend
+          allocatedLeg2Usd: Number(existing.effectiveLeg2Usd ?? existing.allocatedLeg2Usd ?? 0) || 0,
           allocationMode: existing.allocationMode || 'auto',
         };
       });
       
-      // Save PLs with orders and calculator details
-      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails);
+      // ===== DETERMINISTIC SAVE SEQUENCE =====
+      // Order: 1) capacity/machineCost → 2) expenses → 3) plDetails
+      // All writes happen before any UI refresh to prevent flicker
       
-      // Sync expenses (delete old, create new)
-      await syncConsolidationExpenses(cons.id, expenses);
-      
-      // Save capacity and machine cost
+      // Step 1: Update capacity and machine cost first (PATCH)
       const consUpdate = {};
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
-        await onUpdateCons?.(cons.id, consUpdate);
+        await onUpdateCons?.(cons.id, consUpdate, { skipRefresh: true });
       }
       
-      // Fetch fresh consolidation data with full pl_details
+      // Step 2: Sync expenses (PUT replaces all)
+      await syncConsolidationExpenses(cons.id, expenses);
+      
+      // Step 3: Save PLs with orders and calculator details (this is the final write)
+      await onSavePLs?.(cons.id, pickedIds, plOrders, completePlDetails, { skipRefresh: true });
+      
+      // Step 4: SINGLE final fetch after ALL writes complete
+      // This ensures we get consistent final state, not intermediate
       const freshCons = await getConsolidation(cons.id);
       
-      // Rebuild plDetails from fresh backend data
-      if (freshCons?.pl_details) {
+      // Step 5: Rebuild ALL local state from SINGLE fresh source of truth
+      if (freshCons) {
+        // Update capacity state
+        setCapacityKg(freshCons.capacity_kg || 0);
+        setCapacityCbm(freshCons.capacity_cbm || 0);
+        
+        // Update machine cost and expenses from final state
+        setMachineCost(freshCons.machine_cost || 0);
+        setExpenses(freshCons.expenses || []);
+        
+        // Rebuild plDetails from fresh backend data
         const rebuiltDetails = {};
         pickedIds.forEach((id) => {
           const pl = allPLs.find(p => p.id === id);
@@ -540,12 +563,18 @@ export default function ConsolidationDetailsModal({
           rebuiltDetails[id] = {
             clientPrice: consDetail.clientPrice || 0,
             leg1Cost: Number(pl?.leg1_amount_usd || pl?.leg1AmountUsd || pl?.leg1_amount || pl?.leg1Amount || pl?.calculator?.leg1AmountUSD || 0) || 0,
-            machineCostShare: consDetail.machineCostShare || 0,
+            // Use allocatedLeg2Usd from backend as effective leg2
+            effectiveLeg2Usd: consDetail.allocatedLeg2Usd || 0,
+            allocatedLeg2Usd: consDetail.allocatedLeg2Usd || 0,
             allocationMode: consDetail.allocationMode || 'auto',
           };
         });
         setPlDetails(rebuiltDetails);
       }
+      
+      // Step 6: Trigger ONE final parent refresh to update lists
+      // This happens AFTER all local state is updated, so no flicker occurs
+      await onRefresh?.();
       
       setHasChanges(false);
     } catch (err) {
@@ -1120,10 +1149,10 @@ export default function ConsolidationDetailsModal({
                         const clientPrice = Number(detail.clientPrice) || 0;
                         // Leg1 cost (Расход CN) - from PL, readonly
                         const leg1Cost = Number(detail.leg1Cost || 0);
-                        // Machine share (Расход KG) - editable, source of truth from consolidation_pl
-                        const machineShare = Number(detail.machineCostShare ?? 0);
-                        const profit = clientPrice - leg1Cost - machineShare;
-                        const usdPerKg = (p.weight_kg || 0) > 0 ? machineShare / p.weight_kg : 0;
+                        // Effective leg2 (Расход KG) - editable, source of truth
+                        const effectiveLeg2Usd = Number(detail.effectiveLeg2Usd ?? 0);
+                        const profit = clientPrice - leg1Cost - effectiveLeg2Usd;
+                        const usdPerKg = (p.weight_kg || 0) > 0 ? effectiveLeg2Usd / p.weight_kg : 0;
                         return (
                           <tr key={p.id} className="hover:bg-gray-50">
                             <td className="p-2 font-medium">{p.pl_number}</td>
@@ -1135,8 +1164,8 @@ export default function ConsolidationDetailsModal({
                               <input 
                                 type="text"
                                 inputMode="decimal"
-                                value={machineShare}
-                                onChange={(e) => updatePLDetail(p.id, 'machineCostShare', e.target.value)} 
+                                value={effectiveLeg2Usd}
+                                onChange={(e) => updatePLDetail(p.id, 'effectiveLeg2Usd', e.target.value)} 
                                 className="w-24 border rounded px-2 py-1 text-right" 
                                 placeholder="0" 
                               />

@@ -17,6 +17,7 @@ import {
   createConsolidation as apiCreateCons,
   updateConsolidation as apiUpdateCons,
   deleteConsolidation as apiDeleteCons,
+  getConsolidation as apiGetCons,
   setConsolidationPLs as apiSetConsPLs,
   listPLDocs as apiListPLDocs,
   assignPLResponsible,
@@ -74,6 +75,7 @@ export default function CargoView({
     deletePL: api?.deletePL,
     createClient: api?.createClient,
     listCons: api?.fetchCons || api?.listCons || apiListCons,
+    getCons: api?.getConsolidation || apiGetCons,
     createCons: api?.createConsolidation || apiCreateCons,
     updateCons: api?.updateConsolidation || apiUpdateCons,
     deleteCons: api?.deleteConsolidation || apiDeleteCons,
@@ -92,6 +94,10 @@ export default function CargoView({
   // Fresh PL detail state - fetched individually when opening PL card
   const [selectedPLDetail, setSelectedPLDetail] = useState(null);
   const [isLoadingPLDetail, setIsLoadingPLDetail] = useState(false);
+
+  // Fresh Consolidation detail state - fetched individually when opening consolidation
+  const [selectedConsDetail, setSelectedConsDetail] = useState(null);
+  const [isLoadingConsDetail, setIsLoadingConsDetail] = useState(false);
 
   // Error modal state
   const [errorModal, setErrorModal] = useState({
@@ -204,6 +210,42 @@ export default function CargoView({
       abortController.abort();
     };
   }, [selectedId]);
+
+  // Fetch fresh Consolidation detail when opening consolidation modal
+  useEffect(() => {
+    if (!openConsId) {
+      setSelectedConsDetail(null);
+      return;
+    }
+
+    const abortController = new AbortController();
+    const requestId = openConsId;
+
+    async function fetchConsDetail() {
+      setIsLoadingConsDetail(true);
+      try {
+        const freshCons = await API.getCons(openConsId);
+        // Guard: ignore stale response if ID changed or aborted
+        if (abortController.signal.aborted || openConsId !== requestId) {
+          return;
+        }
+        setSelectedConsDetail(freshCons);
+      } catch (e) {
+        if (abortController.signal.aborted) return;
+        setSelectedConsDetail(null);
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsLoadingConsDetail(false);
+        }
+      }
+    }
+
+    fetchConsDetail();
+
+    return () => {
+      abortController.abort();
+    };
+  }, [openConsId]);
 
   const clientNameOf = (pl) =>
     typeof pl?.client === "string"
@@ -340,6 +382,18 @@ export default function CargoView({
 
   // Состояние загрузки для показа skeleton
   const isPLLoading = selectedId !== null && (isLoadingPLDetail || !selectedPLDetail);
+
+  // Только fresh данные консолидации из API. Не используем fallback из списка.
+  const selectedCons = useMemo(
+    () => {
+      if (!openConsId || !selectedConsDetail) return null;
+      return selectedConsDetail;
+    },
+    [openConsId, selectedConsDetail]
+  );
+
+  // Состояние загрузки консолидации для показа skeleton
+  const isConsLoading = openConsId !== null && (isLoadingConsDetail || !selectedConsDetail);
 
   const handlePLMove = useCallback(
     async (plId, targetStage, isCons = false) => {
@@ -567,6 +621,7 @@ export default function CargoView({
         setSelectedId(null);
         setSelectedPLDetail(null); // Ensure detail is cleared on Escape
         setOpenConsId(null);
+        setSelectedConsDetail(null); // Ensure cons detail is cleared on Escape
         setShowNew(false);
         setShowCreateCons(false);
         setSelectedPLs([]);
@@ -761,10 +816,27 @@ export default function CargoView({
       )}
 
       {/* Cons Modal */}
-      {openConsId && (
+      {/* Loading Skeleton for Consolidation */}
+      {isConsLoading && (
+        <Modal onClose={() => setOpenConsId(null)}>
+          <div className="bg-white rounded-2xl shadow-sm border p-6 max-w-4xl w-full">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-8 h-8 bg-gray-200 rounded animate-pulse" />
+              <div className="h-6 w-48 bg-gray-200 rounded animate-pulse" />
+            </div>
+            <div className="space-y-4">
+              <div className="h-4 w-full bg-gray-200 rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-gray-200 rounded animate-pulse" />
+              <div className="h-32 w-full bg-gray-200 rounded animate-pulse" />
+            </div>
+          </div>
+        </Modal>
+      )}
+      {/* Actual Consolidation Detail - только после загрузки fresh данных */}
+      {selectedCons && (
         <Modal onClose={() => setOpenConsId(null)}>
           <ConsolidationDetailsModal
-            cons={safeCons.find((c) => c.id === openConsId)}
+            cons={selectedCons}
             allPLs={safePLs}
             consAll={safeCons}
             onClose={() => setOpenConsId(null)}
@@ -772,6 +844,7 @@ export default function CargoView({
               try {
                 await API.deleteCons(c.id);
                 setOpenConsId(null);
+                setSelectedConsDetail(null);
                 await refreshCons();
                 await refreshPLs({ keepSelected: true });
               } catch (e) {
@@ -783,6 +856,13 @@ export default function CargoView({
                 await API.setConsPLs(id, plIds.map(Number), plLoadOrders, plDetails);
                 if (!skipRefresh) {
                   await Promise.all([refreshCons(), refreshPLs()]);
+                  // Refresh fresh detail for this consolidation
+                  try {
+                    const freshCons = await API.getCons(id);
+                    setSelectedConsDetail(freshCons);
+                  } catch (e) {
+                    console.error('Failed to refresh cons detail after save:', e);
+                  }
                   // If a PL is currently open and was in the saved consolidation, refresh its detail
                   if (selectedId && plIds.map(Number).includes(Number(selectedId))) {
                     try {
@@ -802,6 +882,13 @@ export default function CargoView({
                 await API.updateCons(id, patch);
                 if (!skipRefresh) {
                   await refreshCons();
+                  // Refresh fresh detail for this consolidation
+                  try {
+                    const freshCons = await API.getCons(id);
+                    setSelectedConsDetail(freshCons);
+                  } catch (e) {
+                    console.error('Failed to refresh cons detail after update:', e);
+                  }
                 }
               } catch (e) {
                 showError("Не удалось обновить консолидацию");
@@ -809,6 +896,15 @@ export default function CargoView({
             }}
             onRefresh={async () => {
               await Promise.all([refreshCons(), refreshPLs()]);
+              // Refresh fresh detail
+              if (openConsId) {
+                try {
+                  const freshCons = await API.getCons(openConsId);
+                  setSelectedConsDetail(freshCons);
+                } catch (e) {
+                  console.error('Failed to refresh cons detail:', e);
+                }
+              }
             }}
           />
         </Modal>

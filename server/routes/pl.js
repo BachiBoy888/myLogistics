@@ -1,7 +1,7 @@
 // server/routes/pl.js
 import fs from 'fs';
 import path from 'path';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   pl,
   clients,
@@ -99,7 +99,23 @@ export default async function plRoutes(fastify) {
 
     const p = row.p ?? row.pl ?? row;
     const c = row.c ?? null;
-    return { ...(await hydrateResponsible(db, p)), client: toClientShape(c) };
+    
+    // Fetch counts for tabs in parallel with the main query
+    const [docsCount, commentsCount, eventsCount] = await Promise.all([
+      db.select({ count: sql`count(*)` }).from(plDocuments).where(eq(plDocuments.plId, plId)).then(r => Number(r[0]?.count || 0)),
+      db.select({ count: sql`count(*)` }).from(plComments).where(eq(plComments.plId, plId)).then(r => Number(r[0]?.count || 0)),
+      db.select({ count: sql`count(*)` }).from(plEvents).where(eq(plEvents.plId, plId)).then(r => Number(r[0]?.count || 0)),
+    ]);
+    
+    return { 
+      ...(await hydrateResponsible(db, p)), 
+      client: toClientShape(c),
+      _counts: {
+        docs: docsCount,
+        comments: commentsCount,
+        history: eventsCount,
+      }
+    };
   });
 
   // ===== Создать PL =====
@@ -349,7 +365,9 @@ export default async function plRoutes(fastify) {
     return rows;
   });
 
-  // Загрузка/обновление документа (UPSERT по (plId, docType))
+  // Загрузка/обновление документа
+  // Required docs (invoice, packing_list, etc.) → UPSERT by (plId, docType, name=NULL)
+  // Additional docs (doc_type='additional') → always INSERT new
   fastify.post('/:plId/docs', async (req, reply) => {
     const { plId } = req.params;
     const plIdNum = Number(plId);
@@ -386,49 +404,84 @@ export default async function plRoutes(fastify) {
     if (!fileBuf) return reply.badRequest('No file uploaded');
     if (!docType) return reply.badRequest('doc_type is required');
 
+    const isAdditional = docType === 'additional';
+    
+    // Validation: additional docs REQUIRE name
+    if (isAdditional && (!customName || customName.trim() === '')) {
+      return reply.badRequest('name is required for additional documents');
+    }
+
+    // For required docs, name must be null/empty (to satisfy unique constraint)
+    const finalName = isAdditional ? customName.trim() : null;
+
     const { relative: storagePath } = await savePLFile(plIdNum, filename, fileBuf);
-    req.log.info({ plId: plIdNum, docType, filename, size: fileBuf.length }, 'DOC_UPLOAD file received');
+    req.log.info({ plId: plIdNum, docType, filename, size: fileBuf.length, isAdditional, name: finalName }, 'DOC_UPLOAD file received');
 
     const now = new Date();
-    const [row] = await db
-      .insert(plDocuments)
-      .values({
-        plId: plIdNum,
-        docType: String(docType),
-        name: customName ?? null,
-        fileName: filename,
-        mimeType: mimetype,
-        sizeBytes: fileBuf.length,
-        storagePath,
-        status: 'pending',
-        uploadedBy: req.user?.name || 'ui',
-        uploadedAt: now,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [plDocuments.plId, plDocuments.docType],
-        set: {
-          name: customName ?? plDocuments.name,
+    
+    let row;
+    
+    if (isAdditional) {
+      // Additional docs: always INSERT (no UPSERT - allow multiple)
+      [row] = await db
+        .insert(plDocuments)
+        .values({
+          plId: plIdNum,
+          docType: 'additional',
+          name: finalName,
           fileName: filename,
           mimeType: mimetype,
           sizeBytes: fileBuf.length,
           storagePath,
           status: 'pending',
+          uploadedBy: req.user?.name || 'ui',
+          uploadedAt: now,
           updatedAt: now,
-        },
-      })
-      .returning();
+        })
+        .returning();
+    } else {
+      // Required docs: UPSERT (replace existing)
+      [row] = await db
+        .insert(plDocuments)
+        .values({
+          plId: plIdNum,
+          docType: String(docType),
+          name: null,  // Required docs have no custom name
+          fileName: filename,
+          mimeType: mimetype,
+          sizeBytes: fileBuf.length,
+          storagePath,
+          status: 'pending',
+          uploadedBy: req.user?.name || 'ui',
+          uploadedAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [plDocuments.plId, plDocuments.docType, plDocuments.name],
+          set: {
+            fileName: filename,
+            mimeType: mimetype,
+            sizeBytes: fileBuf.length,
+            storagePath,
+            status: 'pending',
+            updatedAt: now,
+          },
+        })
+        .returning();
+    }
 
     // событие «загружен документ»
     await db.insert(plEvents).values({
       plId: plIdNum,
       type: 'pl.doc_uploaded',
-      message: `Загружен документ ${row.docType}`,
-      meta: { doc_id: row.id, doc_type: row.docType, name: row.name || row.fileName },
+      message: isAdditional 
+        ? `Загружен дополнительный документ: ${finalName}`
+        : `Загружен документ ${row.docType}`,
+      meta: { doc_id: row.id, doc_type: row.docType, name: row.name || row.fileName, is_additional: isAdditional },
       actorUserId: req.user?.id ?? null,
     });
 
-    req.log.info({ docId: row.id }, 'DOC_UPLOAD ok');
+    req.log.info({ docId: row.id, isAdditional }, 'DOC_UPLOAD ok');
     return reply.code(201).send(row);
   });
 
@@ -798,7 +851,7 @@ export default async function plRoutes(fastify) {
         };
       })
       .filter(Boolean)
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // NEWEST first (DESC)
 
     req.log.info(
       {

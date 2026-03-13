@@ -46,11 +46,18 @@ export default function KanbanConsCard({ cons, onClick, onPLClick, pls, clientNa
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
+        <div 
+          className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-opacity"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick?.(cons);
+          }}
+          title="Открыть консолидацию"
+        >
           <div className="w-6 h-6 rounded bg-blue-600 flex items-center justify-center">
             <Truck className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="font-semibold text-sm text-blue-300">
+          <span className="font-semibold text-sm text-blue-300 underline-offset-2 hover:underline">
             {cons.number?.replace(/-?\d{4}-?/, '-') || `CONS-${cons.id}`}
           </span>
         </div>

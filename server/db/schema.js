@@ -146,7 +146,10 @@ export const plDocuments = pgTable(
     byPlId: index("idx_pl_documents_pl_id").on(t.plId),
     byType: index("idx_pl_documents_doc_type").on(t.docType),
     byStatus: index("idx_pl_documents_status").on(t.status),
-    uqDocPerType: uniqueIndex("uq_pl_doc_type").on(t.plId, t.docType),
+    // Unique constraint changed to support multiple "additional" docs per PL
+    // Required docs (invoice, packing_list, etc.) use docType only → unique per PL
+    // Additional docs use docType="additional" + name → unique by name per PL
+    uqDocPerType: uniqueIndex("uq_pl_doc_type").on(t.plId, t.docType, t.name),
   })
 );
 

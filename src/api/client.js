@@ -212,6 +212,13 @@ export function normalizePL(s) {
       client_price: toNum(serverClientPrice),
     },
 
+    // Tab counts (available immediately when loaded from GET /api/pl/:id)
+    _counts: s._counts ? {
+      docs: Number(s._counts.docs) || 0,
+      comments: Number(s._counts.comments) || 0,
+      history: Number(s._counts.history) || 0,
+    } : undefined,
+
     created_at: s.created_at ?? s.createdAt ?? new Date().toISOString(),
     updated_at: s.updated_at ?? s.updatedAt ?? new Date().toISOString(),
   };

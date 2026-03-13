@@ -171,30 +171,38 @@ export default function CargoView({
 
   // Fetch fresh PL detail when opening PL card
   useEffect(() => {
-    console.log('[BUGTRACE] Fetch effect triggered, selectedId:', selectedId);
     if (!selectedId) {
-      console.log('[BUGTRACE] No selectedId, clearing selectedPLDetail');
       setSelectedPLDetail(null);
       return;
     }
-    
+
+    const abortController = new AbortController();
+    const requestId = selectedId;
+
     async function fetchPLDetail() {
-      const requestId = selectedId;
-      console.log('[BUGTRACE] Starting fetch for PL:', requestId);
       setIsLoadingPLDetail(true);
       try {
         const freshPL = await getPLById(selectedId);
-        console.log('[BUGTRACE] Fetch completed for PL:', requestId, 'current selectedId:', selectedId);
+        // Guard: ignore stale response if ID changed or aborted
+        if (abortController.signal.aborted || selectedId !== requestId) {
+          return;
+        }
         setSelectedPLDetail(freshPL);
       } catch (e) {
-        console.error('[BUGTRACE] Fetch failed:', e);
+        if (abortController.signal.aborted) return;
         setSelectedPLDetail(null);
       } finally {
-        setIsLoadingPLDetail(false);
+        if (!abortController.signal.aborted) {
+          setIsLoadingPLDetail(false);
+        }
       }
     }
-    
+
     fetchPLDetail();
+
+    return () => {
+      abortController.abort();
+    };
   }, [selectedId]);
 
   const clientNameOf = (pl) =>
@@ -321,7 +329,11 @@ export default function CargoView({
   }, [safePLs, groupedByStage]);
 
   const selected = useMemo(
-    () => selectedPLDetail ?? safePLs.find((p) => p.id === selectedId) ?? null,
+    () => {
+      // Guard: don't open modal if no PL is selected, even if detail exists
+      if (!selectedId) return null;
+      return selectedPLDetail ?? safePLs.find((p) => p.id === selectedId) ?? null;
+    },
     [safePLs, selectedId, selectedPLDetail]
   );
 
@@ -404,7 +416,6 @@ export default function CargoView({
 
   // Stable close handler to prevent stale closures and force fresh state
   const handleClosePLCard = useCallback(() => {
-    console.log('[BUGTRACE] handleClosePLCard CALLED - setting selectedId=null, selectedPLDetail=null');
     setSelectedId(null);
     setSelectedPLDetail(null);
   }, []);
@@ -549,8 +560,8 @@ export default function CargoView({
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === "Escape") {
-        console.log('[BUGTRACE] Escape pressed - closing modals');
         setSelectedId(null);
+        setSelectedPLDetail(null); // Ensure detail is cleared on Escape
         setOpenConsId(null);
         setShowNew(false);
         setShowCreateCons(false);
@@ -667,10 +678,7 @@ export default function CargoView({
           groupedPLs={groupedByStage}
           groupedCons={consByStage}
           allPLs={safePLs}
-          onPLClick={(pl) => {
-            console.log('[BUGTRACE] onPLClick CALLED for PL id:', pl.id);
-            setSelectedId(pl.id);
-          }}
+          onPLClick={(pl) => setSelectedId(pl.id)}
           onConsClick={(c) => setOpenConsId(c.id)}
           clientNameOf={clientNameOf}
           onPLMove={handlePLMove}
@@ -694,10 +702,6 @@ export default function CargoView({
       </div>
 
       {/* PL Modal - key forces remount for clean state */}
-      {(() => {
-        console.log('[BUGTRACE] RENDER CHECK - selectedId:', selectedId, 'selectedPLDetail:', selectedPLDetail ? 'EXISTS' : 'null', 'selected (truthy?):', !!selected);
-        return null;
-      })()}
       {selected && (
         <Modal key={`pl-modal-${selected.id}`} onClose={handleClosePLCard}>
           <PLCard

@@ -484,16 +484,6 @@ export default async function plRoutes(fastify) {
     req.log.info({ docId: row.id, isAdditional }, 'DOC_UPLOAD ok');
     return reply.code(201).send(row);
   });
-      plId: plIdNum,
-      type: 'pl.doc_uploaded',
-      message: `Загружен документ ${row.docType}`,
-      meta: { doc_id: row.id, doc_type: row.docType, name: row.name || row.fileName },
-      actorUserId: req.user?.id ?? null,
-    });
-
-    req.log.info({ docId: row.id }, 'DOC_UPLOAD ok');
-    return reply.code(201).send(row);
-  });
 
   // Обновить статус/имя/заметку документа
   fastify.patch('/:plId/docs/:docId', async (req, reply) => {

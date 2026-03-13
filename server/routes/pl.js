@@ -1,7 +1,7 @@
 // server/routes/pl.js
 import fs from 'fs';
 import path from 'path';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import {
   pl,
   clients,
@@ -99,7 +99,23 @@ export default async function plRoutes(fastify) {
 
     const p = row.p ?? row.pl ?? row;
     const c = row.c ?? null;
-    return { ...(await hydrateResponsible(db, p)), client: toClientShape(c) };
+    
+    // Fetch counts for tabs in parallel with the main query
+    const [docsCount, commentsCount, eventsCount] = await Promise.all([
+      db.select({ count: sql`count(*)` }).from(plDocuments).where(eq(plDocuments.plId, plId)).then(r => Number(r[0]?.count || 0)),
+      db.select({ count: sql`count(*)` }).from(plComments).where(eq(plComments.plId, plId)).then(r => Number(r[0]?.count || 0)),
+      db.select({ count: sql`count(*)` }).from(plEvents).where(eq(plEvents.plId, plId)).then(r => Number(r[0]?.count || 0)),
+    ]);
+    
+    return { 
+      ...(await hydrateResponsible(db, p)), 
+      client: toClientShape(c),
+      _counts: {
+        docs: docsCount,
+        comments: commentsCount,
+        history: eventsCount,
+      }
+    };
   });
 
   // ===== Создать PL =====
@@ -798,7 +814,7 @@ export default async function plRoutes(fastify) {
         };
       })
       .filter(Boolean)
-      .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // NEWEST first (DESC)
 
     req.log.info(
       {

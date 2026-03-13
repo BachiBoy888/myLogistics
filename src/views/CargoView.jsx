@@ -987,12 +987,7 @@ function Modal({ children, onClose }) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
     >
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors z-10"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Close button removed - PLCard has its own close button in header */}
         <div className="overflow-y-auto max-h-[90vh]">{children}</div>
       </div>
     </div>

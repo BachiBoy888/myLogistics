@@ -117,15 +117,24 @@ export default function PLCard({
   }, [activeTab, pl?.id]);
 
   // ===== Документы и комментарии - lazy load только при открытии вкладок
+  // Инициализация с counts из PL если доступны (от сервера при открытии карточки)
   const [docs, setDocs] = useState([]);
-  const [docsCount, setDocsCount] = useState(0);
+  const [docsCount, setDocsCount] = useState(() => pl._counts?.docs ?? 0);
   const [docsLoading, setDocsLoading] = useState(false);
   const [docsLoaded, setDocsLoaded] = useState(false);
 
   const [comments, setComments] = useState([]);
-  const [commentsCount, setCommentsCount] = useState(0);
+  const [commentsCount, setCommentsCount] = useState(() => pl._counts?.comments ?? 0);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
+  
+  // Обновляем counts когда приходят новые данные от сервера
+  useEffect(() => {
+    if (pl._counts) {
+      setDocsCount(pl._counts.docs ?? 0);
+      setCommentsCount(pl._counts.comments ?? 0);
+    }
+  }, [pl._counts?.docs, pl._counts?.comments]);
 
   // Загружаем документы только при открытии вкладки docs
   useEffect(() => {
@@ -336,7 +345,8 @@ export default function PLCard({
       case "comments":
         return commentsCount;
       case "timeline":
-        return events.filter(Boolean).length;
+        // Use events count if loaded, otherwise fall back to server-provided count
+        return eventsLoaded ? events.filter(Boolean).length : (pl._counts?.history ?? 0);
       default:
         return null;
     }
@@ -570,7 +580,12 @@ export default function PLCard({
             {/* Калькулятор */}
             <div className="rounded-2xl bg-white shadow-sm border p-3">
               <h3 className="font-semibold mb-2">Калькулятор себестоимости</h3>
-              <PLCostSummary pl={pl} onUpdate={onUpdate} />
+              <PLCostSummary 
+                pl={pl} 
+                onUpdate={onUpdate} 
+                weightKg={Number(formData.weight_kg) || 0}
+                volumeCbm={Number(formData.volume_cbm) || 0}
+              />
             </div>
           </div>
         )}

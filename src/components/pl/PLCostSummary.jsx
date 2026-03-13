@@ -1,7 +1,7 @@
 // src/components/pl/PLCostSummary.jsx
 // Упрощённый калькулятор для PL с горизонтальным layout
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { updatePL } from "../../api/client.js";
 
 function formatMoney(num, decimals = 2) {
@@ -12,68 +12,80 @@ function formatMoney(num, decimals = 2) {
   });
 }
 
-export default function PLCostSummary({ pl, onUpdate }) {
+// Safe division that returns 0 or "-" for edge cases
+function safeDivide(numerator, denominator, decimals = 2) {
+  const num = Number(numerator) || 0;
+  const den = Number(denominator) || 0;
+  if (den === 0 || !Number.isFinite(num) || !Number.isFinite(den)) {
+    return "-";
+  }
+  const result = num / den;
+  if (!Number.isFinite(result)) return "-";
+  return formatMoney(result, decimals);
+}
+
+export default function PLCostSummary({ pl, onUpdate, weightKg, volumeCbm }) {
+  // Use passed weight/volume if available (from form), otherwise fall back to PL values
+  const effectiveWeight = weightKg !== undefined ? weightKg : (pl.weight_kg || 0);
+  const effectiveVolume = volumeCbm !== undefined ? volumeCbm : (pl.volume_cbm || 0);
+
   // Client price state
   const [clientPrice, setClientPrice] = useState(() => {
     const cp = pl.quote?.client_price || pl.client_price || 0;
     return cp !== 0 ? String(cp) : "";
   });
   
-  // Leg 1 editable state - reads from effective_leg1_usd if available
+  // Leg 1 editable state - always USD
   const [leg1Input, setLeg1Input] = useState(() => {
-    const val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
+    const val = pl.leg1_amount_usd || pl.leg1AmountUsd || pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1AmountUSD || pl.calculator?.leg1Amount || 0;
     return val !== 0 ? String(val) : "";
   });
-  const [leg1Currency, setLeg1Currency] = useState(pl.leg1_currency || pl.leg1Currency || "USD");
   
-  // Leg 2 editable state - MUST read from effective_leg2_usd for consolidation updates
+  // Leg 2 editable state - always USD
   const [leg2Input, setLeg2Input] = useState(() => {
-    // Priority: effective_leg2_usd (consolidation-aware) > manual > legacy > calculator
     const val = pl.effective_leg2_usd 
       || pl.leg2_manual_amount_usd 
+      || pl.leg2_amount_usd
       || pl.leg2_amount 
       || pl.leg2Amount 
+      || pl.calculator?.leg2AmountUSD
       || pl.calculator?.leg2Amount 
       || 0;
     return val !== 0 ? String(val) : "";
   });
-  const [leg2Currency, setLeg2Currency] = useState(
-    pl.leg2_manual_currency || pl.leg2_currency || pl.leg2Currency || "USD"
-  );
   
   const [saving, setSaving] = useState(false);
   const [savedStamp, setSavedStamp] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Update when pl changes - CRITICAL: must sync from effective_leg2_usd for consolidation updates
+  // Update when pl changes
   useEffect(() => {
     const cp = pl.quote?.client_price || pl.client_price || 0;
     setClientPrice(cp !== 0 ? String(cp) : "");
     
-    const leg1Val = pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1Amount || 0;
+    const leg1Val = pl.leg1_amount_usd || pl.leg1AmountUsd || pl.leg1_amount || pl.leg1Amount || pl.calculator?.leg1AmountUSD || pl.calculator?.leg1Amount || 0;
     setLeg1Input(leg1Val !== 0 ? String(leg1Val) : "");
-    setLeg1Currency(pl.leg1_currency || pl.leg1Currency || "USD");
     
-    // Leg2: prioritize effective_leg2_usd (consolidation-aware) for fresh data
     const leg2Val = pl.effective_leg2_usd 
       || pl.leg2_manual_amount_usd 
+      || pl.leg2_amount_usd
       || pl.leg2_amount 
       || pl.leg2Amount 
+      || pl.calculator?.leg2AmountUSD
       || pl.calculator?.leg2Amount 
       || 0;
     setLeg2Input(leg2Val !== 0 ? String(leg2Val) : "");
-    setLeg2Currency(
-      pl.leg2_manual_currency || pl.leg2_currency || pl.leg2Currency || "USD"
-    );
-  }, [pl.id, pl.effective_leg2_usd, pl.leg2_manual_amount_usd]);
+  }, [pl.id, pl.effective_leg2_usd, pl.leg1_amount_usd, pl.leg2_amount_usd]);
 
-  // Calculate USD values
-  const leg1Val = Number(leg1Input) || 0;
-  const leg2Val = Number(leg2Input) || 0;
-  
-  // For now assume USD or already converted - in real app would use FX rates
-  const leg1AmountUsd = leg1Currency === 'USD' ? leg1Val : leg1Val;
-  const leg2AmountUsd = leg2Currency === 'USD' ? leg2Val : leg2Val;
+  // Calculate USD values - always USD now
+  const leg1AmountUsd = Number(leg1Input) || 0;
+  const leg2AmountUsd = Number(leg2Input) || 0;
+
+  // Calculate derived metrics - use effective weight/volume for live updates
+  const leg1UsdPerKg = safeDivide(leg1AmountUsd, effectiveWeight, 4);
+  const leg1UsdPerM3 = safeDivide(leg1AmountUsd, effectiveVolume, 2);
+  const leg2UsdPerKg = safeDivide(leg2AmountUsd, effectiveWeight, 4);
+  const leg2UsdPerM3 = safeDivide(leg2AmountUsd, effectiveVolume, 2);
 
   // Calculate totals
   const costPrice = leg1AmountUsd + leg2AmountUsd;
@@ -87,27 +99,27 @@ export default function PLCostSummary({ pl, onUpdate }) {
     try {
       await updatePL(pl.id, {
         clientPrice: Number(clientPrice) || 0,
-        // Leg 1
-        leg1Amount: leg1Val,
-        leg1Currency: leg1Currency,
+        // Leg 1 - always USD
+        leg1Amount: leg1AmountUsd,
+        leg1Currency: "USD",
         leg1AmountUsd: leg1AmountUsd,
-        leg1UsdPerKg: pl.weight_kg > 0 ? leg1AmountUsd / pl.weight_kg : 0,
-        leg1UsdPerM3: pl.volume_cbm > 0 ? leg1AmountUsd / pl.volume_cbm : 0,
-        // Leg 2
-        leg2Amount: leg2Val,
-        leg2Currency: leg2Currency,
+        leg1UsdPerKg: effectiveWeight > 0 ? leg1AmountUsd / effectiveWeight : 0,
+        leg1UsdPerM3: effectiveVolume > 0 ? leg1AmountUsd / effectiveVolume : 0,
+        // Leg 2 - always USD
+        leg2Amount: leg2AmountUsd,
+        leg2Currency: "USD",
         leg2AmountUsd: leg2AmountUsd,
-        leg2UsdPerKg: pl.weight_kg > 0 ? leg2AmountUsd / pl.weight_kg : 0,
-        leg2UsdPerM3: pl.volume_cbm > 0 ? leg2AmountUsd / pl.volume_cbm : 0,
+        leg2UsdPerKg: effectiveWeight > 0 ? leg2AmountUsd / effectiveWeight : 0,
+        leg2UsdPerM3: effectiveVolume > 0 ? leg2AmountUsd / effectiveVolume : 0,
       });
       
       onUpdate?.({ 
         client_price: Number(clientPrice) || 0,
-        leg1_amount: leg1Val,
-        leg1_currency: leg1Currency,
+        leg1_amount: leg1AmountUsd,
+        leg1_currency: "USD",
         leg1_amount_usd: leg1AmountUsd,
-        leg2_amount: leg2Val,
-        leg2_currency: leg2Currency,
+        leg2_amount: leg2AmountUsd,
+        leg2_currency: "USD",
         leg2_amount_usd: leg2AmountUsd,
       });
       
@@ -136,7 +148,7 @@ export default function PLCostSummary({ pl, onUpdate }) {
     <div className="space-y-4 text-sm">
       {/* Legs Row */}
       <div className="grid grid-cols-2 gap-4">
-        {/* Leg 1 - Editable */}
+        {/* Leg 1 - Editable, USD only */}
         <div className="rounded-xl border-2 border-blue-200 p-3 bg-blue-50/50">
           <div className="font-medium mb-2 text-blue-900">1. Ставка до границы (Китай)</div>
           <div className="bg-white rounded-lg p-3">
@@ -150,35 +162,24 @@ export default function PLCostSummary({ pl, onUpdate }) {
                 className="flex-1 border rounded px-2 py-1 text-lg font-semibold"
                 placeholder="0.00"
               />
-              <select
-                value={leg1Currency}
-                onChange={(e) => setLeg1Currency(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-                <option value="KGS">KGS</option>
-              </select>
+              <span className="flex items-center px-2 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded">
+                USD
+              </span>
             </div>
-            {leg1AmountUsd > 0 && leg1Currency !== 'USD' && (
-              <div className="text-xs text-gray-500">
-                ≈ ${formatMoney(leg1AmountUsd)} USD
-              </div>
-            )}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/кг</div>
-              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg1AmountUsd / pl.weight_kg : 0, 4)}</div>
+              <div className="font-medium">${leg1UsdPerKg}</div>
             </div>
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/м³</div>
-              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg1AmountUsd / pl.volume_cbm : 0, 2)}</div>
+              <div className="font-medium">${leg1UsdPerM3}</div>
             </div>
           </div>
         </div>
 
-        {/* Leg 2 - Editable */}
+        {/* Leg 2 - Editable, USD only */}
         <div className="rounded-xl border-2 border-emerald-200 p-3 bg-emerald-50/50">
           <div className="font-medium mb-2 text-emerald-900">2. Ставка с границы до Канта</div>
           <div className="bg-white rounded-lg p-3">
@@ -192,30 +193,19 @@ export default function PLCostSummary({ pl, onUpdate }) {
                 className="flex-1 border rounded px-2 py-1 text-lg font-semibold"
                 placeholder="0.00"
               />
-              <select
-                value={leg2Currency}
-                onChange={(e) => setLeg2Currency(e.target.value)}
-                className="border rounded px-2 py-1 text-sm"
-              >
-                <option value="USD">USD</option>
-                <option value="CNY">CNY</option>
-                <option value="KGS">KGS</option>
-              </select>
+              <span className="flex items-center px-2 py-1 text-sm font-medium text-gray-600 bg-gray-100 rounded">
+                USD
+              </span>
             </div>
-            {leg2AmountUsd > 0 && leg2Currency !== 'USD' && (
-              <div className="text-xs text-gray-500">
-                ≈ ${formatMoney(leg2AmountUsd)} USD
-              </div>
-            )}
           </div>
           <div className="grid grid-cols-2 gap-2 mt-2">
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/кг</div>
-              <div className="font-medium">${formatMoney(pl.weight_kg > 0 ? leg2AmountUsd / pl.weight_kg : 0, 4)}</div>
+              <div className="font-medium">${leg2UsdPerKg}</div>
             </div>
             <div className="bg-white rounded p-2">
               <div className="text-xs text-gray-500">$/м³</div>
-              <div className="font-medium">${formatMoney(pl.volume_cbm > 0 ? leg2AmountUsd / pl.volume_cbm : 0, 2)}</div>
+              <div className="font-medium">${leg2UsdPerM3}</div>
             </div>
           </div>
         </div>

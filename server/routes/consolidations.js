@@ -180,82 +180,83 @@ export default async function consolidationsRoutes(app) {
       const { id } = req.params;
       try {
         const body = UpdateBody.parse(req.body ?? {});
-        const [before] = await db
-          .select()
-          .from(consolidations)
-          .where(eq(consolidations.id, id));
-        if (!before) return reply.notFound("Consolidation not found");
+        
+        // Use transaction for atomicity
+        const result = await db.transaction(async (tx) => {
+          const [before] = await tx
+            .select()
+            .from(consolidations)
+            .where(eq(consolidations.id, id));
+          if (!before) return { notFound: true };
 
-        if (body.status) {
-          const fromIdx = CONS_PIPELINE.indexOf(before.status);
-          const toIdx = CONS_PIPELINE.indexOf(body.status);
-          const isMovingBackward = toIdx < fromIdx;
-          
-          // Проверяем, что статусы валидны
-          if (fromIdx === -1 || toIdx === -1) {
-            return reply.badRequest(
-              `Недопустимый статус: ${before.status} или ${body.status}`
-            );
-          }
-          
-          // При движении назад разрешаем, но проверяем PL
-          if (isMovingBackward) {
-            try {
-              await assertPLsNotBehind(db, id, body.status, true);
-            } catch (e) {
-              return reply.badRequest(e.message);
+          if (body.status) {
+            const fromIdx = CONS_PIPELINE.indexOf(before.status);
+            const toIdx = CONS_PIPELINE.indexOf(body.status);
+            const isMovingBackward = toIdx < fromIdx;
+            
+            if (fromIdx === -1 || toIdx === -1) {
+              throw new Error(`Недопустимый статус: ${before.status} или ${body.status}`);
             }
-          } else {
-            // При движении вперед стандартная проверка
-            try {
-              await assertPLsNotBehind(db, id, body.status, false);
-            } catch (e) {
-              return reply.badRequest(e.message);
+            
+            if (isMovingBackward) {
+              await assertPLsNotBehind(tx, id, body.status, true);
+            } else {
+              await assertPLsNotBehind(tx, id, body.status, false);
             }
           }
-        }
 
-        const [after] = await db
-          .update(consolidations)
-          .set({
-            ...(body.title ? { title: body.title } : {}),
-            ...(body.status ? { status: body.status } : {}),
-            ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
-            ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
-            ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),
-            updatedAt: new Date(),
-          })
-          .where(eq(consolidations.id, id))
-          .returning();
+          const [after] = await tx
+            .update(consolidations)
+            .set({
+              ...(body.title ? { title: body.title } : {}),
+              ...(body.status ? { status: body.status } : {}),
+              ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
+              ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
+              ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),
+              updatedAt: new Date(),
+            })
+            .where(eq(consolidations.id, id))
+            .returning();
 
-        if (body.status && before.status !== body.status) {
-          await db.insert(consolidationStatusHistory).values({
-            consolidationId: id,
-            fromStatus: before.status,
-            toStatus: body.status,
-            note: body.note ?? null,
-            changedBy: body.changedBy ?? req.user?.name ?? null,
-          });
+          // Only sync PLs if status is actually changing
+          if (body.status && before.status !== body.status) {
+            await tx.insert(consolidationStatusHistory).values({
+              consolidationId: id,
+              fromStatus: before.status,
+              toStatus: body.status,
+              note: body.note ?? null,
+              changedBy: body.changedBy ?? req.user?.name ?? null,
+            });
 
-          // Sync all PLs in this consolidation to the new status
-          const plLinks = await db
-            .select({ plId: consolidationPl.plId })
-            .from(consolidationPl)
-            .where(eq(consolidationPl.consolidationId, id));
-          
-          const plIds = plLinks.map((l) => l.plId);
-          if (plIds.length > 0) {
-            await db
-              .update(pl)
-              .set({ status: body.status, updatedAt: new Date() })
-              .where(inArray(pl.id, plIds));
+            // Sync all PLs in this consolidation to the new status
+            const plLinks = await tx
+              .select({ plId: consolidationPl.plId })
+              .from(consolidationPl)
+              .where(eq(consolidationPl.consolidationId, id));
+            
+            const plIds = plLinks.map((l) => l.plId);
+            if (plIds.length > 0) {
+              await tx
+                .update(pl)
+                .set({ status: body.status, updatedAt: new Date() })
+                .where(inArray(pl.id, plIds));
+            }
           }
+
+          return { after };
+        });
+
+        if (result.notFound) {
+          return reply.notFound("Consolidation not found");
         }
 
         req.log.info({ id, status: body.status }, "CONS_UPDATE ok");
-        return after;
+        return result.after;
       } catch (e) {
         req.log.error({ e, id, body: req.body }, "CONS_UPDATE error");
+        if (e.message?.includes("Недопустимый статус")) {
+          return reply.badRequest(e.message);
+        }
         return reply.internalServerError(e?.message || "Update failed");
       }
     }

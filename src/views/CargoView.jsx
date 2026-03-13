@@ -171,19 +171,23 @@ export default function CargoView({
 
   // Fetch fresh PL detail when opening PL card
   useEffect(() => {
+    console.log('[BUGTRACE] Fetch effect triggered, selectedId:', selectedId);
     if (!selectedId) {
+      console.log('[BUGTRACE] No selectedId, clearing selectedPLDetail');
       setSelectedPLDetail(null);
       return;
     }
     
     async function fetchPLDetail() {
+      const requestId = selectedId;
+      console.log('[BUGTRACE] Starting fetch for PL:', requestId);
       setIsLoadingPLDetail(true);
       try {
         const freshPL = await getPLById(selectedId);
+        console.log('[BUGTRACE] Fetch completed for PL:', requestId, 'current selectedId:', selectedId);
         setSelectedPLDetail(freshPL);
       } catch (e) {
-        console.error('Failed to fetch PL detail:', e);
-        // Fallback to list data if detail fetch fails
+        console.error('[BUGTRACE] Fetch failed:', e);
         setSelectedPLDetail(null);
       } finally {
         setIsLoadingPLDetail(false);
@@ -400,8 +404,9 @@ export default function CargoView({
 
   // Stable close handler to prevent stale closures and force fresh state
   const handleClosePLCard = useCallback(() => {
+    console.log('[BUGTRACE] handleClosePLCard CALLED - setting selectedId=null, selectedPLDetail=null');
     setSelectedId(null);
-    setSelectedPLDetail(null); // Clear detail to force fresh fetch next time
+    setSelectedPLDetail(null);
   }, []);
 
   async function savePLPatch(id, patch) {
@@ -544,6 +549,7 @@ export default function CargoView({
   useEffect(() => {
     const handleEsc = (e) => {
       if (e.key === "Escape") {
+        console.log('[BUGTRACE] Escape pressed - closing modals');
         setSelectedId(null);
         setOpenConsId(null);
         setShowNew(false);
@@ -661,7 +667,10 @@ export default function CargoView({
           groupedPLs={groupedByStage}
           groupedCons={consByStage}
           allPLs={safePLs}
-          onPLClick={(pl) => setSelectedId(pl.id)}
+          onPLClick={(pl) => {
+            console.log('[BUGTRACE] onPLClick CALLED for PL id:', pl.id);
+            setSelectedId(pl.id);
+          }}
           onConsClick={(c) => setOpenConsId(c.id)}
           clientNameOf={clientNameOf}
           onPLMove={handlePLMove}
@@ -685,6 +694,10 @@ export default function CargoView({
       </div>
 
       {/* PL Modal - key forces remount for clean state */}
+      {(() => {
+        console.log('[BUGTRACE] RENDER CHECK - selectedId:', selectedId, 'selectedPLDetail:', selectedPLDetail ? 'EXISTS' : 'null', 'selected (truthy?):', !!selected);
+        return null;
+      })()}
       {selected && (
         <Modal key={`pl-modal-${selected.id}`} onClose={handleClosePLCard}>
           <PLCard

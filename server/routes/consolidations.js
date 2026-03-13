@@ -236,6 +236,20 @@ export default async function consolidationsRoutes(app) {
             note: body.note ?? null,
             changedBy: body.changedBy ?? req.user?.name ?? null,
           });
+
+          // Sync all PLs in this consolidation to the new status
+          const plLinks = await db
+            .select({ plId: consolidationPl.plId })
+            .from(consolidationPl)
+            .where(eq(consolidationPl.consolidationId, id));
+          
+          const plIds = plLinks.map((l) => l.plId);
+          if (plIds.length > 0) {
+            await db
+              .update(pl)
+              .set({ status: body.status, updatedAt: new Date() })
+              .where(inArray(pl.id, plIds));
+          }
         }
 
         req.log.info({ id, status: body.status }, "CONS_UPDATE ok");

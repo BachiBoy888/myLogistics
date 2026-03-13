@@ -429,15 +429,8 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
-        // Find ALL PLs inside this consolidation
-        const plsOfC = safePLs.filter((p) => consItem.pl_ids?.includes(p.id));
-        
         try {
-          // Сначала обновляем все PL внутри консолидации до нового статуса
-          // Это нужно чтобы бэкенд разрешил движение назад
-          await Promise.all(plsOfC.map((p) => API.updatePL(p.id, { status: newStatus })));
-          
-          // Затем обновляем саму консолидацию
+          // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
           
           await Promise.all([refreshPLs(), refreshCons()]);

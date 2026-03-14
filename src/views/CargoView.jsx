@@ -9,6 +9,7 @@ import Card from "../components/ui/Card.jsx";
 import Label from "../components/ui/Label.jsx";
 import LabelInput from "../components/ui/LabelInput.jsx";
 import ErrorModal from "../components/ui/ErrorModal.jsx";
+import BlockedMoveModal from "../components/ui/BlockedMoveModal.jsx";
 import NewPLModal from "../components/pl/NewPLModal.jsx";
 
 // API
@@ -110,6 +111,14 @@ export default function CargoView({
     description: "",
     ctaText: "Понятно",
     type: "error",
+  });
+
+  // Blocked move modal state
+  const [blockedMoveModal, setBlockedMoveModal] = useState({
+    isOpen: false,
+    title: "",
+    documentType: "",
+    blockedCargos: [],
   });
 
   const showError = (description, title = "Ошибка", ctaText = "Понятно", type = "error") => {
@@ -439,23 +448,26 @@ export default function CargoView({
             // Get all PLs in this consolidation
             const consPLs = safePLs.filter(p => p.consolidationId === plId || p.consolidation_id === plId);
             const plsMissingBill = [];
-            
+
             for (const pl of consPLs) {
               const docs = await API.listPLDocs(pl.id);
               const hasBill = docs.some(d => d.docType === "bill");
               if (!hasBill) {
-                plsMissingBill.push(pl.name || pl.plNumber || `PL-${pl.id}`);
+                plsMissingBill.push({
+                  id: pl.id,
+                  plNumber: pl.pl_number || pl.plNumber || `PL-${pl.id}`,
+                  name: pl.title || pl.name,
+                });
               }
             }
-            
+
             if (plsMissingBill.length > 0) {
-              const plList = plsMissingBill.join(", ");
-              showError(
-                `Нельзя перевести консолидацию в статус «Оплата». В следующих грузах отсутствует документ «Счет»: ${plList}. Загрузите счет для всех грузов перед перемещением.`,
-                "Документы не готовы",
-                "Понятно",
-                "warning"
-              );
+              setBlockedMoveModal({
+                isOpen: true,
+                title: "Нельзя перевести консолидацию в статус «Оплата»",
+                documentType: "Счет",
+                blockedCargos: plsMissingBill,
+              });
               return;
             }
           } catch (err) {
@@ -1010,6 +1022,20 @@ export default function CargoView({
         description={errorModal.description}
         ctaText={errorModal.ctaText}
         type={errorModal.type}
+      />
+
+      {/* Blocked Move Modal */}
+      <BlockedMoveModal
+        isOpen={blockedMoveModal.isOpen}
+        onClose={() => setBlockedMoveModal(prev => ({ ...prev, isOpen: false }))}
+        title={blockedMoveModal.title}
+        documentType={blockedMoveModal.documentType}
+        blockedCargos={blockedMoveModal.blockedCargos}
+        onCargoClick={(cargoId) => {
+          // Open the cargo card in Documents tab
+          setSelectedId(cargoId);
+          setBlockedMoveModal(prev => ({ ...prev, isOpen: false }));
+        }}
       />
 
       {/* Import Modal */}

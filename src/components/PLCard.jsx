@@ -177,38 +177,40 @@ export default function PLCard({
     }
   }, [activeTab, pl?.id, commentsLoaded]);
 
-  // ===== Bill document (Счет) - lazy load only when tab opened
-  const [billDoc, setBillDoc] = useState(null);
-  const [billCount, setBillCount] = useState(() => pl._counts?.bill ?? 0);
-  const [billLoading, setBillLoading] = useState(false);
-  const [billLoaded, setBillLoaded] = useState(false);
+  // ===== Invoice document for Счет tab - lazy load only when tab opened
+  const [invoiceDoc, setInvoiceDoc] = useState(null);
+  const [invoiceCount, setInvoiceCount] = useState(() => pl._counts?.docs ? 0 : 0);
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
+  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
 
-  // Update bill count when server data changes
+  // Update invoice count when docs loaded
   useEffect(() => {
-    if (pl._counts) {
-      setBillCount(pl._counts.bill ?? 0);
+    if (docsLoaded) {
+      const invoice = docs.find(d => d.docType === 'invoice') || null;
+      setInvoiceDoc(invoice);
+      setInvoiceCount(invoice ? 1 : 0);
     }
-  }, [pl._counts?.bill]);
+  }, [docs, docsLoaded]);
 
-  // Load bill document when tab opened
+  // Load invoice document when Счет tab opened
   useEffect(() => {
-    if (activeTab === "bill" && pl?.id && !billLoaded) {
-      setBillLoading(true);
+    if (activeTab === "bill" && pl?.id && !invoiceLoaded) {
+      setInvoiceLoading(true);
       listPLDocs(pl.id)
         .then(list => {
           const docList = Array.isArray(list) ? list : [];
-          const bill = docList.find(d => d.docType === 'bill') || null;
-          setBillDoc(bill);
-          setBillCount(bill ? 1 : 0);
-          setBillLoaded(true);
+          const invoice = docList.find(d => d.docType === 'invoice') || null;
+          setInvoiceDoc(invoice);
+          setInvoiceCount(invoice ? 1 : 0);
+          setInvoiceLoaded(true);
         })
         .catch(() => {
-          setBillDoc(null);
-          setBillCount(0);
+          setInvoiceDoc(null);
+          setInvoiceCount(0);
         })
-        .finally(() => setBillLoading(false));
+        .finally(() => setInvoiceLoading(false));
     }
-  }, [activeTab, pl?.id, billLoaded]);
+  }, [activeTab, pl?.id, invoiceLoaded]);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);
@@ -379,7 +381,7 @@ export default function PLCard({
       case "docs":
         return docsCount;
       case "bill":
-        return billCount;
+        return invoiceCount;
       case "comments":
         return commentsCount;
       case "timeline":
@@ -640,10 +642,10 @@ export default function PLCard({
           <div className="rounded-2xl bg-white shadow-sm border p-3">
             <BillTab 
               pl={pl} 
-              billDoc={billDoc}
-              setBillDoc={setBillDoc}
-              setBillCount={setBillCount}
-              loading={billLoading}
+              invoiceDoc={invoiceDoc}
+              setInvoiceDoc={setInvoiceDoc}
+              setInvoiceCount={setInvoiceCount}
+              loading={invoiceLoading}
             />
           </div>
         )}

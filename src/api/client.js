@@ -67,7 +67,22 @@ async function req(path, { method = "GET", body, headers } = {}) {
       let msg = `${method} ${path} failed: ${res.status}`;
       try {
         const text = await res.text();
-        if (text) msg += ` ${text}`;
+        if (text) {
+          // Try to parse as JSON to extract human-readable message
+          try {
+            const json = JSON.parse(text);
+            if (json.message) {
+              msg = json.message;
+            } else if (json.error) {
+              msg = json.error;
+            } else {
+              msg += ` ${text}`;
+            }
+          } catch {
+            // Not valid JSON, use text as-is
+            msg += ` ${text}`;
+          }
+        }
       } catch {}
       throw new Error(msg);
     }

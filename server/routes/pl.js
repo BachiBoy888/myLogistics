@@ -101,12 +101,10 @@ export default async function plRoutes(fastify) {
     const c = row.c ?? null;
     
     // Fetch counts for tabs in parallel with the main query
-    const [docsCount, commentsCount, eventsCount, invoiceCount, billCount] = await Promise.all([
+    const [docsCount, commentsCount, eventsCount] = await Promise.all([
       db.select({ count: sql`count(*)` }).from(plDocuments).where(eq(plDocuments.plId, plId)).then(r => Number(r[0]?.count || 0)),
       db.select({ count: sql`count(*)` }).from(plComments).where(eq(plComments.plId, plId)).then(r => Number(r[0]?.count || 0)),
       db.select({ count: sql`count(*)` }).from(plEvents).where(eq(plEvents.plId, plId)).then(r => Number(r[0]?.count || 0)),
-      db.select({ count: sql`count(*)` }).from(plDocuments).where(and(eq(plDocuments.plId, plId), eq(plDocuments.docType, 'invoice'))).then(r => Number(r[0]?.count || 0)),
-      db.select({ count: sql`count(*)` }).from(plDocuments).where(and(eq(plDocuments.plId, plId), eq(plDocuments.docType, 'bill'))).then(r => Number(r[0]?.count || 0)),
     ]);
     
     return { 
@@ -116,8 +114,6 @@ export default async function plRoutes(fastify) {
         docs: docsCount,
         comments: commentsCount,
         history: eventsCount,
-        invoice: invoiceCount,
-        bill: billCount,
       }
     };
   });

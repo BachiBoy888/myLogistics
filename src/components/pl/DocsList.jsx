@@ -239,7 +239,7 @@ export default function DocsList({ pl, onUpdate, onCountLoaded }) {
       <div className="space-y-3">
         <h3 className="font-semibold text-gray-900">Обязательные документы</h3>
         
-        {DOC_TYPES.filter(({ type }) => type !== "invoice").map(({ type, title, hint }) => {
+        {DOC_TYPES.map(({ type, title, hint }) => {
           const doc = requiredDocs.get(type) || null;
           const uiStatus = doc ? toUIStatus(doc.status) : null;
 

@@ -1,6 +1,5 @@
 // src/components/pl/BillTab.jsx
-// Вкладка "Счет" - работает с существующим invoice документом
-// Это UI-слой поверх doc_type='invoice', а не отдельный backend тип
+// Вкладка "Счет" - загрузка и просмотр счета на оплату (отдельно от инвойса)
 import React, { useRef, useState } from "react";
 import { Upload, FileText, Download, X, Eye } from "lucide-react";
 import { uploadPLDoc, deletePLDoc } from "../../api/client.js";
@@ -8,7 +7,7 @@ import { uploadPLDoc, deletePLDoc } from "../../api/client.js";
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const API = API_BASE_URL ? `${API_BASE_URL}/api` : "/api";
 
-export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount, loading }) {
+export default function BillTab({ pl, billDoc, setBillDoc, setBillCount, loading }) {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -22,13 +21,13 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
     setError("");
 
     try {
-      // Используем существующий тип 'invoice' - бэкенд сделает UPSERT
+      // Используем отдельный тип 'bill' - это документ оплаты, не инвойс
       const result = await uploadPLDoc(pl.id, { 
         file, 
-        doc_type: "invoice" 
+        doc_type: "bill" 
       });
-      setInvoiceDoc(result);
-      setInvoiceCount(1);
+      setBillDoc(result);
+      setBillCount(1);
     } catch (err) {
       console.error("[BillTab] upload error", err);
       setError(err.message || "Ошибка загрузки файла");
@@ -39,13 +38,13 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
   };
 
   const handleDelete = async () => {
-    if (!invoiceDoc || !pl?.id) return;
+    if (!billDoc || !pl?.id) return;
     if (!confirm("Удалить счет?")) return;
 
     try {
-      await deletePLDoc(pl.id, invoiceDoc.id);
-      setInvoiceDoc(null);
-      setInvoiceCount(0);
+      await deletePLDoc(pl.id, billDoc.id);
+      setBillDoc(null);
+      setBillCount(0);
     } catch (err) {
       console.error("[BillTab] delete error", err);
       setError(err.message || "Ошибка удаления");
@@ -83,7 +82,7 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
         <div className="text-sm text-rose-600 bg-rose-50 p-2 rounded-lg">{error}</div>
       )}
 
-      {!invoiceDoc ? (
+      {!billDoc ? (
         <div className="text-center py-8">
           <div className="text-gray-500 mb-4">Счет не загружен</div>
           <button
@@ -101,9 +100,9 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
           <div className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg">
             <FileText className="w-8 h-8 text-blue-600 shrink-0" />
             <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{invoiceDoc.fileName}</div>
+              <div className="font-medium truncate">{billDoc.fileName}</div>
               <div className="text-sm text-gray-500">
-                {formatSize(invoiceDoc.sizeBytes)} • {formatDate(invoiceDoc.uploadedAt)}
+                {formatSize(billDoc.sizeBytes)} • {formatDate(billDoc.uploadedAt)}
               </div>
             </div>
           </div>
@@ -119,7 +118,7 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
             </button>
 
             <a
-              href={`${API}/pl/${pl.id}/docs/${invoiceDoc.id}/download`}
+              href={`${API}/pl/${pl.id}/docs/${billDoc.id}/download`}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
@@ -149,7 +148,7 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
       )}
 
       {/* Preview modal */}
-      {previewOpen && invoiceDoc && (
+      {previewOpen && billDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div
             className="absolute inset-0 bg-black/60"
@@ -157,10 +156,10 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
           />
           <div className="relative bg-white rounded-2xl shadow-2xl w-[95vw] h-[90vh] p-3">
             <div className="flex items-center justify-between mb-2">
-              <div className="font-semibold truncate">{invoiceDoc.fileName}</div>
+              <div className="font-semibold truncate">{billDoc.fileName}</div>
               <div className="flex items-center gap-2">
                 <a
-                  href={`${API}/pl/${pl.id}/docs/${invoiceDoc.id}/download`}
+                  href={`${API}/pl/${pl.id}/docs/${billDoc.id}/download`}
                   className="text-sm underline"
                   target="_blank"
                   rel="noreferrer"
@@ -176,8 +175,8 @@ export default function BillTab({ pl, invoiceDoc, setInvoiceDoc, setInvoiceCount
               </div>
             </div>
             <iframe
-              title="invoice-preview"
-              src={`${API}/pl/${pl.id}/docs/${invoiceDoc.id}/preview`}
+              title="bill-preview"
+              src={`${API}/pl/${pl.id}/docs/${billDoc.id}/preview`}
               className="w-full h-[calc(90vh-56px)] border rounded-lg"
             />
           </div>

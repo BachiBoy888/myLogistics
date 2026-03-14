@@ -26,6 +26,12 @@ export const DOC_TYPES = [
     hint: "Файл ПИ для оформления в Китае.",
     filePrefix: "predecl",
   },
+  {
+    type: "bill",
+    title: "Счет",
+    hint: "Счет на оплату транспортных услуг.",
+    filePrefix: "bill",
+  },
 ];
 
 // Additional documents type - for user-uploaded custom documents

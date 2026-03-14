@@ -177,45 +177,45 @@ export default function PLCard({
     }
   }, [activeTab, pl?.id, commentsLoaded]);
 
-  // ===== Invoice document for Счет tab - lazy load only when tab opened
-  const [invoiceDoc, setInvoiceDoc] = useState(null);
-  const [invoiceCount, setInvoiceCount] = useState(() => pl._counts?.invoice ?? 0);
-  const [invoiceLoading, setInvoiceLoading] = useState(false);
-  const [invoiceLoaded, setInvoiceLoaded] = useState(false);
+  // ===== Bill document for Счет tab - separate from invoice
+  const [billDoc, setBillDoc] = useState(null);
+  const [billCount, setBillCount] = useState(() => pl._counts?.bill ?? 0);
+  const [billLoading, setBillLoading] = useState(false);
+  const [billLoaded, setBillLoaded] = useState(false);
 
-  // Reset invoice state when PL changes (card reopened with different cargo)
+  // Reset bill state when PL changes (card reopened with different cargo)
   useEffect(() => {
-    setInvoiceDoc(null);
-    setInvoiceCount(pl._counts?.invoice ?? 0);
-    setInvoiceLoaded(false);
+    setBillDoc(null);
+    setBillCount(pl._counts?.bill ?? 0);
+    setBillLoaded(false);
   }, [pl?.id]);
 
-  // Update invoice count when server data changes
+  // Update bill count when server data changes
   useEffect(() => {
-    if (pl._counts?.invoice !== undefined) {
-      setInvoiceCount(pl._counts.invoice);
+    if (pl._counts?.bill !== undefined) {
+      setBillCount(pl._counts.bill);
     }
-  }, [pl._counts?.invoice]);
+  }, [pl._counts?.bill]);
 
-  // Load invoice document when Счет tab opened
+  // Load bill document when Счет tab opened
   useEffect(() => {
-    if (activeTab === "bill" && pl?.id && !invoiceLoaded) {
-      setInvoiceLoading(true);
+    if (activeTab === "bill" && pl?.id && !billLoaded) {
+      setBillLoading(true);
       listPLDocs(pl.id)
         .then(list => {
           const docList = Array.isArray(list) ? list : [];
-          const invoice = docList.find(d => d.docType === 'invoice') || null;
-          setInvoiceDoc(invoice);
-          setInvoiceCount(invoice ? 1 : 0);
-          setInvoiceLoaded(true);
+          const bill = docList.find(d => d.docType === 'bill') || null;
+          setBillDoc(bill);
+          setBillCount(bill ? 1 : 0);
+          setBillLoaded(true);
         })
         .catch(() => {
-          setInvoiceDoc(null);
-          setInvoiceCount(0);
+          setBillDoc(null);
+          setBillCount(0);
         })
-        .finally(() => setInvoiceLoading(false));
+        .finally(() => setBillLoading(false));
     }
-  }, [activeTab, pl?.id, invoiceLoaded]);
+  }, [activeTab, pl?.id, billLoaded]);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);
@@ -386,7 +386,7 @@ export default function PLCard({
       case "docs":
         return docsCount;
       case "bill":
-        return invoiceCount;
+        return billCount;
       case "comments":
         return commentsCount;
       case "timeline":
@@ -647,10 +647,10 @@ export default function PLCard({
           <div className="rounded-2xl bg-white shadow-sm border p-3">
             <BillTab 
               pl={pl} 
-              invoiceDoc={invoiceDoc}
-              setInvoiceDoc={setInvoiceDoc}
-              setInvoiceCount={setInvoiceCount}
-              loading={invoiceLoading}
+              billDoc={billDoc}
+              setBillDoc={setBillDoc}
+              setBillCount={setBillCount}
+              loading={billLoading}
             />
           </div>
         )}

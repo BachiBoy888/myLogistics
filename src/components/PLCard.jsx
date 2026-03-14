@@ -179,18 +179,16 @@ export default function PLCard({
 
   // ===== Invoice document for Счет tab - lazy load only when tab opened
   const [invoiceDoc, setInvoiceDoc] = useState(null);
-  const [invoiceCount, setInvoiceCount] = useState(() => pl._counts?.docs ? 0 : 0);
+  const [invoiceCount, setInvoiceCount] = useState(() => pl._counts?.invoice ?? 0);
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceLoaded, setInvoiceLoaded] = useState(false);
 
-  // Update invoice count when docs loaded
+  // Update invoice count when server data changes
   useEffect(() => {
-    if (docsLoaded) {
-      const invoice = docs.find(d => d.docType === 'invoice') || null;
-      setInvoiceDoc(invoice);
-      setInvoiceCount(invoice ? 1 : 0);
+    if (pl._counts?.invoice !== undefined) {
+      setInvoiceCount(pl._counts.invoice);
     }
-  }, [docs, docsLoaded]);
+  }, [pl._counts?.invoice]);
 
   // Load invoice document when Счет tab opened
   useEffect(() => {

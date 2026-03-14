@@ -2,7 +2,7 @@
 // Модалка для отображения блокировки перехода статуса с операционными подсказками
 
 import React from "react";
-import { X, FileX, FileText, ArrowRight } from "lucide-react";
+import { X, ArrowRight } from "lucide-react";
 
 /**
  * BlockedMoveModal - Shows when consolidation cannot move to a status
@@ -19,7 +19,7 @@ import { X, FileX, FileText, ArrowRight } from "lucide-react";
 export default function BlockedMoveModal({
   isOpen,
   onClose,
-  title = "Нельзя перевести консолидацию в статус «Оплата»",
+  title = "Нельзя перевести в статус «Оплата»",
   documentType = "Счет",
   blockedCargos = [],
   onCargoClick,
@@ -33,70 +33,55 @@ export default function BlockedMoveModal({
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200">
         {/* Header */}
-        <div className="bg-red-50 px-6 py-4 flex items-center justify-between border-b border-red-100">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-              <FileX className="w-5 h-5 text-red-600" />
-            </div>
-            <h3 className="text-lg font-semibold text-red-900 leading-tight">
-              {title}
-            </h3>
-          </div>
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-gray-900">
+            {title}
+          </h3>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-red-100 rounded-lg transition-colors"
+            className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-red-600" />
+            <X className="w-4 h-4 text-gray-400" />
           </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5">
+        <div className="px-5 py-4">
           {/* Explanation */}
-          <p className="text-gray-700 mb-4">
-            У следующих грузов отсутствует документ «{documentType}»:
+          <p className="text-sm text-gray-600 mb-3">
+            В следующих грузах отсутствует документ «{documentType}»:
           </p>
 
           {/* Cargo List */}
-          <div className="bg-gray-50 rounded-xl p-3 mb-4">
-            <ul className="space-y-2">
+          <div className="mb-4">
+            <ul className="space-y-1.5">
               {blockedCargos.map((cargo) => (
                 <li
                   key={cargo.id}
                   className={`
-                    flex items-center gap-3 p-2 rounded-lg
+                    flex items-center gap-2 py-1.5 px-2 rounded-md text-sm
                     ${onCargoClick 
-                      ? 'bg-white border border-gray-200 hover:border-blue-400 hover:bg-blue-50 cursor-pointer transition-all group' 
-                      : 'bg-white border border-gray-200'}
+                      ? 'hover:bg-blue-50 cursor-pointer transition-colors group' 
+                      : ''}
                   `}
                   onClick={() => onCargoClick && handleCargoClick(cargo.id)}
                 >
-                  <div className={`
-                    w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
-                    ${onCargoClick ? 'bg-gray-100 group-hover:bg-blue-100 transition-colors' : 'bg-gray-100'}
+                  <span className="text-gray-400 select-none">—</span>
+                  <span className={`
+                    font-medium text-gray-900
+                    ${onCargoClick ? 'group-hover:text-blue-700' : ''}
                   `}>
-                    <FileText className={`
-                      w-4 h-4 
-                      ${onCargoClick ? 'text-gray-500 group-hover:text-blue-600' : 'text-gray-500'}
-                    `} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <span className={`
-                      font-medium text-sm
-                      ${onCargoClick ? 'text-gray-900 group-hover:text-blue-700' : 'text-gray-900'}
-                    `}>
-                      {cargo.plNumber}
+                    {cargo.plNumber}
+                  </span>
+                  {cargo.name && (
+                    <span className="text-gray-400 text-xs truncate">
+                      {cargo.name}
                     </span>
-                    {cargo.name && (
-                      <p className="text-xs text-gray-500 truncate">
-                        {cargo.name}
-                      </p>
-                    )}
-                  </div>
+                  )}
                   {onCargoClick && (
-                    <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-blue-400 transition-colors" />
+                    <ArrowRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-blue-400 ml-auto transition-colors" />
                   )}
                 </li>
               ))}
@@ -104,18 +89,19 @@ export default function BlockedMoveModal({
           </div>
 
           {/* Next Steps */}
-          <div className="bg-amber-50 border border-amber-100 rounded-xl p-4">
-            <p className="text-amber-800 text-sm">
-              <span className="font-medium">Что делать:</span> Загрузите {documentType.toLowerCase()} для этих грузов и попробуйте снова.
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-1">Что нужно сделать:</p>
+            <p className="text-sm text-gray-700">
+              Загрузите документ «{documentType}» для этих грузов, затем повторите попытку.
             </p>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-gray-50 flex justify-end">
+        <div className="px-5 py-3 bg-gray-50 flex justify-end">
           <button
             onClick={onClose}
-            className="px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white font-medium rounded-lg transition-colors"
+            className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-medium rounded-lg transition-colors"
           >
             Понятно
           </button>

@@ -464,7 +464,7 @@ export default function CargoView({
             if (plsMissingBill.length > 0) {
               setBlockedMoveModal({
                 isOpen: true,
-                title: "Нельзя перевести консолидацию в статус «Оплата»",
+                title: "Нельзя перевести в статус «Оплата»",
                 documentType: "Счет",
                 blockedCargos: plsMissingBill,
               });

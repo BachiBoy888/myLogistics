@@ -183,6 +183,13 @@ export default function PLCard({
   const [invoiceLoading, setInvoiceLoading] = useState(false);
   const [invoiceLoaded, setInvoiceLoaded] = useState(false);
 
+  // Reset invoice state when PL changes (card reopened with different cargo)
+  useEffect(() => {
+    setInvoiceDoc(null);
+    setInvoiceCount(pl._counts?.invoice ?? 0);
+    setInvoiceLoaded(false);
+  }, [pl?.id]);
+
   // Update invoice count when server data changes
   useEffect(() => {
     if (pl._counts?.invoice !== undefined) {

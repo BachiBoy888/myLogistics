@@ -126,3 +126,39 @@ export function consNextStatusOf(currentStatus) {
   if (i === -1) return null;
   return StatusPipeline[i + 1] || null;
 }
+
+// ===== Document-based movement restrictions =====
+
+// Map: status -> required document types
+export const STATUS_DOC_REQUIREMENTS = {
+  awaiting_load: ['invoice', 'packing_list'],      // Сбор груза
+  to_load: ['inspection'],                          // Погрузка
+  to_customs: ['pre_declaration'],                  // Оформление Китай
+  collect_payment: ['bill'],                        // Оплата
+};
+
+// Document type to display name mapping
+export const DOC_TYPE_DISPLAY_NAMES = {
+  invoice: 'Инвойс',
+  packing_list: 'Упаковочный лист',
+  inspection: 'Осмотр',
+  pre_declaration: 'Предварительное информирование',
+  bill: 'Счет',
+};
+
+// Get missing documents for a target status
+// requiredDocs: Map of docType -> doc object (from DocsList)
+export function getMissingDocsForStatus(targetStatus, requiredDocs) {
+  const requiredTypes = STATUS_DOC_REQUIREMENTS[targetStatus];
+  if (!requiredTypes || requiredTypes.length === 0) return [];
+
+  return requiredTypes.filter(docType => {
+    const doc = requiredDocs.get(docType);
+    return !doc; // Missing if no document exists
+  });
+}
+
+// Get display name for status
+export function getStatusDisplayName(status) {
+  return humanStatus(status) || status;
+}

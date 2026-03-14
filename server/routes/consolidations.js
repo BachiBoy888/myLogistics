@@ -7,6 +7,7 @@ import {
   consolidationStatusHistory,
   consolidationExpenses,
   pl,
+  plDocuments,
 } from "../db/schema.js";
 import { nextConsNumber } from "../services/consolidations.js";
 import {
@@ -198,6 +199,43 @@ export default async function consolidationsRoutes(app) {
             }
             // Note: We allow any valid pipeline transition now.
             // PL status sync happens automatically below.
+          }
+
+          // Document validation for consolidation moving to Оплата (collect_payment)
+          if (body.status === "collect_payment") {
+            const plLinks = await tx
+              .select({ plId: consolidationPl.plId })
+              .from(consolidationPl)
+              .where(eq(consolidationPl.consolidationId, id));
+            
+            const plIds = plLinks.map((l) => l.plId);
+            
+            if (plIds.length > 0) {
+              const plsMissingBill = [];
+              
+              for (const plId of plIds) {
+                const docs = await tx
+                  .select({ docType: plDocuments.docType })
+                  .from(plDocuments)
+                  .where(eq(plDocuments.plId, plId));
+                
+                const hasBill = docs.some(d => d.docType === "bill");
+                if (!hasBill) {
+                  const [plRow] = await tx
+                    .select({ name: pl.name, plNumber: pl.plNumber })
+                    .from(pl)
+                    .where(eq(pl.id, plId));
+                  plsMissingBill.push(plRow?.name || plRow?.plNumber || `PL-${plId}`);
+                }
+              }
+              
+              if (plsMissingBill.length > 0) {
+                const plList = plsMissingBill.join(", ");
+                throw new Error(
+                  `Нельзя перевести консолидацию в статус «Оплата». В следующих грузах отсутствует документ «Счет»: ${plList}. Загрузите счет для всех грузов перед перемещением.`
+                );
+              }
+            }
           }
 
           // If status is changing, sync PLs FIRST (before updating consolidation)

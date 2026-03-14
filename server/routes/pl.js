@@ -236,6 +236,43 @@ export default async function plRoutes(fastify) {
       const [current] = await db.select().from(pl).where(eq(pl.id, Number(id))).limit(1);
       if (!current) return reply.notFound(`PL ${id} not found`);
 
+      // Document-based movement restrictions
+      if (b.status != null && b.status !== current.status) {
+        const STATUS_DOC_REQUIREMENTS = {
+          awaiting_load: ['invoice', 'packing_list'],
+          to_load: ['inspection'],
+          to_customs: ['pre_declaration'],
+          collect_payment: ['bill'],
+        };
+        
+        const requiredDocs = STATUS_DOC_REQUIREMENTS[b.status];
+        if (requiredDocs && requiredDocs.length > 0) {
+          const docs = await db
+            .select({ docType: plDocuments.docType })
+            .from(plDocuments)
+            .where(eq(plDocuments.plId, Number(id)));
+          
+          const uploadedTypes = new Set(docs.map(d => d.docType));
+          const missing = requiredDocs.filter(type => !uploadedTypes.has(type));
+          
+          if (missing.length > 0) {
+            const DOC_NAMES = {
+              invoice: 'Инвойс',
+              packing_list: 'Упаковочный лист',
+              inspection: 'Осмотр',
+              pre_declaration: 'Предварительное информирование',
+              bill: 'Счет',
+            };
+            const missingNames = missing.map(t => DOC_NAMES[t] || t).join(', ');
+            return reply.status(400).send({
+              error: 'DOCUMENTS_REQUIRED',
+              message: `Нельзя перевести груз в этот статус. Загрузите документы: ${missingNames}`,
+              missingDocuments: missing,
+            });
+          }
+        }
+      }
+
       const payload = {
         ...(b.name != null && { name: b.name ?? b.title }),
         ...(b.title != null && b.name == null && { name: b.title }),

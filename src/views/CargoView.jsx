@@ -47,6 +47,10 @@ import {
   humanConsStatus,
   badgeColorByConsStatus,
   consNextStatusOf,
+  STATUS_DOC_REQUIREMENTS,
+  getMissingDocsForStatus,
+  getStatusDisplayName,
+  DOC_TYPE_DISPLAY_NAMES,
 } from "../constants/statuses.js";
 
 import { readinessForPL, canAllowToShip } from "../utils/readiness.js";
@@ -429,6 +433,38 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
+        // Document validation for consolidation moving to Оплата
+        if (newStatus === "collect_payment") {
+          try {
+            // Get all PLs in this consolidation
+            const consPLs = safePLs.filter(p => p.consolidationId === plId || p.consolidation_id === plId);
+            const plsMissingBill = [];
+            
+            for (const pl of consPLs) {
+              const docs = await API.listPLDocs(pl.id);
+              const hasBill = docs.some(d => d.docType === "bill");
+              if (!hasBill) {
+                plsMissingBill.push(pl.name || pl.plNumber || `PL-${pl.id}`);
+              }
+            }
+            
+            if (plsMissingBill.length > 0) {
+              const plList = plsMissingBill.join(", ");
+              showError(
+                `Нельзя перевести консолидацию в статус «Оплата». В следующих грузах отсутствует документ «Счет»: ${plList}. Загрузите счет для всех грузов перед перемещением.`,
+                "Документы не готовы",
+                "Понятно",
+                "warning"
+              );
+              return;
+            }
+          } catch (err) {
+            console.error("Ошибка при проверке документов консолидации:", err);
+            showError("Не удалось проверить документы грузов в консолидации");
+            return;
+          }
+        }
+
         try {
           // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
@@ -442,6 +478,33 @@ export default function CargoView({
         // Move PL
         const pl = safePLs.find((p) => p.id === plId);
         if (!pl || newStatus === pl.status) return;
+
+        // Document validation for cargo
+        const requiredDocTypes = STATUS_DOC_REQUIREMENTS[newStatus];
+        if (requiredDocTypes && requiredDocTypes.length > 0) {
+          try {
+            const docs = await API.listPLDocs(plId);
+            const missingDocs = requiredDocTypes.filter(docType => 
+              !docs.some(d => d.docType === docType)
+            );
+            
+            if (missingDocs.length > 0) {
+              const docNames = missingDocs.map(t => DOC_TYPE_DISPLAY_NAMES[t] || t).join(", ");
+              const statusName = getStatusDisplayName(newStatus);
+              showError(
+                `Нельзя перевести груз в статус «${statusName}». Загрузите документы: ${docNames}. Откройте карточку груза, перейдите во вкладку «Документы» и загрузите необходимые документы.`,
+                "Документы не готовы",
+                "Понятно",
+                "warning"
+              );
+              return;
+            }
+          } catch (err) {
+            console.error("Ошибка при проверке документов:", err);
+            showError("Не удалось проверить документы груза");
+            return;
+          }
+        }
 
         try {
           await API.updatePL(plId, { status: newStatus });

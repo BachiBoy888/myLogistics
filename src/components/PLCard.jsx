@@ -4,7 +4,6 @@ import React, { useState, useMemo, useEffect, useCallback } from "react";
 import PLCostSummary from "./pl/PLCostSummary.jsx";
 import CommentsCard from "./CommentsCard.jsx";
 import DocsList from "./pl/DocsList.jsx";
-import BillTab from "./pl/BillTab.jsx";
 import {
   Package,
   X,
@@ -20,7 +19,6 @@ import {
   History,
   Info,
   UserCog,
-  Receipt,
 } from "lucide-react";
 import { listPLEvents, assignPLResponsible, listUsers, listPLDocs, listPLComments, updatePL } from "../api/client.js";
 import { safeEvents } from "../utils/events.js";
@@ -28,7 +26,6 @@ import { safeEvents } from "../utils/events.js";
 const TABS = [
   { id: "info", label: "Сведения", icon: Info },
   { id: "docs", label: "Документы", icon: FileText },
-  { id: "bill", label: "Счет", icon: Receipt },
   { id: "comments", label: "Комментарии", icon: MessageSquare },
   { id: "timeline", label: "Хронология", icon: History },
 ];
@@ -176,39 +173,6 @@ export default function PLCard({
         .finally(() => setCommentsLoading(false));
     }
   }, [activeTab, pl?.id, commentsLoaded]);
-
-  // ===== Bill document (Счет) - lazy load only when tab opened
-  const [billDoc, setBillDoc] = useState(null);
-  const [billCount, setBillCount] = useState(() => pl._counts?.bill ?? 0);
-  const [billLoading, setBillLoading] = useState(false);
-  const [billLoaded, setBillLoaded] = useState(false);
-
-  // Update bill count when server data changes
-  useEffect(() => {
-    if (pl._counts) {
-      setBillCount(pl._counts.bill ?? 0);
-    }
-  }, [pl._counts?.bill]);
-
-  // Load bill document when tab opened
-  useEffect(() => {
-    if (activeTab === "bill" && pl?.id && !billLoaded) {
-      setBillLoading(true);
-      listPLDocs(pl.id)
-        .then(list => {
-          const docList = Array.isArray(list) ? list : [];
-          const bill = docList.find(d => d.docType === 'bill') || null;
-          setBillDoc(bill);
-          setBillCount(bill ? 1 : 0);
-          setBillLoaded(true);
-        })
-        .catch(() => {
-          setBillDoc(null);
-          setBillCount(0);
-        })
-        .finally(() => setBillLoading(false));
-    }
-  }, [activeTab, pl?.id, billLoaded]);
 
   // ===== Ответственный
   const [showRespPicker, setShowRespPicker] = useState(false);
@@ -378,8 +342,6 @@ export default function PLCard({
     switch (tabId) {
       case "docs":
         return docsCount;
-      case "bill":
-        return billCount;
       case "comments":
         return commentsCount;
       case "timeline":
@@ -632,19 +594,6 @@ export default function PLCard({
         {activeTab === "docs" && (
           <div className="rounded-2xl bg-white shadow-sm border p-3">
             <DocsList pl={pl} onUpdate={onUpdate} onCountLoaded={setDocsCount} />
-          </div>
-        )}
-
-        {/* Вкладка Счет */}
-        {activeTab === "bill" && (
-          <div className="rounded-2xl bg-white shadow-sm border p-3">
-            <BillTab 
-              pl={pl} 
-              billDoc={billDoc}
-              setBillDoc={setBillDoc}
-              setBillCount={setBillCount}
-              loading={billLoading}
-            />
           </div>
         )}
 

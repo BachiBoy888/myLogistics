@@ -29,7 +29,7 @@ export const DOC_TYPES = [
   {
     type: "bill",
     title: "Счет",
-    hint: "Загрузите счет на оплату.",
+    hint: "Счет на оплату транспортных услуг.",
     filePrefix: "bill",
   },
 ];

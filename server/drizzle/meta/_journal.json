@@ -204,6 +204,20 @@
       "when": 1773264000000,
       "tag": "0028_add_consolidation_client_price_snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1773346800000,
+      "tag": "0029_add_additional_docs_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1773519600000,
+      "tag": "0030_add_consolidation_driver_fields",
+      "breakpoints": true
     }
   ]
 }

@@ -149,6 +149,10 @@ export default function ConsolidationDetailsModal({
   const [capacityKg, setCapacityKg] = useState(cons.capacity_kg || 0);
   const [capacityCbm, setCapacityCbm] = useState(cons.capacity_cbm || 0);
   
+  // Driver info editing state
+  const [driverName, setDriverName] = useState(cons.driver_name || "");
+  const [driverContacts, setDriverContacts] = useState(cons.driver_contacts || "");
+  
   // PL management state
   const [pickedIds, setPickedIds] = useState(cons.pl_ids || []);
   const [plOrders, setPlOrders] = useState(cons.pl_load_orders || {});
@@ -216,10 +220,12 @@ export default function ConsolidationDetailsModal({
     
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
+    setDriverName(cons.driver_name || "");
+    setDriverContacts(cons.driver_contacts || "");
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs, saving]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.driver_name, cons.driver_contacts, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -522,10 +528,12 @@ export default function ConsolidationDetailsModal({
       // Order: 1) capacity/machineCost → 2) expenses → 3) plDetails
       // All writes happen before any UI refresh to prevent flicker
       
-      // Step 1: Update capacity and machine cost first (PATCH)
+      // Step 1: Update capacity, driver info, and machine cost first (PATCH)
       const consUpdate = {};
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
+      if (driverName !== (cons.driver_name || "")) consUpdate.driverName = driverName;
+      if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
@@ -547,6 +555,10 @@ export default function ConsolidationDetailsModal({
         // Update capacity state
         setCapacityKg(freshCons.capacity_kg || 0);
         setCapacityCbm(freshCons.capacity_cbm || 0);
+        
+        // Update driver info from final state
+        setDriverName(freshCons.driver_name || "");
+        setDriverContacts(freshCons.driver_contacts || "");
         
         // Update machine cost and expenses from final state
         setMachineCost(freshCons.machine_cost || 0);
@@ -741,6 +753,32 @@ export default function ConsolidationDetailsModal({
         <div className="px-4 py-3 bg-gray-50 border-b">
           {isEditing ? (
             <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
+                <input
+                  type="text"
+                  value={driverName}
+                  onChange={(e) => {
+                    setDriverName(e.target.value);
+                    markChanged();
+                  }}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Введите имя водителя"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="text-sm text-gray-600 mb-1 block">Контакты водителя</label>
+                <input
+                  type="text"
+                  value={driverContacts}
+                  onChange={(e) => {
+                    setDriverContacts(e.target.value);
+                    markChanged();
+                  }}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="Телефон или другие контакты"
+                />
+              </div>
               <div>
                 <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
                 <input
@@ -767,23 +805,37 @@ export default function ConsolidationDetailsModal({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <CapacityIndicator
-                label="Вес"
-                current={stats.sumW}
-                capacity={Number(capacityKg) || 0}
-                free={stats.freeW}
-                over={stats.overWeight}
-                unit="кг"
-              />
-              <CapacityIndicator
-                label="Объём"
-                current={stats.sumV}
-                capacity={Number(capacityCbm) || 0}
-                free={stats.freeV}
-                over={stats.overVolume}
-                unit="м³"
-              />
+            <div className="space-y-3">
+              {/* Driver info display */}
+              {(driverName || driverContacts) && (
+                <div className="bg-white rounded-lg p-3 border">
+                  <div className="text-xs text-gray-500 mb-1">Водитель</div>
+                  {driverName && (
+                    <div className="font-medium text-sm">{driverName}</div>
+                  )}
+                  {driverContacts && (
+                    <div className="text-sm text-gray-600">{driverContacts}</div>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <CapacityIndicator
+                  label="Вес"
+                  current={stats.sumW}
+                  capacity={Number(capacityKg) || 0}
+                  free={stats.freeW}
+                  over={stats.overWeight}
+                  unit="кг"
+                />
+                <CapacityIndicator
+                  label="Объём"
+                  current={stats.sumV}
+                  capacity={Number(capacityCbm) || 0}
+                  free={stats.freeV}
+                  over={stats.overVolume}
+                  unit="м³"
+                />
+              </div>
             </div>
           )}
         </div>

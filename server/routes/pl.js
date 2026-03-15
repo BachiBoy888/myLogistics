@@ -478,9 +478,8 @@ export default async function plRoutes(fastify) {
         .returning();
     } else {
       // Required docs: UPSERT (replace existing)
-      // Use (plId, docType) as conflict target for compatibility with both old and new schema
-      // Old schema: unique on (pl_id, doc_type)
-      // New schema: unique on (pl_id, doc_type, name) where name IS NULL for required docs
+      // Conflict target must match the unique constraint: (pl_id, doc_type, name)
+      // Required docs have name=NULL, so conflict resolves correctly on (pl_id, doc_type, NULL)
       [row] = await db
         .insert(plDocuments)
         .values({
@@ -497,7 +496,7 @@ export default async function plRoutes(fastify) {
           updatedAt: now,
         })
         .onConflictDoUpdate({
-          target: [plDocuments.plId, plDocuments.docType],
+          target: [plDocuments.plId, plDocuments.docType, plDocuments.name],
           set: {
             fileName: filename,
             mimeType: mimetype,

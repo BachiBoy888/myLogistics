@@ -64,13 +64,15 @@ async function req(path, { method = "GET", body, headers } = {}) {
     if (res.status === 204) return null;
 
     if (!res.ok) {
+      let errorData = null;
       let msg = `${method} ${path} failed: ${res.status}`;
       try {
         const text = await res.text();
         if (text) {
-          // Try to parse as JSON to extract human-readable message
+          // Try to parse as JSON to extract structured error
           try {
             const json = JSON.parse(text);
+            errorData = json;
             if (json.message) {
               msg = json.message;
             } else if (json.error) {
@@ -84,7 +86,12 @@ async function req(path, { method = "GET", body, headers } = {}) {
           }
         }
       } catch {}
-      throw new Error(msg);
+      
+      // Create error with structured data attached
+      const err = new Error(msg);
+      err.statusCode = res.status;
+      err.errorData = errorData;
+      throw err;
     }
     return res.json();
   })();

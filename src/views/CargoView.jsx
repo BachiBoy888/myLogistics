@@ -484,7 +484,24 @@ export default function CargoView({
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
-          showError("Не удалось переместить консолидацию: " + (err.message || ""));
+          
+          // Check for structured BLOCKED_MOVE error from backend
+          const errorData = err?.errorData;
+          if (errorData?.error === "BLOCKED_MOVE" && errorData?.blockedCargos) {
+            setBlockedMoveModal({
+              isOpen: true,
+              title: "Нельзя перевести в статус «Оплата»",
+              documentType: errorData.documentType === "invoice" ? "Счет" : (errorData.documentType || "Счет"),
+              blockedCargos: errorData.blockedCargos.map(c => ({
+                id: c.id,
+                plNumber: c.plNumber || c.pl_number || `PL-${c.id}`,
+                name: c.name,
+              })),
+            });
+            return;
+          }
+          
+          showError(err?.message || "Не удалось переместить консолидацию");
         }
       } else {
         // Move PL

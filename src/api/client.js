@@ -267,6 +267,8 @@ export function normalizeCons(s) {
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
     title: s.title ?? s.cons_number ?? s.consNumber ?? "",
     status: s.status ?? "loaded",
+    driver_name: s.driver_name ?? s.driverName ?? "",
+    driver_contacts: s.driver_contacts ?? s.driverContacts ?? "",
     pl_ids: Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)

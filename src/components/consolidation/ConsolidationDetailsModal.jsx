@@ -145,9 +145,16 @@ export default function ConsolidationDetailsModal({
   const [hasChanges, setHasChanges] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   
+  // Driver inline editing state - true if driver data is empty (immediate edit mode)
+  const [isEditingDriver, setIsEditingDriver] = useState(false);
+  
   // Capacity editing state
   const [capacityKg, setCapacityKg] = useState(cons.capacity_kg || 0);
   const [capacityCbm, setCapacityCbm] = useState(cons.capacity_cbm || 0);
+  
+  // Driver info editing state
+  const [driverName, setDriverName] = useState(cons.driver_name || "");
+  const [driverContacts, setDriverContacts] = useState(cons.driver_contacts || "");
   
   // PL management state
   const [pickedIds, setPickedIds] = useState(cons.pl_ids || []);
@@ -164,6 +171,12 @@ export default function ConsolidationDetailsModal({
   const [expenses, setExpenses] = useState(cons.expenses || []);
   const [newExpense, setNewExpense] = useState({ type: 'other', comment: '', amount: '' });
   const [showAddExpense, setShowAddExpense] = useState(false);
+
+  // Auto-enable driver edit mode when driver data is empty
+  useEffect(() => {
+    const hasDriverData = (cons.driver_name || "").trim() !== "" || (cons.driver_contacts || "").trim() !== "";
+    setIsEditingDriver(!hasDriverData);
+  }, [cons.driver_name, cons.driver_contacts]);
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
@@ -216,10 +229,12 @@ export default function ConsolidationDetailsModal({
     
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
+    setDriverName(cons.driver_name || "");
+    setDriverContacts(cons.driver_contacts || "");
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.machine_cost, cons.expenses, allPLs, saving]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.driver_name, cons.driver_contacts, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -522,10 +537,12 @@ export default function ConsolidationDetailsModal({
       // Order: 1) capacity/machineCost → 2) expenses → 3) plDetails
       // All writes happen before any UI refresh to prevent flicker
       
-      // Step 1: Update capacity and machine cost first (PATCH)
+      // Step 1: Update capacity, driver info, and machine cost first (PATCH)
       const consUpdate = {};
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
+      if (driverName !== (cons.driver_name || "")) consUpdate.driverName = driverName;
+      if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
@@ -547,6 +564,10 @@ export default function ConsolidationDetailsModal({
         // Update capacity state
         setCapacityKg(freshCons.capacity_kg || 0);
         setCapacityCbm(freshCons.capacity_cbm || 0);
+        
+        // Update driver info from final state
+        setDriverName(freshCons.driver_name || "");
+        setDriverContacts(freshCons.driver_contacts || "");
         
         // Update machine cost and expenses from final state
         setMachineCost(freshCons.machine_cost || 0);
@@ -737,57 +758,6 @@ export default function ConsolidationDetailsModal({
           </div>
         </div>
 
-        {/* Capacity Section */}
-        <div className="px-4 py-3 bg-gray-50 border-b">
-          {isEditing ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
-                <input
-                  type="number"
-                  value={capacityKg}
-                  onChange={(e) => {
-                    setCapacityKg(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 mb-1 block">Вместимость (м³)</label>
-                <input
-                  type="number"
-                  value={capacityCbm}
-                  onChange={(e) => {
-                    setCapacityCbm(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <CapacityIndicator
-                label="Вес"
-                current={stats.sumW}
-                capacity={Number(capacityKg) || 0}
-                free={stats.freeW}
-                over={stats.overWeight}
-                unit="кг"
-              />
-              <CapacityIndicator
-                label="Объём"
-                current={stats.sumV}
-                capacity={Number(capacityCbm) || 0}
-                free={stats.freeV}
-                over={stats.overVolume}
-                unit="м³"
-              />
-            </div>
-          )}
-        </div>
-
         {/* Tabs */}
         <div className="flex border-b">
           <button
@@ -829,69 +799,240 @@ export default function ConsolidationDetailsModal({
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
           {activeTab === 'loading' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* В консолидации */}
-              <div>
-                <div className="text-sm font-medium mb-2 flex items-center justify-between">
-                  <span>В консолидации</span>
-                  <span className="text-xs text-gray-500">
-                    {pickedIds.length} PL • {stats.sumW.toFixed(0)} кг • {stats.sumV.toFixed(2)} м³
-                  </span>
-                </div>
-                <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
-                  {pickedPLs.length === 0 && (
-                    <div className="p-4 text-sm text-gray-500 text-center">Пусто</div>
-                  )}
-                  {pickedPLs.map((p, idx) => (
-                    <div 
-                      key={p.id} 
-                      className="p-3 flex items-center gap-2 hover:bg-gray-50"
-                    >
-                      <span className="text-xs text-gray-400 w-6">#{idx + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-sm">
-                          {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
-                        </div>
-                      </div>
-                      <button 
-                        className="text-rose-600 text-xs underline px-2"
-                        onClick={() => handleRemovePL(p.id)}
+            <div className="space-y-4">
+              {/* Driver + Capacity Section - moved inside Loading tab */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                {isEditing ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
+                      <input
+                        type="text"
+                        value={driverName}
+                        onChange={(e) => {
+                          setDriverName(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                        placeholder="Введите имя водителя"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Контакты водителя</label>
+                      <input
+                        type="text"
+                        value={driverContacts}
+                        onChange={(e) => {
+                          setDriverContacts(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                        placeholder="Телефон или другие контакты"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
+                      <input
+                        type="number"
+                        value={capacityKg}
+                        onChange={(e) => {
+                          setCapacityKg(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 mb-1 block">Вместимость (м³)</label>
+                      <input
+                        type="number"
+                        value={capacityCbm}
+                        onChange={(e) => {
+                          setCapacityCbm(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                ) : isEditingDriver ? (
+                  /* Inline driver editing mode - shown when driver data is empty */
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700">Водитель</div>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={driverName}
+                        onChange={(e) => setDriverName(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder="Имя водителя"
+                      />
+                      <input
+                        type="text"
+                        value={driverContacts}
+                        onChange={(e) => setDriverContacts(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder="Телефон или другие контакты"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          await onUpdateCons?.(cons.id, {
+                            driverName: driverName,
+                            driverContacts: driverContacts,
+                          });
+                          setIsEditingDriver(false);
+                          await onRefresh?.();
+                        }}
+                        disabled={saving}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
                       >
-                        Исключить
+                        {saving ? "Сохранение..." : "Сохранить"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDriverName(cons.driver_name || "");
+                          setDriverContacts(cons.driver_contacts || "");
+                          setIsEditingDriver(false);
+                        }}
+                        className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
+                      >
+                        Отмена
                       </button>
                     </div>
-                  ))}
-                </div>
+                    <div className="pt-2 border-t border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CapacityIndicator
+                          label="Вес"
+                          current={stats.sumW}
+                          capacity={Number(capacityKg) || 0}
+                          free={stats.freeW}
+                          over={stats.overWeight}
+                          unit="кг"
+                        />
+                        <CapacityIndicator
+                          label="Объём"
+                          current={stats.sumV}
+                          capacity={Number(capacityCbm) || 0}
+                          free={stats.freeV}
+                          over={stats.overVolume}
+                          unit="м³"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Driver info display */}
+                    {(driverName || driverContacts) && (
+                      <div className="bg-white rounded-lg p-3 border">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Водитель</div>
+                            {driverName && (
+                              <div className="font-medium text-sm">{driverName}</div>
+                            )}
+                            {driverContacts && (
+                              <div className="text-sm text-gray-600">{driverContacts}</div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => setIsEditingDriver(true)}
+                            className="text-blue-600 hover:text-blue-700 text-sm px-3 py-1 rounded hover:bg-blue-50"
+                          >
+                            Редактировать
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <CapacityIndicator
+                        label="Вес"
+                        current={stats.sumW}
+                        capacity={Number(capacityKg) || 0}
+                        free={stats.freeW}
+                        over={stats.overWeight}
+                        unit="кг"
+                      />
+                      <CapacityIndicator
+                        label="Объём"
+                        current={stats.sumV}
+                        capacity={Number(capacityCbm) || 0}
+                        free={stats.freeV}
+                        over={stats.overVolume}
+                        unit="м³"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Кандидаты */}
-              <div>
-                <div className="text-sm font-medium mb-2">Доступные к добавлению</div>
-                <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
-                  {candidates.length === 0 && (
-                    <div className="p-4 text-sm text-gray-500 text-center">Нет доступных PL</div>
-                  )}
-                  {candidates.map(p => (
-                    <div key={p.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate text-sm">
-                          {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
-                        </div>
-                      </div>
-                      <button 
-                        className="text-blue-600 text-xs underline px-2"
-                        onClick={() => handleAddPL(p.id)}
+              {/* PL Lists */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* В консолидации */}
+                <div>
+                  <div className="text-sm font-medium mb-2 flex items-center justify-between">
+                    <span>В консолидации</span>
+                    <span className="text-xs text-gray-500">
+                      {pickedIds.length} PL • {stats.sumW.toFixed(0)} кг • {stats.sumV.toFixed(2)} м³
+                    </span>
+                  </div>
+                  <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
+                    {pickedPLs.length === 0 && (
+                      <div className="p-4 text-sm text-gray-500 text-center">Пусто</div>
+                    )}
+                    {pickedPLs.map((p, idx) => (
+                      <div 
+                        key={p.id} 
+                        className="p-3 flex items-center gap-2 hover:bg-gray-50"
                       >
-                        Добавить
-                      </button>
-                    </div>
-                  ))}
+                        <span className="text-xs text-gray-400 w-6">#{idx + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate text-sm">
+                            {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
+                          </div>
+                        </div>
+                        <button 
+                          className="text-rose-600 text-xs underline px-2"
+                          onClick={() => handleRemovePL(p.id)}
+                        >
+                          Исключить
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Кандидаты */}
+                <div>
+                  <div className="text-sm font-medium mb-2">Доступные к добавлению</div>
+                  <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
+                    {candidates.length === 0 && (
+                      <div className="p-4 text-sm text-gray-500 text-center">Нет доступных PL</div>
+                    )}
+                    {candidates.map(p => (
+                      <div key={p.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate text-sm">
+                            {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
+                          </div>
+                        </div>
+                        <button 
+                          className="text-blue-600 text-xs underline px-2"
+                          onClick={() => handleAddPL(p.id)}
+                        >
+                          Добавить
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

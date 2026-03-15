@@ -27,6 +27,8 @@ const UpdateBody = z.object({
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),
+  driverName: z.string().optional(),
+  driverContacts: z.string().optional(),
   capacityKg: z.coerce.number().optional(),
   capacityCbm: z.coerce.number().optional(),
   machineCost: z.coerce.number().optional(),
@@ -277,6 +279,8 @@ export default async function consolidationsRoutes(app) {
             .set({
               ...(body.title ? { title: body.title } : {}),
               ...(body.status ? { status: body.status } : {}),
+              ...(body.driverName !== undefined ? { driverName: body.driverName } : {}),
+              ...(body.driverContacts !== undefined ? { driverContacts: body.driverContacts } : {}),
               ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
               ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),
               ...(body.machineCost !== undefined ? { machineCost: String(body.machineCost) } : {}),

@@ -188,6 +188,8 @@ export const consolidations = pgTable(
     consNumber: text("cons_number").notNull(),  // CONS-YYYY-N
     title: text("title"),
     status: consolidationStatusEnum("status").notNull().default("loaded"),
+    driverName: text("driver_name"),           // Имя водителя
+    driverContacts: text("driver_contacts"),   // Контакты водителя
     capacityKg: numeric("capacity_kg", { precision: 12, scale: 3 }).default("0"),
     capacityCbm: numeric("capacity_cbm", { precision: 12, scale: 3 }).default("0"),
     machineCost: numeric("machine_cost", { precision: 12, scale: 2 }).default("0"),

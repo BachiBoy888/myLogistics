@@ -26,6 +26,18 @@ export default function BlockedMoveModal({
 }) {
   if (!isOpen) return null;
 
+  // Map system document types to localized names
+  const documentTypeLabels = {
+    bill: "Счет",
+    invoice: "Инвойс",
+    packing_list: "Упаковочный лист",
+    inspection: "Осмотр",
+    pre_declaration: "Предварительное информирование",
+  };
+
+  // Get localized name or fallback to original if unknown
+  const localizedDocType = documentTypeLabels[documentType] || documentType;
+
   const handleCargoClick = (cargoId) => {
     onCargoClick?.(cargoId);
     onClose();
@@ -51,7 +63,7 @@ export default function BlockedMoveModal({
         <div className="px-5 py-4">
           {/* Explanation */}
           <p className="text-sm text-gray-600 mb-3">
-            В следующих грузах отсутствует документ «{documentType}»:
+            В следующих грузах отсутствует документ «{localizedDocType}»:
           </p>
 
           {/* Cargo List */}
@@ -92,7 +104,7 @@ export default function BlockedMoveModal({
           <div className="bg-gray-50 rounded-lg p-3">
             <p className="text-xs text-gray-500 mb-1">Что нужно сделать:</p>
             <p className="text-sm text-gray-700">
-              Загрузите документ «{documentType}» для этих грузов, затем повторите попытку.
+              Загрузите документ «{localizedDocType}» для этих грузов, затем повторите попытку.
             </p>
           </div>
         </div>

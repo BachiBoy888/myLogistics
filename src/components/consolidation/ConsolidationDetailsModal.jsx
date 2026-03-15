@@ -758,174 +758,6 @@ export default function ConsolidationDetailsModal({
           </div>
         </div>
 
-        {/* Capacity Section */}
-        <div className="px-4 py-3 bg-gray-50 border-b">
-          {isEditing ? (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
-                <input
-                  type="text"
-                  value={driverName}
-                  onChange={(e) => {
-                    setDriverName(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Введите имя водителя"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="text-sm text-gray-600 mb-1 block">Контакты водителя</label>
-                <input
-                  type="text"
-                  value={driverContacts}
-                  onChange={(e) => {
-                    setDriverContacts(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                  placeholder="Телефон или другие контакты"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
-                <input
-                  type="number"
-                  value={capacityKg}
-                  onChange={(e) => {
-                    setCapacityKg(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-sm text-gray-600 mb-1 block">Вместимость (м³)</label>
-                <input
-                  type="number"
-                  value={capacityCbm}
-                  onChange={(e) => {
-                    setCapacityCbm(e.target.value);
-                    markChanged();
-                  }}
-                  className="w-full border rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-            </div>
-          ) : isEditingDriver ? (
-            /* Inline driver editing mode - shown when driver data is empty */
-            <div className="space-y-3">
-              <div className="text-sm font-medium text-gray-700">Водитель</div>
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={driverName}
-                  onChange={(e) => setDriverName(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="Имя водителя"
-                />
-                <input
-                  type="text"
-                  value={driverContacts}
-                  onChange={(e) => setDriverContacts(e.target.value)}
-                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                  placeholder="Телефон или другие контакты"
-                />
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={async () => {
-                    await onUpdateCons?.(cons.id, {
-                      driverName: driverName,
-                      driverContacts: driverContacts,
-                    });
-                    setIsEditingDriver(false);
-                    await onRefresh?.();
-                  }}
-                  disabled={saving}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {saving ? "Сохранение..." : "Сохранить"}
-                </button>
-                <button
-                  onClick={() => {
-                    setDriverName(cons.driver_name || "");
-                    setDriverContacts(cons.driver_contacts || "");
-                    setIsEditingDriver(false);
-                  }}
-                  className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
-                >
-                  Отмена
-                </button>
-              </div>
-              <div className="pt-2 border-t">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <CapacityIndicator
-                    label="Вес"
-                    current={stats.sumW}
-                    capacity={Number(capacityKg) || 0}
-                    free={stats.freeW}
-                    over={stats.overWeight}
-                    unit="кг"
-                  />
-                  <CapacityIndicator
-                    label="Объём"
-                    current={stats.sumV}
-                    capacity={Number(capacityCbm) || 0}
-                    free={stats.freeV}
-                    over={stats.overVolume}
-                    unit="м³"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Driver info display */}
-              {(driverName || driverContacts) && (
-                <div className="bg-white rounded-lg p-3 border">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Водитель</div>
-                      {driverName && (
-                        <div className="font-medium text-sm">{driverName}</div>
-                      )}
-                      {driverContacts && (
-                        <div className="text-sm text-gray-600">{driverContacts}</div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => setIsEditingDriver(true)}
-                      className="text-blue-600 hover:text-blue-700 text-sm px-3 py-1 rounded hover:bg-blue-50"
-                    >
-                      Редактировать
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <CapacityIndicator
-                  label="Вес"
-                  current={stats.sumW}
-                  capacity={Number(capacityKg) || 0}
-                  free={stats.freeW}
-                  over={stats.overWeight}
-                  unit="кг"
-                />
-                <CapacityIndicator
-                  label="Объём"
-                  current={stats.sumV}
-                  capacity={Number(capacityCbm) || 0}
-                  free={stats.freeV}
-                  over={stats.overVolume}
-                  unit="м³"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* Tabs */}
         <div className="flex border-b">
           <button
@@ -967,69 +799,240 @@ export default function ConsolidationDetailsModal({
         {/* Content */}
         <div className="flex-1 overflow-auto p-4">
           {activeTab === 'loading' && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* В консолидации */}
-              <div>
-                <div className="text-sm font-medium mb-2 flex items-center justify-between">
-                  <span>В консолидации</span>
-                  <span className="text-xs text-gray-500">
-                    {pickedIds.length} PL • {stats.sumW.toFixed(0)} кг • {stats.sumV.toFixed(2)} м³
-                  </span>
-                </div>
-                <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
-                  {pickedPLs.length === 0 && (
-                    <div className="p-4 text-sm text-gray-500 text-center">Пусто</div>
-                  )}
-                  {pickedPLs.map((p, idx) => (
-                    <div 
-                      key={p.id} 
-                      className="p-3 flex items-center gap-2 hover:bg-gray-50"
-                    >
-                      <span className="text-xs text-gray-400 w-6">#{idx + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate text-sm">
-                          {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
-                        </div>
-                      </div>
-                      <button 
-                        className="text-rose-600 text-xs underline px-2"
-                        onClick={() => handleRemovePL(p.id)}
+            <div className="space-y-4">
+              {/* Driver + Capacity Section - moved inside Loading tab */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                {isEditing ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
+                      <input
+                        type="text"
+                        value={driverName}
+                        onChange={(e) => {
+                          setDriverName(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                        placeholder="Введите имя водителя"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Контакты водителя</label>
+                      <input
+                        type="text"
+                        value={driverContacts}
+                        onChange={(e) => {
+                          setDriverContacts(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                        placeholder="Телефон или другие контакты"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
+                      <input
+                        type="number"
+                        value={capacityKg}
+                        onChange={(e) => {
+                          setCapacityKg(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm text-gray-600 mb-1 block">Вместимость (м³)</label>
+                      <input
+                        type="number"
+                        value={capacityCbm}
+                        onChange={(e) => {
+                          setCapacityCbm(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
+                  </div>
+                ) : isEditingDriver ? (
+                  /* Inline driver editing mode - shown when driver data is empty */
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-gray-700">Водитель</div>
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        value={driverName}
+                        onChange={(e) => setDriverName(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder="Имя водителя"
+                      />
+                      <input
+                        type="text"
+                        value={driverContacts}
+                        onChange={(e) => setDriverContacts(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder="Телефон или другие контакты"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          await onUpdateCons?.(cons.id, {
+                            driverName: driverName,
+                            driverContacts: driverContacts,
+                          });
+                          setIsEditingDriver(false);
+                          await onRefresh?.();
+                        }}
+                        disabled={saving}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
                       >
-                        Исключить
+                        {saving ? "Сохранение..." : "Сохранить"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setDriverName(cons.driver_name || "");
+                          setDriverContacts(cons.driver_contacts || "");
+                          setIsEditingDriver(false);
+                        }}
+                        className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
+                      >
+                        Отмена
                       </button>
                     </div>
-                  ))}
-                </div>
+                    <div className="pt-2 border-t border-gray-200">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <CapacityIndicator
+                          label="Вес"
+                          current={stats.sumW}
+                          capacity={Number(capacityKg) || 0}
+                          free={stats.freeW}
+                          over={stats.overWeight}
+                          unit="кг"
+                        />
+                        <CapacityIndicator
+                          label="Объём"
+                          current={stats.sumV}
+                          capacity={Number(capacityCbm) || 0}
+                          free={stats.freeV}
+                          over={stats.overVolume}
+                          unit="м³"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Driver info display */}
+                    {(driverName || driverContacts) && (
+                      <div className="bg-white rounded-lg p-3 border">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-xs text-gray-500 mb-1">Водитель</div>
+                            {driverName && (
+                              <div className="font-medium text-sm">{driverName}</div>
+                            )}
+                            {driverContacts && (
+                              <div className="text-sm text-gray-600">{driverContacts}</div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => setIsEditingDriver(true)}
+                            className="text-blue-600 hover:text-blue-700 text-sm px-3 py-1 rounded hover:bg-blue-50"
+                          >
+                            Редактировать
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <CapacityIndicator
+                        label="Вес"
+                        current={stats.sumW}
+                        capacity={Number(capacityKg) || 0}
+                        free={stats.freeW}
+                        over={stats.overWeight}
+                        unit="кг"
+                      />
+                      <CapacityIndicator
+                        label="Объём"
+                        current={stats.sumV}
+                        capacity={Number(capacityCbm) || 0}
+                        free={stats.freeV}
+                        over={stats.overVolume}
+                        unit="м³"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Кандидаты */}
-              <div>
-                <div className="text-sm font-medium mb-2">Доступные к добавлению</div>
-                <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
-                  {candidates.length === 0 && (
-                    <div className="p-4 text-sm text-gray-500 text-center">Нет доступных PL</div>
-                  )}
-                  {candidates.map(p => (
-                    <div key={p.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate text-sm">
-                          {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
-                        </div>
-                      </div>
-                      <button 
-                        className="text-blue-600 text-xs underline px-2"
-                        onClick={() => handleAddPL(p.id)}
+              {/* PL Lists */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {/* В консолидации */}
+                <div>
+                  <div className="text-sm font-medium mb-2 flex items-center justify-between">
+                    <span>В консолидации</span>
+                    <span className="text-xs text-gray-500">
+                      {pickedIds.length} PL • {stats.sumW.toFixed(0)} кг • {stats.sumV.toFixed(2)} м³
+                    </span>
+                  </div>
+                  <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
+                    {pickedPLs.length === 0 && (
+                      <div className="p-4 text-sm text-gray-500 text-center">Пусто</div>
+                    )}
+                    {pickedPLs.map((p, idx) => (
+                      <div 
+                        key={p.id} 
+                        className="p-3 flex items-center gap-2 hover:bg-gray-50"
                       >
-                        Добавить
-                      </button>
-                    </div>
-                  ))}
+                        <span className="text-xs text-gray-400 w-6">#{idx + 1}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium truncate text-sm">
+                            {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
+                          </div>
+                        </div>
+                        <button 
+                          className="text-rose-600 text-xs underline px-2"
+                          onClick={() => handleRemovePL(p.id)}
+                        >
+                          Исключить
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Кандидаты */}
+                <div>
+                  <div className="text-sm font-medium mb-2">Доступные к добавлению</div>
+                  <div className="border rounded-xl divide-y max-h-[40vh] overflow-auto">
+                    {candidates.length === 0 && (
+                      <div className="p-4 text-sm text-gray-500 text-center">Нет доступных PL</div>
+                    )}
+                    {candidates.map(p => (
+                      <div key={p.id} className="p-3 flex items-center justify-between hover:bg-gray-50">
+                        <div className="min-w-0">
+                          <div className="font-medium truncate text-sm">
+                            {p.pl_number} — {typeof p.client === "string" ? p.client : p.client?.name || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Вес: {p.weight_kg} кг • Объём: {p.volume_cbm} м³
+                          </div>
+                        </div>
+                        <button 
+                          className="text-blue-600 text-xs underline px-2"
+                          onClick={() => handleAddPL(p.id)}
+                        >
+                          Добавить
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

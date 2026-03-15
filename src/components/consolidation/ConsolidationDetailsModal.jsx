@@ -145,6 +145,9 @@ export default function ConsolidationDetailsModal({
   const [hasChanges, setHasChanges] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   
+  // Driver inline editing state - true if driver data is empty (immediate edit mode)
+  const [isEditingDriver, setIsEditingDriver] = useState(false);
+  
   // Capacity editing state
   const [capacityKg, setCapacityKg] = useState(cons.capacity_kg || 0);
   const [capacityCbm, setCapacityCbm] = useState(cons.capacity_cbm || 0);
@@ -168,6 +171,12 @@ export default function ConsolidationDetailsModal({
   const [expenses, setExpenses] = useState(cons.expenses || []);
   const [newExpense, setNewExpense] = useState({ type: 'other', comment: '', amount: '' });
   const [showAddExpense, setShowAddExpense] = useState(false);
+
+  // Auto-enable driver edit mode when driver data is empty
+  useEffect(() => {
+    const hasDriverData = (cons.driver_name || "").trim() !== "" || (cons.driver_contacts || "").trim() !== "";
+    setIsEditingDriver(!hasDriverData);
+  }, [cons.driver_name, cons.driver_contacts]);
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
@@ -804,18 +813,95 @@ export default function ConsolidationDetailsModal({
                 />
               </div>
             </div>
+          ) : isEditingDriver ? (
+            /* Inline driver editing mode - shown when driver data is empty */
+            <div className="space-y-3">
+              <div className="text-sm font-medium text-gray-700">Водитель</div>
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={driverName}
+                  onChange={(e) => setDriverName(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  placeholder="Имя водителя"
+                />
+                <input
+                  type="text"
+                  value={driverContacts}
+                  onChange={(e) => setDriverContacts(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  placeholder="Телефон или другие контакты"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={async () => {
+                    await onUpdateCons?.(cons.id, {
+                      driverName: driverName,
+                      driverContacts: driverContacts,
+                    });
+                    setIsEditingDriver(false);
+                    await onRefresh?.();
+                  }}
+                  disabled={saving}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {saving ? "Сохранение..." : "Сохранить"}
+                </button>
+                <button
+                  onClick={() => {
+                    setDriverName(cons.driver_name || "");
+                    setDriverContacts(cons.driver_contacts || "");
+                    setIsEditingDriver(false);
+                  }}
+                  className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
+                >
+                  Отмена
+                </button>
+              </div>
+              <div className="pt-2 border-t">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <CapacityIndicator
+                    label="Вес"
+                    current={stats.sumW}
+                    capacity={Number(capacityKg) || 0}
+                    free={stats.freeW}
+                    over={stats.overWeight}
+                    unit="кг"
+                  />
+                  <CapacityIndicator
+                    label="Объём"
+                    current={stats.sumV}
+                    capacity={Number(capacityCbm) || 0}
+                    free={stats.freeV}
+                    over={stats.overVolume}
+                    unit="м³"
+                  />
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3">
               {/* Driver info display */}
               {(driverName || driverContacts) && (
                 <div className="bg-white rounded-lg p-3 border">
-                  <div className="text-xs text-gray-500 mb-1">Водитель</div>
-                  {driverName && (
-                    <div className="font-medium text-sm">{driverName}</div>
-                  )}
-                  {driverContacts && (
-                    <div className="text-sm text-gray-600">{driverContacts}</div>
-                  )}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Водитель</div>
+                      {driverName && (
+                        <div className="font-medium text-sm">{driverName}</div>
+                      )}
+                      {driverContacts && (
+                        <div className="text-sm text-gray-600">{driverContacts}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setIsEditingDriver(true)}
+                      className="text-blue-600 hover:text-blue-700 text-sm px-3 py-1 rounded hover:bg-blue-50"
+                    >
+                      Редактировать
+                    </button>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

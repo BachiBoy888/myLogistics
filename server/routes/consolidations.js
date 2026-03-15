@@ -211,7 +211,7 @@ export default async function consolidationsRoutes(app) {
             const plIds = plLinks.map((l) => l.plId);
             
             if (plIds.length > 0) {
-              const plsMissingBill = [];
+              const blockedCargos = [];
               
               for (const plId of plIds) {
                 const docs = await tx
@@ -222,18 +222,31 @@ export default async function consolidationsRoutes(app) {
                 const hasBill = docs.some(d => d.docType === "bill");
                 if (!hasBill) {
                   const [plRow] = await tx
-                    .select({ name: pl.name, plNumber: pl.plNumber })
+                    .select({ id: pl.id, name: pl.name, plNumber: pl.plNumber })
                     .from(pl)
                     .where(eq(pl.id, plId));
-                  plsMissingBill.push(plRow?.name || plRow?.plNumber || `PL-${plId}`);
+                  blockedCargos.push({
+                    id: String(plRow?.id || plId),
+                    plNumber: plRow?.plNumber || `PL-${plId}`,
+                    name: plRow?.name || null,
+                  });
                 }
               }
               
-              if (plsMissingBill.length > 0) {
-                const plList = plsMissingBill.join(", ");
-                throw new Error(
-                  `Нельзя перевести консолидацию в статус «Оплата». В следующих грузах отсутствует документ «Счет»: ${plList}. Загрузите счет для всех грузов перед перемещением.`
-                );
+              if (blockedCargos.length > 0) {
+                // Return structured BLOCKED_MOVE error - will be caught by outer catch
+                // and returned with 409 status
+                const blockedError = new Error("BLOCKED_MOVE");
+                blockedError.blockedMoveData = {
+                  error: "BLOCKED_MOVE",
+                  reason: "missing_document",
+                  targetStatus: "collect_payment",
+                  documentType: "bill",
+                  title: "Нельзя перевести в статус «Оплата»",
+                  hint: "Загрузите документ «Счет» для этих грузов, затем повторите попытку.",
+                  blockedCargos,
+                };
+                throw blockedError;
               }
             }
           }
@@ -294,6 +307,12 @@ export default async function consolidationsRoutes(app) {
         return result.after;
       } catch (e) {
         req.log.error({ e, id, body: req.body }, "CONS_UPDATE error");
+        
+        // Handle structured BLOCKED_MOVE error with 409 Conflict
+        if (e.message === "BLOCKED_MOVE" && e.blockedMoveData) {
+          return reply.code(409).send(e.blockedMoveData);
+        }
+        
         if (e.message?.includes("Недопустимый статус")) {
           return reply.badRequest(e.message);
         }

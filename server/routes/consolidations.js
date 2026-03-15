@@ -7,6 +7,7 @@ import {
   consolidationStatusHistory,
   consolidationExpenses,
   pl,
+  plDocuments,
 } from "../db/schema.js";
 import { nextConsNumber } from "../services/consolidations.js";
 import {
@@ -200,6 +201,56 @@ export default async function consolidationsRoutes(app) {
             // PL status sync happens automatically below.
           }
 
+          // Document validation for consolidation moving to Оплата (collect_payment)
+          if (body.status === "collect_payment") {
+            const plLinks = await tx
+              .select({ plId: consolidationPl.plId })
+              .from(consolidationPl)
+              .where(eq(consolidationPl.consolidationId, id));
+            
+            const plIds = plLinks.map((l) => l.plId);
+            
+            if (plIds.length > 0) {
+              const blockedCargos = [];
+              
+              for (const plId of plIds) {
+                const docs = await tx
+                  .select({ docType: plDocuments.docType })
+                  .from(plDocuments)
+                  .where(eq(plDocuments.plId, plId));
+                
+                const hasBill = docs.some(d => d.docType === "bill");
+                if (!hasBill) {
+                  const [plRow] = await tx
+                    .select({ id: pl.id, name: pl.name, plNumber: pl.plNumber })
+                    .from(pl)
+                    .where(eq(pl.id, plId));
+                  blockedCargos.push({
+                    id: String(plRow?.id || plId),
+                    plNumber: plRow?.plNumber || `PL-${plId}`,
+                    name: plRow?.name || null,
+                  });
+                }
+              }
+              
+              if (blockedCargos.length > 0) {
+                // Return structured BLOCKED_MOVE error - will be caught by outer catch
+                // and returned with 409 status
+                const blockedError = new Error("BLOCKED_MOVE");
+                blockedError.blockedMoveData = {
+                  error: "BLOCKED_MOVE",
+                  reason: "missing_document",
+                  targetStatus: "collect_payment",
+                  documentType: "bill",
+                  title: "Нельзя перевести в статус «Оплата»",
+                  hint: "Загрузите документ «Счет» для этих грузов, затем повторите попытку.",
+                  blockedCargos,
+                };
+                throw blockedError;
+              }
+            }
+          }
+
           // If status is changing, sync PLs FIRST (before updating consolidation)
           // This ensures atomicity and avoids validation conflicts
           if (body.status && before.status !== body.status) {
@@ -256,6 +307,12 @@ export default async function consolidationsRoutes(app) {
         return result.after;
       } catch (e) {
         req.log.error({ e, id, body: req.body }, "CONS_UPDATE error");
+        
+        // Handle structured BLOCKED_MOVE error with 409 Conflict
+        if (e.message === "BLOCKED_MOVE" && e.blockedMoveData) {
+          return reply.code(409).send(e.blockedMoveData);
+        }
+        
         if (e.message?.includes("Недопустимый статус")) {
           return reply.badRequest(e.message);
         }

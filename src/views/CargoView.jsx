@@ -9,6 +9,7 @@ import Card from "../components/ui/Card.jsx";
 import Label from "../components/ui/Label.jsx";
 import LabelInput from "../components/ui/LabelInput.jsx";
 import ErrorModal from "../components/ui/ErrorModal.jsx";
+import BlockedMoveModal from "../components/ui/BlockedMoveModal.jsx";
 import NewPLModal from "../components/pl/NewPLModal.jsx";
 
 // API
@@ -47,6 +48,10 @@ import {
   humanConsStatus,
   badgeColorByConsStatus,
   consNextStatusOf,
+  STATUS_DOC_REQUIREMENTS,
+  getMissingDocsForStatus,
+  getStatusDisplayName,
+  DOC_TYPE_DISPLAY_NAMES,
 } from "../constants/statuses.js";
 
 import { readinessForPL, canAllowToShip } from "../utils/readiness.js";
@@ -106,6 +111,14 @@ export default function CargoView({
     description: "",
     ctaText: "Понятно",
     type: "error",
+  });
+
+  // Blocked move modal state
+  const [blockedMoveModal, setBlockedMoveModal] = useState({
+    isOpen: false,
+    title: "",
+    documentType: "",
+    blockedCargos: [],
   });
 
   const showError = (description, title = "Ошибка", ctaText = "Понятно", type = "error") => {
@@ -429,6 +442,41 @@ export default function CargoView({
         const consItem = safeCons.find((c) => c.id === plId);
         if (!consItem || newStatus === consItem.status) return;
 
+        // Document validation for consolidation moving to Оплата
+        if (newStatus === "collect_payment") {
+          try {
+            // Get all PLs in this consolidation
+            const consPLs = safePLs.filter(p => p.consolidationId === plId || p.consolidation_id === plId);
+            const plsMissingBill = [];
+
+            for (const pl of consPLs) {
+              const docs = await API.listPLDocs(pl.id);
+              const hasBill = docs.some(d => d.docType === "bill");
+              if (!hasBill) {
+                plsMissingBill.push({
+                  id: pl.id,
+                  plNumber: pl.pl_number || pl.plNumber || `PL-${pl.id}`,
+                  name: pl.title || pl.name,
+                });
+              }
+            }
+
+            if (plsMissingBill.length > 0) {
+              setBlockedMoveModal({
+                isOpen: true,
+                title: "Нельзя перевести в статус «Оплата»",
+                documentType: "Счет",
+                blockedCargos: plsMissingBill,
+              });
+              return;
+            }
+          } catch (err) {
+            console.error("Ошибка при проверке документов консолидации:", err);
+            showError("Не удалось проверить документы грузов в консолидации");
+            return;
+          }
+        }
+
         try {
           // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
@@ -436,12 +484,56 @@ export default function CargoView({
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
-          showError("Не удалось переместить консолидацию: " + (err.message || ""));
+          
+          // Check for structured BLOCKED_MOVE error from backend
+          const errorData = err?.errorData;
+          if (errorData?.error === "BLOCKED_MOVE" && errorData?.blockedCargos) {
+            setBlockedMoveModal({
+              isOpen: true,
+              title: "Нельзя перевести в статус «Оплата»",
+              documentType: errorData.documentType === "invoice" ? "Счет" : (errorData.documentType || "Счет"),
+              blockedCargos: errorData.blockedCargos.map(c => ({
+                id: c.id,
+                plNumber: c.plNumber || c.pl_number || `PL-${c.id}`,
+                name: c.name,
+              })),
+            });
+            return;
+          }
+          
+          showError(err?.message || "Не удалось переместить консолидацию");
         }
       } else {
         // Move PL
         const pl = safePLs.find((p) => p.id === plId);
         if (!pl || newStatus === pl.status) return;
+
+        // Document validation for cargo
+        const requiredDocTypes = STATUS_DOC_REQUIREMENTS[newStatus];
+        if (requiredDocTypes && requiredDocTypes.length > 0) {
+          try {
+            const docs = await API.listPLDocs(plId);
+            const missingDocs = requiredDocTypes.filter(docType => 
+              !docs.some(d => d.docType === docType)
+            );
+            
+            if (missingDocs.length > 0) {
+              const docNames = missingDocs.map(t => DOC_TYPE_DISPLAY_NAMES[t] || t).join(", ");
+              const statusName = getStatusDisplayName(newStatus);
+              showError(
+                `Нельзя перевести груз в статус «${statusName}». Загрузите документы: ${docNames}. Откройте карточку груза, перейдите во вкладку «Документы» и загрузите необходимые документы.`,
+                "Документы не готовы",
+                "Понятно",
+                "warning"
+              );
+              return;
+            }
+          } catch (err) {
+            console.error("Ошибка при проверке документов:", err);
+            showError("Не удалось проверить документы груза");
+            return;
+          }
+        }
 
         try {
           await API.updatePL(plId, { status: newStatus });
@@ -947,6 +1039,20 @@ export default function CargoView({
         description={errorModal.description}
         ctaText={errorModal.ctaText}
         type={errorModal.type}
+      />
+
+      {/* Blocked Move Modal */}
+      <BlockedMoveModal
+        isOpen={blockedMoveModal.isOpen}
+        onClose={() => setBlockedMoveModal(prev => ({ ...prev, isOpen: false }))}
+        title={blockedMoveModal.title}
+        documentType={blockedMoveModal.documentType}
+        blockedCargos={blockedMoveModal.blockedCargos}
+        onCargoClick={(cargoId) => {
+          // Open the cargo card in Documents tab
+          setSelectedId(cargoId);
+          setBlockedMoveModal(prev => ({ ...prev, isOpen: false }));
+        }}
       />
 
       {/* Import Modal */}

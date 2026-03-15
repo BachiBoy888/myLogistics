@@ -254,10 +254,17 @@ export default function DocsList({ pl, onUpdate, onCountLoaded }) {
           const showRecheckBtn = uiStatus === "checked_by_logistic";
 
           return (
-            <div key={type} className="rounded-xl border bg-white p-3">
+            <div key={type} className={`rounded-xl border p-3 transition-colors ${doc ? 'bg-emerald-50 border-emerald-200' : 'bg-white'}`}>
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="font-semibold">{title}</div>
+                  <div className="font-semibold flex items-center gap-2">
+                    {title}
+                    {doc && (
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-xs">
+                        ✓
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-gray-600 mt-0.5">{hint}</div>
 
                   {doc && (

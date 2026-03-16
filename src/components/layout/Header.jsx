@@ -1,6 +1,6 @@
 // src/components/layout/Header.jsx
 import React, { useState } from "react";
-import { Package, Users, BarChart3, LogOut, RefreshCw, ChevronDown, User, Users as UsersIcon } from "lucide-react";
+import { Package, Users, BarChart3, LogOut, RefreshCw, ChevronDown, User, Users as UsersIcon, Target } from "lucide-react";
 
 export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, isRefreshing, onOpenProfile, onOpenEmployees }) {
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -8,6 +8,7 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
   const tabs = [
     { key: "cargo", label: "Мои грузы", icon: Package },
     { key: "clients", label: "Мои клиенты", icon: Users },
+    { key: "leads", label: "Лиды", icon: Target },
     { key: "analytics", label: "Аналитика", icon: BarChart3 },
   ];
 

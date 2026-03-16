@@ -316,6 +316,65 @@ export const plEvents = pgTable(
 );
 
 /* =======================
+   Leads (Лиды) — публичный калькулятор → лиды → конвертация в PL
+======================= */
+
+export const leadStatusEnum = pgEnum("lead_status", [
+  "new",         // Новый лид
+  "contacted",   // Связались с клиентом
+  "qualified",   // Квалифицирован
+  "converted",   // Конвертирован в PL
+  "lost",        // Потерян
+]);
+
+export const leads = pgTable(
+  "leads",
+  {
+    id: serial("id").primaryKey(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+
+    // Контактная информация
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    company: text("company"),
+    email: text("email"),
+    note: text("note"),
+
+    // Источник и статус
+    source: text("source").notNull().default("website_calculator"),
+    status: leadStatusEnum("status").notNull().default("new"),
+
+    // Параметры груза (из калькулятора)
+    cargoName: text("cargo_name"),
+    weight: numeric("weight", { precision: 12, scale: 3 }),
+    volume: numeric("volume", { precision: 12, scale: 3 }),
+    originCity: text("origin_city"),
+    destinationCity: text("destination_city"),
+    deliveryType: text("delivery_type"), // 'air' | 'road' | 'express'
+
+    // Результат расчёта (снапшот)
+    estimatedPrice: numeric("estimated_price", { precision: 15, scale: 2 }),
+    estimatedCurrency: text("estimated_currency").default("USD"),
+    estimatedDaysMin: integer("estimated_days_min"),
+    estimatedDaysMax: integer("estimated_days_max"),
+    calculatorSnapshot: jsonb("calculator_snapshot").default(sql`'{}'::jsonb`),
+
+    // Операционные поля
+    managerId: uuid("manager_id").references(() => users.id, { onDelete: "set null" }),
+    clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+    convertedPlId: integer("converted_pl_id").references(() => pl.id, { onDelete: "set null" }),
+  },
+  (t) => ({
+    statusIdx: index("idx_leads_status").on(t.status),
+    createdAtIdx: index("idx_leads_created_at").on(t.createdAt),
+    managerIdx: index("idx_leads_manager").on(t.managerId),
+    clientIdx: index("idx_leads_client").on(t.clientId),
+    convertedPlIdx: index("idx_leads_converted_pl").on(t.convertedPlId),
+  })
+);
+
+/* =======================
    Аналитика: Daily Snapshots
    TODO: добавить employee_id для фильтрации по сотрудникам
 ======================= */

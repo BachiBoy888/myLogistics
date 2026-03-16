@@ -28,6 +28,8 @@ import CargoView from "./views/CargoView.jsx";
 import ClientsView from "./views/ClientsView.jsx";
 import LogisticsView from "./views/LogisticsView.jsx";
 import AnalyticsPage from "./views/AnalyticsPage.jsx";
+import LeadsView from "./views/LeadsView.jsx";
+import PublicCalculatorPage from "./views/PublicCalculatorPage.jsx";
 
 /* ---------------------------
    Вспомогательные утилиты
@@ -41,15 +43,18 @@ function App() {
   const [boot, setBoot] = useState({ loading: true, user: null });
   console.log("BOOT:", boot);
 
+  // Проверяем публичные роуты
+  const isPublicCalculator = window.location.pathname === '/calculate' || window.location.pathname === '/estimate';
+
   // Проверяем наличие токена первичной авторизации в URL
   const urlParams = new URLSearchParams(window.location.search);
   const firstLoginToken = urlParams.get('token');
   const isFirstLogin = window.location.pathname === '/first-login' && firstLoginToken;
 
-  // Проверяем сессию при запуске (только если не first-login)
+  // Проверяем сессию при запуске (только если не first-login и не публичная страница)
   useEffect(() => {
-    // Если это first-login страница, не проверяем сессию
-    if (isFirstLogin) {
+    // Если это first-login страница или публичный калькулятор, не проверяем сессию
+    if (isFirstLogin || isPublicCalculator) {
       setBoot({ loading: false, user: null });
       return;
     }
@@ -62,7 +67,29 @@ function App() {
         setBoot({ loading: false, user: null });
       }
     })();
-  }, [isFirstLogin]);
+  }, [isFirstLogin, isPublicCalculator]);
+
+  if (boot.loading) return <LoadingScreen />;
+
+  // Публичная страница калькулятора
+  if (isPublicCalculator) {
+    return <PublicCalculatorPage />;
+  }
+
+  // Если есть токен первичной авторизации — показываем FirstLoginScreen
+  if (isFirstLogin) {
+    return (
+      <FirstLoginScreen
+        token={firstLoginToken}
+        onLogin={async () => {
+          const u = await me().catch(() => null);
+          setBoot({ loading: false, user: u });
+          // Очищаем URL от параметров
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+      />
+    );
+  }
 
   if (boot.loading) return <LoadingScreen />;
 
@@ -266,6 +293,14 @@ function MainApp({ user, onLogout }) {
 
         {mode === "logistics" && <LogisticsView />}
         {mode === "analytics" && <AnalyticsPage />}
+        {mode === "leads" && (
+          <LeadsView
+            onOpenPL={(id) => {
+              setMode("cargo");
+              setOpenPLId(id);
+            }}
+          />
+        )}
       </main>
 
       <Footer />

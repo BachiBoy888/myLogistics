@@ -218,6 +218,13 @@
       "when": 1773519600000,
       "tag": "0030_add_consolidation_driver_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1773606000000,
+      "tag": "0031_add_leads_table",
+      "breakpoints": true
     }
   ]
 }

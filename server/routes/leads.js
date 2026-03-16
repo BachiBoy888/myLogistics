@@ -313,6 +313,14 @@ export default async function leadsRoutes(app) {
         return reply.badRequest("Некорректный статус");
       }
 
+      // Запрещаем ручную установку статуса "converted"
+      if (patch.status === "converted") {
+        return reply.status(403).send({
+          error: "FORBIDDEN_STATUS",
+          message: "Статус 'Конвертирован' может быть установлен только через процесс конвертации в PL"
+        });
+      }
+
       const [updated] = await db
         .update(leads)
         .set(patch)

@@ -28,6 +28,7 @@ import healthRoutes from "./routes/health.js";
 import analyticsRoutes from "./routes/analytics.js";
 import fxRoutes from "./routes/fx.js";
 import importRoutes from "./routes/import.js";
+import leadsRoutes from "./routes/leads.js";
 
 // --- вычислим текущую папку (для статики)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -183,6 +184,7 @@ const sql = postgres(DATABASE_URL, {
   await app.register(plRoutes, { prefix: "/api/pl" });
   await app.register(consolidationsRoutes, { prefix: "/api/consolidations" });
   await app.register(usersRoutes, { prefix: "/api/users" });
+  await app.register(leadsRoutes, { prefix: "/api" });
 
   // SPA fallback - serve index.html for all non-API, non-static routes
   app.setNotFoundHandler((req, reply) => {

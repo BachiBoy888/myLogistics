@@ -609,6 +609,69 @@ export async function deactivateUser(id) {
 
   return res.json();
 }
+
+/* -------------------
+   LEADS / PUBLIC CALCULATOR
+------------------- */
+
+// Public: Calculate shipping estimate (no auth required)
+export async function calculateShippingEstimate({ weight, volume, originCity, destinationCity, deliveryType, cargoName }) {
+  const res = await fetch(`${BASE}/public/calculate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ weight, volume, originCity, destinationCity, deliveryType, cargoName }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Calculation failed" }));
+    throw new Error(err.message || err.error || "Failed to calculate shipping estimate");
+  }
+
+  return res.json();
+}
+
+// Public: Submit lead (no auth required)
+export async function submitLead(data) {
+  const res = await fetch(`${BASE}/leads`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Failed to submit lead" }));
+    throw new Error(err.message || err.error || "Failed to submit lead");
+  }
+
+  return res.json();
+}
+
+// Authenticated: List leads
+export async function listLeads(params = {}) {
+  const query = new URLSearchParams(params).toString();
+  return req(`/leads${query ? `?${query}` : ""}`);
+}
+
+// Authenticated: Get single lead
+export async function getLead(id) {
+  return req(`/leads/${id}`);
+}
+
+// Authenticated: Update lead
+export async function updateLead(id, data) {
+  return mutate(`/leads/${id}`, { method: "PATCH", body: data }, ["/leads", `/leads/${id}`]);
+}
+
+// Authenticated: Convert lead to PL
+export async function convertLeadToPL(id) {
+  return mutate(`/leads/${id}/convert-to-pl`, { method: "POST" }, ["/leads", `/leads/${id}`, "/pl"]);
+}
+
+// Authenticated: Delete lead
+export async function deleteLead(id) {
+  await mutate(`/leads/${id}`, { method: "DELETE" }, ["/leads"]);
+  return true;
+}
 export async function listConsolidations(params = {}) {
   const q = new URLSearchParams(params).toString();
   const base = await req(`/consolidations${q ? `?${q}` : ""}`);
@@ -809,6 +872,15 @@ const api = {
   addPLToConsolidation,
   removePLFromConsolidation,
   getConsolidationStatusHistory,
+
+  // leads / public calculator
+  calculateShippingEstimate,
+  submitLead,
+  listLeads,
+  getLead,
+  updateLead,
+  convertLeadToPL,
+  deleteLead,
 };
 
 export default api;

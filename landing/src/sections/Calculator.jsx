@@ -1,5 +1,5 @@
 import React, { useRef } from "react";
-import { Calculator as CalculatorIcon, ArrowRight, RotateCcw, Package, Weight, Ruler, MapPin, Zap, Truck, Plane } from "lucide-react";
+import { Calculator as CalculatorIcon, ArrowRight, RotateCcw, Package, Weight, Ruler, MapPin, Zap, Truck, Plane, MessageCircle } from "lucide-react";
 import { CITIES, DELIVERY_TYPES } from "../config/content.js";
 import { useCalculator } from "../hooks/useCalculator.js";
 import { useLeadSubmit } from "../hooks/useLeadSubmit.js";

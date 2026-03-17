@@ -95,7 +95,7 @@ const sql = postgres(DATABASE_URL, {
     .split(",")
     .map(o => o.trim())
     .filter(Boolean);
-  
+
   // Default fallback origins for development
   const DEFAULT_ORIGINS = [
     "http://localhost:5173",
@@ -103,19 +103,19 @@ const sql = postgres(DATABASE_URL, {
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
   ];
-  
+
   const allowedOrigins = ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ORIGINS;
-  
+
   await app.register(cors, {
     origin: (origin, cb) => {
       // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return cb(null, true);
-      
+
       // Check if origin is in allowlist
       if (allowedOrigins.includes(origin)) {
         return cb(null, true);
       }
-      
+
       // Log blocked origin for debugging
       app.log.warn({ origin, allowedOrigins }, "CORS blocked request from disallowed origin");
       return cb(new Error("CORS: Origin not allowed"), false);
@@ -163,7 +163,7 @@ const sql = postgres(DATABASE_URL, {
   });
 
 
-  
+
   // === JWT helpers & auth guard ===
   const JWT_SECRET = process.env.JWT_SECRET || "dev-secret";
   const JWT_EXPIRES = process.env.JWT_EXPIRES || "30d";
@@ -207,17 +207,26 @@ const sql = postgres(DATABASE_URL, {
   });
 
   const distRoot = path.resolve(__dirname, "../dist");
+
+  // Debug: log dist path to verify correct location
+  console.log(`[static] Serving dist from: ${distRoot}`);
+  console.log(`[static] Dist exists: ${await import('fs').then(fs => fs.existsSync(distRoot))}`);
+
   await app.register(fastifyStatic, {
     root: distRoot,
     prefix: "/",
     decorateReply: true,
-    setHeaders: (res, path) => {
-      // Add cache-busting headers for hashed assets
-      if (path.includes('/assets/')) {
+    setHeaders: (res, filepath) => {
+      // filepath is full filesystem path - check if it's in assets folder
+      const isAsset = filepath.includes('/assets/') || filepath.includes('\\assets\\');
+      if (isAsset) {
+        // Hashed assets: immutable long-term cache
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-      } else {
-        // No cache for index.html and other non-hashed files
+      } else if (filepath.endsWith('index.html')) {
+        // index.html: no cache to prevent stale asset references
         res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
       }
     },
   });
@@ -225,6 +234,85 @@ const sql = postgres(DATABASE_URL, {
   // Health
   app.get("/ping", async () => ({ message: "pong" }));
   app.get("/healthz", async () => ({ ok: true }));
+
+  // Debug: Check dist folder contents (temporary diagnostic endpoint)
+  app.get("/_debug/dist", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    try {
+      const distPath = path.resolve(__dirname, "../dist");
+      const assetsPath = path.join(distPath, "assets");
+
+      const distExists = fs.existsSync(distPath);
+      const assetsExists = fs.existsSync(assetsPath);
+
+      let files = [];
+      let assetFiles = [];
+
+      if (distExists) {
+        files = fs.readdirSync(distPath);
+      }
+      if (assetsExists) {
+        assetFiles = fs.readdirSync(assetsPath);
+      }
+
+      return {
+        distPath,
+        distExists,
+        assetsExists,
+        files,
+        assetFiles,
+        indexHtml: distExists ? fs.readFileSync(path.join(distPath, "index.html"), "utf-8").substring(0, 500) : null,
+      };
+    } catch (err) {
+      return { error: err.message, stack: err.stack };
+    }
+  });
+
+  // Explicit asset serving with error handling
+  app.get("/assets/*", async (req, reply) => {
+    const fs = await import("fs");
+    const path = await import("path");
+
+    const assetPath = req.params["*"];
+    const fullPath = path.resolve(__dirname, "../dist/assets", assetPath);
+
+    // Security: ensure we don't serve files outside assets folder
+    const assetsRoot = path.resolve(__dirname, "../dist/assets");
+    if (!fullPath.startsWith(assetsRoot)) {
+      return reply.status(403).send({ error: "Invalid path" });
+    }
+
+    if (!fs.existsSync(fullPath)) {
+      console.log(`[assets] 404: ${assetPath} (looked in ${fullPath})`);
+      return reply.status(404).send({ error: "Asset not found", path: assetPath });
+    }
+
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) {
+      return reply.status(403).send({ error: "Not a file" });
+    }
+
+    // Set content type based on extension
+    const ext = path.extname(fullPath);
+    const contentTypes = {
+      ".js": "application/javascript",
+      ".mjs": "application/javascript",
+      ".css": "text/css",
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".svg": "image/svg+xml",
+      ".woff": "font/woff",
+      ".woff2": "font/woff2",
+    };
+
+    const contentType = contentTypes[ext] || "application/octet-stream";
+    reply.header("Content-Type", contentType);
+    reply.header("Cache-Control", "public, max-age=31536000, immutable");
+
+    return reply.send(fs.createReadStream(fullPath));
+  });
 
   // API
   await app.register(authRoutes, { prefix: "/api/auth" });
@@ -253,7 +341,7 @@ const sql = postgres(DATABASE_URL, {
     return reply.notFound();
   });
 
-  
+
   // Errors
   app.setErrorHandler((error, request, reply) => {
     request.log.error(

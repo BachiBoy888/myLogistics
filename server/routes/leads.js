@@ -6,6 +6,24 @@ import { leads, clients, pl, users } from "../db/schema.js";
  * Регистрируется в server.js: app.register(leadsRoutes, { prefix: "/api" })
  */
 
+// Разрешённые источники для source tagging
+const ALLOWED_SOURCES = ["website_calculator", "prolife_site", "external_site"];
+
+// Получить source из запроса (header, query, или fallback)
+function getLeadSource(req) {
+  // Priority: header > query param > fallback
+  const headerSource = req.headers["x-source"];
+  const querySource = req.query?.source;
+  const source = headerSource || querySource;
+  
+  if (source && ALLOWED_SOURCES.includes(source)) {
+    return source;
+  }
+  
+  // Fallback для обратной совместимости
+  return "website_calculator";
+}
+
 // Простая формула расчёта стоимости доставки (MVP)
 function calculateEstimate({ weight, volume, deliveryType, originCity, destinationCity }) {
   const w = Number(weight) || 0;
@@ -46,6 +64,19 @@ export default async function leadsRoutes(app) {
 
   // === Расчёт стоимости (публичный) ===
   app.post("/public/calculate", {
+    config: {
+      rateLimit: {
+        max: Number(process.env.RATE_LIMIT_CALCULATE_MAX) || 30,
+        timeWindow: "1 minute",
+        keyGenerator: (req) => req.ip,
+        errorResponseBuilder: (req, context) => ({
+          statusCode: 429,
+          error: "Too Many Requests",
+          message: `Rate limit exceeded. Try again in ${context.after}`,
+          retryAfter: context.after,
+        }),
+      },
+    },
     schema: {
       body: {
         type: "object",
@@ -105,6 +136,19 @@ export default async function leadsRoutes(app) {
 
   // === Создание лида (публичное) ===
   app.post("/leads", {
+    config: {
+      rateLimit: {
+        max: Number(process.env.RATE_LIMIT_LEADS_MAX) || 5,
+        timeWindow: "1 minute",
+        keyGenerator: (req) => req.ip,
+        errorResponseBuilder: (req, context) => ({
+          statusCode: 429,
+          error: "Too Many Requests",
+          message: `Rate limit exceeded. Try again in ${context.after}`,
+          retryAfter: context.after,
+        }),
+      },
+    },
     schema: {
       body: {
         type: "object",
@@ -114,6 +158,8 @@ export default async function leadsRoutes(app) {
           company: { type: ["string", "null"] },
           email: { type: ["string", "null"] },
           note: { type: ["string", "null"] },
+          // Honeypot field (bots will fill this, humans won't see it)
+          website: { type: ["string", "null"] },
           // Calculator fields
           cargoName: { type: ["string", "null"] },
           weight: { type: ["number", "string"] },
@@ -133,6 +179,20 @@ export default async function leadsRoutes(app) {
   }, async (req, reply) => {
     try {
       const b = req.body;
+      
+      // 🍯 HONEYPOT: If "website" field is filled, silently reject (likely a bot)
+      if (b.website && String(b.website).trim() !== "") {
+        app.log.warn({ tag: "HONEYPOT_TRIGGERED", ip: req.ip, body: b }, "Honeypot field filled - likely bot");
+        // Return fake success to not alert the bot
+        return { 
+          success: false, 
+          leadId: null, 
+          message: "Заявка принята. Мы свяжемся с вами." 
+        };
+      }
+      
+      // Получаем source из запроса (header или query param)
+      const source = getLeadSource(req);
       
       // Валидация
       const name = String(b.name || "").trim();
@@ -191,7 +251,7 @@ export default async function leadsRoutes(app) {
           company: b.company || null,
           email: b.email || null,
           note: b.note || null,
-          source: "website_calculator",
+          source, // ← теперь динамический, а не хардкод
           status: "new",
           cargoName: b.cargoName || null,
           weight: w.toFixed(3),
@@ -206,6 +266,8 @@ export default async function leadsRoutes(app) {
           calculatorSnapshot,
         })
         .returning();
+
+      app.log.info({ tag: "LEAD_CREATED", leadId: lead.id, source, ip: req.ip }, "Lead created successfully");
 
       return { success: true, leadId: lead.id, message: "Заявка принята. Мы свяжемся с вами." };
     } catch (err) {

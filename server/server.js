@@ -9,6 +9,7 @@ import sensible from "@fastify/sensible";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import jwtLib from "jsonwebtoken";
 
 import path from "path";
@@ -89,9 +90,36 @@ const sql = postgres(DATABASE_URL, {
   // Плагины
   await app.register(sensible);
 
-  // ✅ CORS: ЯВНО разрешаем методы/заголовки, чтобы прошёл preflight для PUT/PATCH/DELETE
+  // ✅ CORS: env-based allowlist for security
+  const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map(o => o.trim())
+    .filter(Boolean);
+  
+  // Default fallback origins for development
+  const DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+  ];
+  
+  const allowedOrigins = ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ORIGINS;
+  
   await app.register(cors, {
-    origin: (origin, cb) => cb(null, true), // можно сузить до ['http://localhost:5173', ...]
+    origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return cb(null, true);
+      
+      // Check if origin is in allowlist
+      if (allowedOrigins.includes(origin)) {
+        return cb(null, true);
+      }
+      
+      // Log blocked origin for debugging
+      app.log.warn({ origin, allowedOrigins }, "CORS blocked request from disallowed origin");
+      return cb(new Error("CORS: Origin not allowed"), false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
@@ -99,10 +127,25 @@ const sql = postgres(DATABASE_URL, {
       "Authorization",
       "X-Requested-With",
       "Accept",
-      "Origin"
+      "Origin",
+      "X-Source"
     ],
     exposedHeaders: [],
     maxAge: 86400
+  });
+
+  // ✅ Rate limiting for public endpoints
+  await app.register(rateLimit, {
+    global: false, // Don't apply to all routes by default
+    max: 100,
+    timeWindow: "1 minute",
+    keyGenerator: (req) => req.ip,
+    errorResponseBuilder: (req, context) => ({
+      statusCode: 429,
+      error: "Too Many Requests",
+      message: `Rate limit exceeded. Try again in ${context.after}`,
+      retryAfter: context.after
+    })
   });
 
   await app.register(helmet, {

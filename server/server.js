@@ -150,7 +150,7 @@ const sql = postgres(DATABASE_URL, {
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginResourcePolicy: false,
     crossOriginEmbedderPolicy: false,
   });
 
@@ -211,6 +211,15 @@ const sql = postgres(DATABASE_URL, {
     root: distRoot,
     prefix: "/",
     decorateReply: true,
+    setHeaders: (res, path) => {
+      // Add cache-busting headers for hashed assets
+      if (path.includes('/assets/')) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        // No cache for index.html and other non-hashed files
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
   });
 
   // Health

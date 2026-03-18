@@ -143,6 +143,22 @@ const sql = postgres(DATABASE_URL, {
     max: 100, // default limit
     timeWindow: "1 minute",
     keyGenerator: (req) => req.ip,
+    skipOnError: true, // Don't block requests if rate limiter fails
+    skip: (req) => {
+      // Skip rate limiting for static assets
+      const url = req.raw.url || "";
+      const isStatic = url.startsWith("/assets/") || 
+                       url.startsWith("/uploads/") || 
+                       url.endsWith(".js") || 
+                       url.endsWith(".css") || 
+                       url.endsWith(".png") || 
+                       url.endsWith(".jpg") ||
+                       url === "/favicon.ico";
+      if (isStatic) {
+        console.log(`[RATE LIMIT SKIP] ${url}`);
+      }
+      return isStatic;
+    },
     errorResponseBuilder: (req, context) => ({
       statusCode: 429,
       error: "Too Many Requests",
@@ -203,6 +219,7 @@ const sql = postgres(DATABASE_URL, {
   });
 
   // Статика
+  console.log(`[STATIC] Configuring uploads root: ${getUploadsRootAbs()}`);
   await app.register(fastifyStatic, {
     root: getUploadsRootAbs(),
     prefix: "/uploads/",
@@ -210,6 +227,27 @@ const sql = postgres(DATABASE_URL, {
   });
 
   const distRoot = path.resolve(__dirname, "../dist");
+  console.log(`[STATIC] Configuring dist root: ${distRoot}`);
+  
+  // Check if dist folder exists
+  const fs = await import("fs");
+  const distExists = fs.existsSync(distRoot);
+  console.log(`[STATIC] Dist folder exists: ${distExists}`);
+  
+  if (distExists) {
+    try {
+      const files = fs.readdirSync(distRoot);
+      console.log(`[STATIC] Dist folder contents: ${files.join(", ")}`);
+      const assetsPath = path.join(distRoot, "assets");
+      if (fs.existsSync(assetsPath)) {
+        const assets = fs.readdirSync(assetsPath);
+        console.log(`[STATIC] Assets folder contents (${assets.length} files)`);
+      }
+    } catch (err) {
+      console.error(`[STATIC] Error reading dist: ${err.message}`);
+    }
+  }
+  
   await app.register(fastifyStatic, {
     root: distRoot,
     prefix: "/",

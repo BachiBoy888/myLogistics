@@ -133,11 +133,6 @@ export default async function leadsRoutes(app) {
       }
     }
   );
-    } catch (err) {
-      app.log.error({ tag: "CALCULATE_ERROR", err }, "POST /public/calculate failed");
-      return reply.code(500).send({ error: "calculate_failed", message: err?.message || String(err) });
-    }
-  });
 
   // === Создание лида (публичное) ===
   app.post(
@@ -275,17 +270,6 @@ export default async function leadsRoutes(app) {
       }
     }
   );
-          estimatedDaysMax: estimate.estimatedDaysMax,
-          calculatorSnapshot,
-        })
-        .returning();
-
-      return { success: true, leadId: lead.id, message: "Заявка принята. Мы свяжемся с вами." };
-    } catch (err) {
-      app.log.error({ tag: "CREATE_LEAD_ERROR", err }, "POST /leads failed");
-      return reply.code(500).send({ error: "create_lead_failed", message: err?.message || String(err) });
-    }
-  });
 
   // =========================
   // Приватные эндпоинты (требуют авторизации)

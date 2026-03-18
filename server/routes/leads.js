@@ -159,7 +159,7 @@ export default async function leadsRoutes(app) {
             volume: { type: ["number", "string"] },
             originCity: { type: ["string", "null"] },
             destinationCity: { type: ["string", "null"] },
-            deliveryType: { type: "string", enum: ["air", "road", "express"] },
+            deliveryType: { type: "string", enum: ["air", "road", "express", "economy", "standard", "premium"] },
             // Pre-calculated estimate (optional - if not provided, will be calculated)
             estimatedPrice: { type: ["number", "string", "null"] },
             estimatedCurrency: { type: ["string", "null"] },
@@ -200,8 +200,10 @@ export default async function leadsRoutes(app) {
         if (!Number.isFinite(v) || v <= 0) return reply.badRequest("Объём должен быть положительным числом");
 
         const deliveryType = b.deliveryType;
-        if (!["air", "road", "express"].includes(deliveryType)) {
-          return reply.badRequest("Тип доставки должен быть: air, road или express");
+        // Valid delivery types: legacy (air/road/express) + Prolife v1 (economy/standard/premium)
+        const validDeliveryTypes = ["air", "road", "express", "economy", "standard", "premium"];
+        if (!validDeliveryTypes.includes(deliveryType)) {
+          return reply.badRequest("Тип доставки должен быть: air, road, express, economy, standard или premium");
         }
 
         // Расчёт или использование предоставленной оценки

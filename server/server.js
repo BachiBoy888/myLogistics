@@ -234,6 +234,19 @@ const sql = postgres(DATABASE_URL, {
   const distExists = fs.existsSync(distRoot);
   console.log(`[STATIC] Dist folder exists: ${distExists}`);
   
+  if (!distExists) {
+    console.error(`[STATIC] ❌ CRITICAL: Dist folder not found at ${distRoot}`);
+    console.error(`[STATIC] Current __dirname: ${__dirname}`);
+    console.error(`[STATIC] Process cwd: ${process.cwd()}`);
+    try {
+      const parentDir = path.resolve(__dirname, "..");
+      const parentFiles = fs.readdirSync(parentDir);
+      console.error(`[STATIC] Parent directory contents: ${parentFiles.join(", ")}`);
+    } catch (e) {
+      console.error(`[STATIC] Error reading parent dir: ${e.message}`);
+    }
+  }
+  
   if (distExists) {
     try {
       const files = fs.readdirSync(distRoot);
@@ -242,11 +255,65 @@ const sql = postgres(DATABASE_URL, {
       if (fs.existsSync(assetsPath)) {
         const assets = fs.readdirSync(assetsPath);
         console.log(`[STATIC] Assets folder contents (${assets.length} files)`);
+      } else {
+        console.error(`[STATIC] ❌ Assets folder not found at ${assetsPath}`);
       }
     } catch (err) {
       console.error(`[STATIC] Error reading dist: ${err.message}`);
     }
   }
+  
+  // Explicit static serving for /assets with error handling
+  app.get("/assets/*", async (req, reply) => {
+    const assetPath = req.params["*"];
+    const fullPath = path.join(distRoot, "assets", assetPath);
+    
+    console.log(`[ASSETS] Request: ${assetPath}`);
+    console.log(`[ASSETS] Looking at: ${fullPath}`);
+    
+    try {
+      // Security: ensure we don't serve files outside assets folder
+      const assetsRoot = path.join(distRoot, "assets");
+      if (!fullPath.startsWith(assetsRoot)) {
+        console.log(`[ASSETS] 403: Path traversal attempt`);
+        return reply.status(403).send({ error: "Invalid path" });
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        console.log(`[ASSETS] 404: File not found`);
+        return reply.status(404).send({ error: "Asset not found", path: assetPath });
+      }
+
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) {
+        return reply.status(403).send({ error: "Not a file" });
+      }
+
+      // Set content type based on extension
+      const ext = path.extname(fullPath);
+      const contentTypes = {
+        ".js": "application/javascript",
+        ".mjs": "application/javascript",
+        ".css": "text/css",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+      };
+
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      reply.header("Content-Type", contentType);
+      reply.header("Cache-Control", "public, max-age=31536000, immutable");
+
+      console.log(`[ASSETS] 200: Serving ${assetPath} (${contentType})`);
+      return reply.send(fs.createReadStream(fullPath));
+    } catch (err) {
+      console.error(`[ASSETS] 500 Error serving ${assetPath}:`, err.message);
+      return reply.status(500).send({ error: "Failed to serve asset", message: err.message });
+    }
+  });
   
   await app.register(fastifyStatic, {
     root: distRoot,

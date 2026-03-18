@@ -1,493 +1,485 @@
-# Текущее состояние продукта — myLogistics
+# CURRENT PRODUCT STATE — MYLOGISTICS
 
-**Версия документа:** 3.0 (финальная)  
-**Дата:** 7 марта 2026  
-**Ветка:** analysis/current-product-state
+This document describes the **actual current implementation** of the myLogistics system
+based on direct inspection of the codebase.
 
----
+The purpose of this file is to give developers and AI coding agents an accurate picture
+of the system behavior, API surface, and data model.
 
-## 1. Сущности системы
+This document must reflect **confirmed behavior from code**, not assumptions.
 
-### 1.1. clients (Клиенты)
 
-**Найдено в:** `server/db/schema.js`
+---------------------------------------------------------------------
+SYSTEM OVERVIEW
 
-**Поля:**
-- id, name (not null), phone, phone2, email, notes, company, normalizedName, createdAt
+myLogistics is a logistics operations platform used to manage:
 
-**Связи:**
-- Один клиент → много PL (через clientId)
+- cargo shipments
+- packing lists (PL)
+- shipment consolidations
+- logistics workflow stages
+- operational documents
+- comments and timeline events
 
----
+The system consists of:
 
-### 1.2. pl (Грузы / Packing Lists)
+Frontend
+React + Vite + Tailwind
 
-**Найдено в:** `server/db/schema.js`
+Backend
+Fastify REST API
 
-**Поля:**
-- Основные: id, plNumber, clientId (FK), name, weight, volume, places, incoterm
-- Адрес/отправитель: pickupAddress, shipperName, shipperContacts
-- Статус: status (default: 'draft')
-- Финансы: clientPrice, calculator (jsonb)
-- Калькулятор с валютами: leg1Amount, leg1Currency, leg1AmountUsd, leg1UsdPerKg, leg1UsdPerM3, leg2Amount, leg2Currency, leg2AmountUsd, leg2UsdPerKg, leg2UsdPerM3, fxSource, fxDate, fxUsdKgs, fxCnyKgs, fxSavedAt
-- Ответственный: responsibleUserId (FK)
-- createdAt
+Database
+PostgreSQL with Drizzle ORM
 
-**Связи:**
-- Принадлежит клиенту
-- Имеет много документов, комментариев, событий
-- Может быть в консолидации (через consolidationPl)
 
----
+---------------------------------------------------------------------
+PL API ROUTES (/api/pl)
 
-### 1.3. plDocuments (Документы PL)
+Core PL routes:
 
-**Найдено в:** `server/db/schema.js`
+GET /api/pl
+List all packing lists including client data.
 
-**Поля:**
-- id, plId (FK), docType, name, fileName, mimeType, sizeBytes, storagePath
-- status: 'pending' | 'reviewed' | 'approved' | 'rejected'
-- note, uploadedBy, uploadedAt, updatedAt
+GET /api/pl/:id
+Return full PL information including:
 
-**Ограничения:**
-- Уникальность: один тип документа на PL (uqDocPerType)
+- all PL fields
+- client information
+- responsible user information
+- counters for documents, comments, and history
+- calculator fields
 
-**Связи:**
-- Имеет историю статусов (plDocStatusHistory)
 
----
+Returned structure includes:
 
-### 1.4. plDocStatusHistory (История статусов документов)
+PL core fields:
+- id
+- plNumber
+- name
+- weight
+- volume
+- places
+- incoterm
+- pickupAddress
+- status
 
-**Найдено в:** `server/db/schema.js`
+Client data:
+- id
+- name
+- phone
+- company
 
-**Поля:** id, docId (FK), oldStatus, newStatus, note, changedBy, changedAt
+Responsible user data:
+- name
+- is_active
 
----
+Tab counters:
+_counts:
+- docs
+- comments
+- history
 
-### 1.5. plComments (Комментарии PL)
+Calculator fields:
+- leg1Amount
+- leg1AmountUsd
+- leg2ManualAmount
+- leg2UsdPerKg
+- leg2UsdPerM3
 
-**Найдено в:** `server/db/schema.js`
 
-**Поля:** id, plId (FK), userId (FK), author, body, createdAt
+POST /api/pl
+Create a new PL.
 
----
+Automatically generates PL number using format:
 
-### 1.6. plEvents (События PL)
+PL-YYYY-{id}
 
-**Найдено в:** `server/db/schema.js`
 
-**Поля:** id, plId (FK), type, message, meta (jsonb), actorUserId (FK), createdAt
+PUT /api/pl/:id
+Full PL update.
 
-**Типы событий в коде:**
-- pl.created — создание PL
-- pl.status_changed — изменение статуса
-- pl.responsible_assigned — назначение ответственного
-- pl.comment_added — добавление комментария
-- pl.document_uploaded — загрузка документа
+Supports calculator field updates.
 
----
 
-### 1.7. consolidations (Консолидации)
+DELETE /api/pl/:id
+Delete a packing list.
 
-**Найдено в:** `server/db/schema.js`
 
-**Поля:** id, consNumber, title, status, createdAt, updatedAt
+---------------------------------------------------------------------
+DOCUMENT SYSTEM
 
-**Статусы (enum):** to_load, loaded, to_customs, released, kg_customs, collect_payment, delivered, closed
+Documents are attached to packing lists.
 
-**Связи:**
-- Связь с PL через consolidationPl (many-to-many)
-- Имеет историю статусов (consolidationStatusHistory)
+Routes:
 
----
+GET /api/pl/:plId/docs
+List all documents attached to the PL.
 
-### 1.8. users (Пользователи)
+POST /api/pl/:plId/docs
+Upload a document.
 
-**Найдено в:** `server/db/schema.js`
+Behavior depends on document type.
 
-**Поля:** id, login, passwordHash, name, phone, email, role, createdAt
+PATCH /api/pl/:plId/docs/:docId
+Update document status, note, or name.
 
-**Роли:** admin, logist, user
+DELETE /api/pl/:plId/docs/:docId
+Delete document.
 
----
+GET /api/pl/:plId/docs/:docId/history
+Return document status change history.
 
-### 1.9. analyticsDailySnapshots (Аналитика: снапшоты)
+GET /api/pl/:plId/docs/:docId/preview
+Inline preview of document.
 
-**Найдено в:** `server/db/schema.js`
+GET /api/pl/:plId/docs/:docId/download
+Download document as attachment.
 
-**Поля:** day, generatedAt, sourceTs, totalClients, inquiryClients, activeClients
 
-**Назначение:** Хранение ежедневных метрик для графиков аналитики
+---------------------------------------------------------------------
+DOCUMENT STORAGE
 
----
+Files are stored locally on disk.
 
-### 1.10. analyticsDailyPlStatus (Аналитика: PL по статусам)
+Storage location:
 
-**Найдено в:** `server/db/schema.js`
+./uploads/pl/{plId}/{timestamp}__{filename}
 
-**Поля:** day, status, plCount
+Metadata is stored in the database table:
 
----
+plDocuments
 
-### 1.11. analyticsDailyWeightStatus (Аналитика: вес по статусам)
+File storage is handled by:
 
-**Найдено в:** `server/db/schema.js`
+server/services/storage.js
 
-**Поля:** day, status, totalWeight
+Function:
 
----
+savePLFile()
 
-## 2. API endpoints
 
-### 2.1. Auth
-**Найдено в:** `server/routes/auth.js`
+---------------------------------------------------------------------
+DOCUMENT TYPES
 
-- POST /api/auth/login
-- POST /api/auth/logout
-- GET /api/auth/me
+Two categories of documents exist.
 
----
 
-### 2.2. Users
-**Найдено в:** `server/routes/users.js`
+Required documents
 
-- GET /api/users (с фильтром по роли)
+Only one document allowed per type (singleton).
 
----
+Database field:
 
-### 2.3. Clients
-**Найдено в:** `server/routes/clients.js`
+name = NULL
 
-- GET /api/clients — список
-- GET /api/clients/search — поиск
-- POST /api/clients — создание
-- PATCH /api/clients/:id — обновление
-- DELETE /api/clients/:id — удаление (только если нет PL)
+Types:
 
----
+invoice — Инвойс
+packing_list — Упаковочный лист
+inspection — Осмотр
+pre_declaration — Предварительное информирование
 
-### 2.4. PL (основной)
-**Найдено в:** `server/routes/pl.js`
 
-- GET /api/pl — список
-- GET /api/pl/:id — получить
-- POST /api/pl — создание
-- PUT /api/pl/:id — обновление
-- DELETE /api/pl/:id — удаление
-- PUT /api/pl/:id/responsible — назначить ответственного
+Additional documents
 
-**Документы (внутри PL routes):**
-- GET /api/pl/:id/docs
-- POST /api/pl/:id/docs
-- GET /api/pl/:id/docs/:docId
-- PATCH /api/pl/:id/docs/:docId
-- DELETE /api/pl/:id/docs/:docId
-- GET /api/pl/:id/docs/:docId/history
+Unlimited documents allowed.
 
-**Комментарии (внутри PL routes):**
-- GET /api/pl/:id/comments
-- POST /api/pl/:id/comments
-- DELETE /api/pl/:id/comments/:commentId
+Database field:
 
-**События:**
-- GET /api/pl/:id/events
+doc_type = 'additional'
 
----
+User must provide a custom document name.
 
-### 2.5. Consolidations
-**Найдено в:** `server/routes/consolidations.js`
 
-- GET /api/consolidations
-- GET /api/consolidations/:id
-- POST /api/consolidations
-- PATCH /api/consolidations/:id
-- DELETE /api/consolidations/:id
-- POST /api/consolidations/:id/pl — добавить PL
-- DELETE /api/consolidations/:id/pl/:plId — убрать PL
-- PUT /api/consolidations/:id/pl — установить список PL
-- GET /api/consolidations/:id/status-history
+Upload behavior:
 
----
+Required documents:
+UPSERT (existing document replaced).
 
-### 2.6. Analytics
-**Найдено в:** `server/routes/analytics.js`
+Additional documents:
+INSERT (always new document).
 
-- GET /api/analytics?from=&to=&granularity= — получить аналитику
 
-**Скрипт заполнения:** `server/scripts/build-analytics-snapshots.js`
+---------------------------------------------------------------------
+DOCUMENT STATUS WORKFLOW
 
----
+Status pipeline for required documents:
 
-### 2.7. FX (курсы валют)
-**Найдено в:** `server/routes/fx.js`
+pending → reviewed → approved
 
-- GET /api/fx/latest
-- GET /api/fx/convert
+Rejection can occur from any status:
 
----
+rejected
 
-## 3. Frontend
 
-### 3.1. Основные страницы (Views)
+---------------------------------------------------------------------
+ADDITIONAL PL ROUTES
 
-| Страница | Файл | Функциональность |
-|----------|------|------------------|
-| CargoView | `src/views/CargoView.jsx` | Канбан доска, управление PL и консолидациями |
-| ClientsView | `src/views/ClientsView.jsx` | Список клиентов, карточка клиента |
-| AnalyticsPage | `src/views/AnalyticsPage.jsx` | Графики аналитики |
-| LogisticsView | `src/views/LogisticsView.jsx` | Заглушка (пустая страница) |
-| WarehousesView | `src/views/WarehousesView.jsx` | Минимальный список складов |
+GET /api/pl/:plId/events
 
----
+Returns timeline events including:
 
-### 3.2. Основные компоненты
+- document actions
+- comments
+- status changes
+- consolidation events
 
-| Компонент | Файл | Назначение |
-|-----------|------|------------|
-| PLCard | `src/components/PLCard.jsx` | Карточка PL с 4 вкладками (Сведения, Документы, Комментарии, Хронология) |
-| NewPLModal | `src/components/pl/NewPLModal.jsx` | Модальное окно создания PL |
-| DocsList | `src/components/pl/DocsList.jsx` | Список документов PL |
-| CommentsCard | `src/components/CommentsCard.jsx` | Комментарии к PL |
-| CostCalculatorCard | `src/components/CostCalculatorCard.jsx` | Калькулятор себестоимости с валютами |
-| KanbanBoard | `src/components/kanban/KanbanBoard.jsx` | Канбан доска (9 колонок) |
-| KanbanPLCard | `src/components/kanban/KanbanPLCard.jsx` | Карточка PL в канбане |
 
----
+POST /api/pl/:plId/comments
 
-## 4. Статусы
+Add comment to PL.
 
-### 4.1. PL (11 статусов)
-**Найдено в:** `src/constants/statuses.js`
 
-Список: draft, awaiting_docs, awaiting_load, to_load, loaded, to_customs, released, kg_customs, collect_payment, closed, cancelled
+GET /api/pl/:id/avatar
 
-**Канбан колонки (9):**
-1. intake — draft
-2. collect_docs — awaiting_docs
-3. collect_cargo — awaiting_load
-4. loading — to_load, loaded
-5. cn_formalities — to_customs
-6. in_transit — released
-7. kg_customs — kg_customs
-8. payment — collect_payment
-9. closed_stage — closed, cancelled
+Returns responsible user avatar (lazy loaded).
 
----
 
-### 4.2. Консолидации (8 статусов)
-**Найдено в:** `server/db/schema.js`
+POST /api/pl/import
 
-Список: to_load, loaded, to_customs, released, kg_customs, collect_payment, delivered, closed
+Import packing lists from Excel.
 
----
 
-### 4.3. Документы (4 статуса)
-**Найдено в:** `server/db/schema.js`, `src/components/pl/DocsList.jsx`
+---------------------------------------------------------------------
+CONSOLIDATION API ROUTES (/api/consolidations)
 
-Сервер: pending, reviewed, approved, rejected
-UI: uploaded, checked_by_logistic, recheck_ok, rejected
+GET /api/consolidations
 
----
+List consolidations.
 
-## 5. Функциональность по разделам
+Optional filter:
 
-### 5.1. Авторизация
+?status=
 
-**Реализовано:**
-- Модель users с ролями (admin, logist, user)
-- Login/logout API
-- Сессии через cookies
-- Проверка прав доступа
 
-**Найдено в:**
-- `server/routes/auth.js`
-- `server/db/schema.js` (users)
-- `server/server.js`
+GET /api/consolidations/:id
 
-**Отсутствует:**
-- Регистрация пользователей через UI
-- Восстановление пароля
-- Смена пароля через UI
+Returns consolidation with:
 
----
+- PL list
+- PL details
+- expenses
 
-### 5.2. PL (Грузы)
 
-**Реализовано:**
-- CRUD операции
-- Список PL с информацией о клиенте
-- Детальная карточка PL с 4 вкладками
-- 11 статусов, канбан (9 колонок)
-- Drag & drop между колонками
-- Назначение ответственного
-- Поля: название, вес, объём, количество мест, инкотерм, адрес забора, отправитель, контакты
+POST /api/consolidations
 
-**Найдено в:**
-- `server/routes/pl.js`
-- `src/views/CargoView.jsx`
-- `src/components/PLCard.jsx`
-- `src/components/pl/NewPLModal.jsx`
+Create consolidation.
 
-**Реализовано частично:**
-- Warehouses — есть модель и выбор в PL, но нет полноценного UI управления
+Optional:
 
-**Отсутствует:**
-- Массовые операции с PL
-- Поиск и фильтрация PL (кроме фильтра по клиенту)
+Attach initial PLs.
 
----
 
-### 5.3. Клиенты
+PATCH /api/consolidations/:id
 
-**Реализовано:**
-- CRUD операции
-- Поиск с транслитерацией
-- Автосоздание при создании PL
-- Просмотр всех PL клиента
+Update consolidation fields:
 
-**Найдено в:**
-- `server/routes/clients.js`
-- `src/views/ClientsView.jsx`
+- title
+- status
+- capacityKg
+- capacityCbm
+- machineCost
 
-**Отсутствует:**
-- История изменений клиента
-- Сегментация клиентов
 
----
+DELETE /api/consolidations/:id
 
-### 5.4. Консолидации
+Delete consolidation.
 
-**Реализовано:**
-- CRUD операции
-- Добавление/удаление PL
-- 8 статусов консолидации
-- История изменений статусов
 
-**Найдено в:**
-- `server/routes/consolidations.js`
-- `server/db/schema.js`
-- `src/views/CargoView.jsx`
+POST /api/consolidations/:id/pl
 
-**Реализовано частично:**
-- UI минимальный — есть создание и управление списком PL, но нет детального просмотра содержимого
+Add a PL to consolidation.
 
-**Отсутствует:**
-- Визуализация содержимого консолидации
-- Автоматический расчёт веса/объёма консолидации
-- Агрегация финансов по консолидации
 
----
+DELETE /api/consolidations/:id/pl/:plId
 
-### 5.5. Документы
+Remove PL from consolidation.
 
-**Реализовано:**
-- Загрузка файлов на диск
-- 3 типа документов: invoice, packing_list, other
-- 4 статуса с историей изменений
-- Уникальность: один тип на PL
 
-**Найдено в:**
-- `server/routes/pl.js`
-- `server/db/schema.js`
-- `src/components/pl/DocsList.jsx`
+POST /api/consolidations/:id/pls
 
-**Отсутствует:**
-- Предпросмотр документов (только скачивание)
-- Версионирование
+Batch replace PLs for consolidation.
 
----
 
-### 5.6. Комментарии
+POST /api/consolidations/:id/expenses
 
-**Реализовано:**
-- CRUD операции
-- UI в карточке PL
-- Автор и дата
+Add consolidation expense.
 
-**Найдено в:**
-- `server/routes/pl.js`
-- `server/db/schema.js`
-- `src/components/CommentsCard.jsx`
 
----
+DELETE /api/consolidations/:id/expenses/:expenseId
 
-### 5.7. Хронология / Timeline
+Delete expense.
 
-**Реализовано:**
-- Модель событий plEvents
-- API для получения событий
-- Вкладка "Хронология" в PL
-- Автоматическое создание событий при ключевых действиях
 
-**Найдено в:**
-- `server/db/schema.js`
-- `server/routes/pl.js`
-- `src/components/PLCard.jsx`
+---------------------------------------------------------------------
+CONSOLIDATION STATUS LOGIC
 
-**Примечание:** События создаются автоматически, но нет ручного добавления событий и нет фильтрации по типу.
+PATCH /api/consolidations/:id executes inside a database transaction.
 
----
+Transaction steps:
 
-### 5.8. Калькулятор
+1. If consolidation status changes:
 
-**Реализовано:**
-- Поле цены для клиента (clientPrice)
-- JSONB снапшот калькулятора
-- Расчёт себестоимости (2 плеча + сборы)
-- Расчёт маржи и прибыли
-- Плотность груза
-- Рекомендация: по весу или объёму
-- Поддержка 3 валют (USD, KGS, CNY)
-- Курсы валют от НБКР
-- Сохранение курсов на момент расчёта
+Synchronize ALL PL statuses to the same status.
 
-**Найдено в:**
-- `server/db/schema.js`
-- `server/routes/fx.js`
-- `src/components/CostCalculatorCard.jsx`
+2. Update consolidation record.
 
-**Отсутствует:**
-- История изменений цены
-- Финансовая агрегация по клиенту/консолидации
+3. Insert status change record into:
 
----
+consolidationStatusHistory
 
-### 5.9. Аналитика
 
-**Реализовано:**
-- 3 таблицы для снапшотов
-- API /api/analytics
-- 3 графика в UI
-- Скрипт заполнения снапшотов
-- Поддержка гранулярности: день, неделя, месяц
+Status pipeline:
 
-**Найдено в:**
-- `server/db/schema.js`
-- `server/routes/analytics.js`
-- `server/scripts/build-analytics-snapshots.js`
-- `src/views/AnalyticsPage.jsx`
+to_load
+loaded
+to_customs
+released
+kg_customs
+collect_payment
+delivered
+closed
 
-**Реализовано частично:**
-- Автоматическое заполнение снапшотов — скрипт есть, но нет настроенного cron job
 
----
+---------------------------------------------------------------------
+KANBAN WORKFLOW
 
-## 6. Функции, которые уже существуют и должны развиваться без дублирования
+The Kanban board represents cargo workflow stages.
 
-Список функциональности, которую не следует создавать заново, а развивать существующую:
+Each column corresponds to a cargo status.
 
-1. **Система статусов PL** — 11 статусов с канбаном уже реализована
-2. **Система документов** — загрузка, статусы, история уже есть
-3. **Комментарии к PL** — полноценная реализация с CRUD
-4. **Калькулятор себестоимости** — с валютами и снапшотами курсов
-5. **Консолидации** — модель, API, связи с PL существуют
-6. **Событийная система (timeline)** — plEvents с автоматическим созданием
-7. **Аналитика на снапшотах** — таблицы, API, UI графиков
-8. **Назначение ответственного** — через responsibleUserId
-9. **Поиск клиентов** — с транслитерацией
-10. **Drag & drop** — в канбане реализован
+Users move items using drag-and-drop.
 
----
 
-**Конец документа**
+Frontend flow:
+
+Drag start occurs in:
+
+KanbanPLCard.jsx
+KanbanConsCard.jsx
+
+Drag data stored in dataTransfer.
+
+
+Drop handler:
+
+KanbanBoard.jsx → handleDrop()
+
+
+Move handler:
+
+CargoView.jsx → handlePLMove()
+
+
+Frontend API behavior:
+
+Moving a PL:
+
+API.updatePL(plId, { status: newStatus })
+
+
+Moving a consolidation:
+
+API.updateCons(consId, { status: newStatus })
+
+
+After mutation:
+
+Frontend refreshes PL list.
+
+refreshPLs()
+
+
+---------------------------------------------------------------------
+DATABASE TABLES
+
+
+Core tables
+
+clients
+Stores customer information.
+
+users
+System users.
+
+pl
+Packing lists (cargo records).
+
+consolidations
+Shipment consolidations.
+
+consolidationPl
+Join table linking PLs and consolidations.
+
+
+Document tables
+
+plDocuments
+Document metadata.
+
+plDocStatusHistory
+Document status audit trail.
+
+
+Communication tables
+
+plComments
+User comments for PLs.
+
+plEvents
+Timeline events.
+
+
+History tables
+
+consolidationStatusHistory
+Audit log for consolidation status changes.
+
+
+Analytics tables
+
+analyticsDailySnapshots
+Daily aggregated metrics.
+
+analyticsDailyPlStatus
+Daily counts of PLs by status.
+
+analyticsDailyWeightStatus
+Daily cargo weight totals by status.
+
+
+---------------------------------------------------------------------
+DATA RELATIONSHIPS
+
+clients (1) → (N) pl
+
+users (1) → (N) pl.responsibleUserId
+
+pl (1) → (N) plDocuments
+pl (1) → (N) plComments
+pl (1) → (N) plEvents
+
+pl (1) → (N) consolidationPl → (N) consolidations
+
+
+---------------------------------------------------------------------
+ARCHITECTURE SUMMARY
+
+Backend
+Fastify REST API with Drizzle ORM and PostgreSQL.
+
+Frontend
+React + Vite + Tailwind with Kanban drag-and-drop interface.
+
+Documents
+Stored on local filesystem with metadata in database.
+
+Workflow
+PLs move between statuses via Kanban interactions and API updates.
+
+Consolidations
+Group PLs and synchronize status across grouped shipments.
+
+Calculator
+Tracks logistics costs via leg1 and leg2 fields stored in PL.

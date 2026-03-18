@@ -1,90 +1,100 @@
-# Kimi Runbook
 
-Use this runbook when sending implementation tasks to Kimi / OpenClaw.
+# KIMI AI AGENT RUNBOOK
 
-Before making changes, read:
+This runbook defines how AI coding agents must operate inside the myLogistics repository.
 
-- `docs/ai/README.md`
-- `docs/ai/product-context.md`
-- `docs/ai/tech-context.md`
-- `docs/ai/coding-rules.md`
-- `docs/ai/qa-checklist.md`
-- `docs/ai/prompt-template.md`
+Agents must follow these instructions before performing any investigation or implementation work.
 
-## Standard instruction for implementation
 
-Read and follow the repository AI context files listed above.
+================================================
+REQUIRED READING ORDER
+================================================
 
-Implement the requested task using the repository rules.
+Before doing anything, the agent MUST read the following files in this order:
 
-Requirements:
-- create a new branch
-- make only scoped changes
-- do not refactor unrelated code
-- follow coding rules from `docs/ai/coding-rules.md`
-- verify the change does not break existing behavior
-- commit changes
-- push the branch
-- open a pull request
-- use the repository PR template
+1. docs/ai/product-context.md
+2. docs/ai/tech-context.md
+3. docs/ai/current-product-state.md
+4. docs/ai/system-map.md
+5. docs/ai/coding-rules.md
+6. docs/ai/qa-checklist.md
+7. docs/ai/prompt-template.md
 
-Return the following:
-1. branch name
-2. pull request link
-3. summary of changes
-4. how to test
-5. known risks
-6. anything not completed
+These files together define:
 
-## If task is based on a GitHub Issue
+- business context
+- system architecture
+- current product state
+- system navigation map
+- coding constraints
+- QA validation process
+- prompt format
 
-Use this instruction:
 
-Implement GitHub issue #<ISSUE_NUMBER>.
+================================================
+INVESTIGATION FIRST
+================================================
 
-Read and follow:
-- `docs/ai/README.md`
-- `docs/ai/product-context.md`
-- `docs/ai/tech-context.md`
-- `docs/ai/coding-rules.md`
-- `docs/ai/qa-checklist.md`
-- `docs/ai/prompt-template.md`
+Unless explicitly told otherwise, every task must start with investigation.
 
-Requirements:
-- create a new branch
-- make only scoped changes
-- commit changes
-- push branch
-- open pull request
-- fill PR using repository pull request template
+The agent must:
 
-Return:
-- branch name
-- PR link
-- summary of changes
-- how to test
-- known risks
+1. locate relevant frontend components
+2. locate relevant backend routes
+3. locate related database tables
+4. trace request flow from UI → API → DB
+5. confirm assumptions using real code
 
-## If task is a bugfix
+The agent must report findings before implementing changes.
 
-Use this instruction:
 
-Read and follow the repository AI context files.
+================================================
+COMPLETION GATE
+================================================
 
-Fix the described bug with minimal scoped changes.
+You may NOT say:
 
-Requirements:
-- do not refactor unrelated modules
-- preserve existing behavior outside the bugfix scope
-- add only necessary changes
-- create branch
-- commit
-- push
-- open pull request
+- completed
+- ready
+- working
+- fixed
+- pushed successfully
 
-Return:
-- root cause
-- changed files
-- PR link
-- how to verify the fix
-- risks
+unless ALL of the following are true:
+
+1. code parses
+2. build passes
+3. relevant backend startup check passes
+4. relevant route registration passes
+5. CI status is green OR explicitly marked as not yet verified
+6. any unverified claim is clearly marked as UNVERIFIED
+
+
+================================================
+SEPARATION OF MODES
+================================================
+
+If the task is INVESTIGATION ONLY:
+
+- do not implement
+- do not modify files
+- do not propose code as completed work
+
+If the task is IMPLEMENTATION:
+
+First:
+- summarize confirmed architecture constraints
+
+Then:
+- implement
+
+
+================================================
+SOURCE OF TRUTH
+================================================
+
+If documentation and code disagree:
+
+THE CODE IS THE SOURCE OF TRUTH.
+
+Documentation is a navigation aid only.

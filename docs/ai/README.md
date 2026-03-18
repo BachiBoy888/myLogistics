@@ -1,15 +1,78 @@
-# AI Context Entry Point
 
-This directory contains context for AI development agents.
+# myLogistics
 
-Start reading here.
+myLogistics is a logistics workflow system for managing cargo shipments, packing lists (PL), consolidations, documents, and operational workflows.
 
-## Documents
+The system includes:
 
-- product-context.md — explains the product domain
-- tech-context.md — explains the system architecture
-- coding-rules.md — rules AI agents must follow
-- qa-checklist.md — what must be checked after changes
-- prompt-template.md — template for AI development tasks
+- PL management
+- document management
+- consolidation management
+- Kanban workflow
+- cargo calculator
+- analytics snapshots
 
-Agents should read these files before making changes to the codebase.
+
+================================================
+TECH STACK
+================================================
+
+Frontend
+- React
+- Vite
+- Tailwind
+
+Backend
+- Fastify
+- Drizzle ORM
+- PostgreSQL
+
+Storage
+- Local file storage for documents
+
+Deployment
+- Render
+- GitHub Actions CI
+
+
+================================================
+AI AGENT CONTEXT FILES
+================================================
+
+AI coding agents must read the following files before executing tasks:
+
+docs/ai/product-context.md
+docs/ai/tech-context.md
+docs/ai/current-product-state.md
+docs/ai/system-map.md
+docs/ai/coding-rules.md
+docs/ai/qa-checklist.md
+docs/ai/prompt-template.md
+
+These files provide:
+
+- system architecture
+- product state
+- coding rules
+- QA expectations
+- navigation map of the system
+
+
+================================================
+PROJECT STRUCTURE (SIMPLIFIED)
+================================================
+
+frontend:
+src/
+
+backend:
+server/
+
+database:
+server/db/
+
+documents:
+uploads/pl/
+
+ai context:
+docs/ai/

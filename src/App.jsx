@@ -31,6 +31,9 @@ import AnalyticsPage from "./views/AnalyticsPage.jsx";
 import LeadsView from "./views/LeadsView.jsx";
 import PublicCalculatorPage from "./views/PublicCalculatorPage.jsx";
 
+// Landing pages
+import LandingHomePage from "../landing/src/pages/HomePage.jsx";
+
 /* ---------------------------
    Вспомогательные утилиты
 ----------------------------*/
@@ -45,6 +48,7 @@ function App() {
 
   // Проверяем публичные роуты
   const isPublicCalculator = window.location.pathname === '/calculate' || window.location.pathname === '/estimate';
+  const isLanding = window.location.pathname.startsWith('/landing');
 
   // Проверяем наличие токена первичной авторизации в URL
   const urlParams = new URLSearchParams(window.location.search);
@@ -53,8 +57,8 @@ function App() {
 
   // Проверяем сессию при запуске (только если не first-login и не публичная страница)
   useEffect(() => {
-    // Если это first-login страница или публичный калькулятор, не проверяем сессию
-    if (isFirstLogin || isPublicCalculator) {
+    // Если это first-login страница, публичный калькулятор или landing, не проверяем сессию
+    if (isFirstLogin || isPublicCalculator || isLanding) {
       setBoot({ loading: false, user: null });
       return;
     }
@@ -67,13 +71,18 @@ function App() {
         setBoot({ loading: false, user: null });
       }
     })();
-  }, [isFirstLogin, isPublicCalculator]);
+  }, [isFirstLogin, isPublicCalculator, isLanding]);
 
   if (boot.loading) return <LoadingScreen />;
 
   // Публичная страница калькулятора
   if (isPublicCalculator) {
     return <PublicCalculatorPage />;
+  }
+
+  // Landing page
+  if (isLanding) {
+    return <LandingHomePage />;
   }
 
   // Если есть токен первичной авторизации — показываем FirstLoginScreen

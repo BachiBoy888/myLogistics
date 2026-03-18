@@ -15,7 +15,6 @@ export default function PublicCalculatorPage() {
     weight: "",
     volume: "",
     originCity: "",
-    destinationCity: "Гуанчжоу",
     deliveryType: "road",
   });
   const [estimate, setEstimate] = useState(null);
@@ -51,7 +50,6 @@ export default function PublicCalculatorPage() {
         weight,
         volume,
         originCity: formData.originCity || undefined,
-        destinationCity: formData.destinationCity || undefined,
         deliveryType: formData.deliveryType,
         cargoName: formData.cargoName || undefined,
       });
@@ -90,7 +88,6 @@ export default function PublicCalculatorPage() {
         weight: parseFloat(formData.weight),
         volume: parseFloat(formData.volume),
         originCity: formData.originCity || undefined,
-        destinationCity: formData.destinationCity || undefined,
         deliveryType: formData.deliveryType,
         estimatedPrice: estimate?.estimatedPrice,
         estimatedCurrency: estimate?.estimatedCurrency,
@@ -222,34 +219,19 @@ export default function PublicCalculatorPage() {
                 </div>
               </div>
 
-              {/* Cities */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    <MapPin className="w-4 h-4 inline mr-1" />
-                    Откуда
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.originCity}
-                    onChange={(e) => setFormData(d => ({ ...d, originCity: e.target.value }))}
-                    placeholder="Город в Китае"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    <MapPin className="w-4 h-4 inline mr-1" />
-                    Куда
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.destinationCity}
-                    onChange={(e) => setFormData(d => ({ ...d, destinationCity: e.target.value }))}
-                    placeholder="Город доставки"
-                    className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
-                  />
-                </div>
+              {/* Pickup Location */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-2">
+                  <MapPin className="w-4 h-4 inline mr-1" />
+                  Точка сбора груза
+                </label>
+                <input
+                  type="text"
+                  value={formData.originCity}
+                  onChange={(e) => setFormData(d => ({ ...d, originCity: e.target.value }))}
+                  placeholder="Город в Китае"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl py-3 px-4 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
+                />
               </div>
 
               {/* Delivery Type */}
@@ -341,8 +323,8 @@ export default function PublicCalculatorPage() {
                   <span className="text-white">{DELIVERY_TYPES.find(t => t.key === formData.deliveryType)?.label}</span>
                   {formData.originCity && (
                     <>
-                      <span className="text-slate-500">Маршрут:</span>
-                      <span className="text-white">{formData.originCity} → {formData.destinationCity || "—"}</span>
+                      <span className="text-slate-500">Точка сбора груза:</span>
+                      <span className="text-white">{formData.originCity}</span>
                     </>
                   )}
                 </div>
@@ -488,7 +470,7 @@ export default function PublicCalculatorPage() {
             <button
               onClick={() => {
                 setStep("form");
-                setFormData({ cargoName: "", weight: "", volume: "", originCity: "", destinationCity: "Гуанчжоу", deliveryType: "road" });
+                setFormData({ cargoName: "", weight: "", volume: "", originCity: "", deliveryType: "road" });
                 setLeadData({ name: "", phone: "", company: "", email: "", note: "" });
                 setEstimate(null);
               }}

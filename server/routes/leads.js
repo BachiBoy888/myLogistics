@@ -442,6 +442,7 @@ export default async function leadsRoutes(app) {
           weight: lead.weight,
           volume: lead.volume,
           status: "draft",
+          clientPrice: lead.estimatedPrice || null, // Transfer client price from lead
           calculator: lead.calculatorSnapshot || {},
           pickupAddress: lead.originCity || null,
         })

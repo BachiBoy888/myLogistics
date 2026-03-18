@@ -165,7 +165,17 @@ export default function LeadsView({ onOpenPL }) {
             <Users className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white">Лиды</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-white">Лиды</h1>
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+                title="Обновить"
+              >
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+              </button>
+            </div>
             <p className="text-sm text-slate-400">Заявки из калькулятора</p>
           </div>
         </div>
@@ -185,15 +195,6 @@ export default function LeadsView({ onOpenPL }) {
             </select>
             <Filter className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
           </div>
-
-          <button
-            onClick={handleRefresh}
-            disabled={isRefreshing}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
-            title="Обновить"
-          >
-            <RefreshCw className={`w-5 h-5 ${isRefreshing ? "animate-spin" : ""}`} />
-          </button>
         </div>
       </div>
 

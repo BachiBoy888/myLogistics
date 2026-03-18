@@ -155,6 +155,7 @@ export default function ConsolidationDetailsModal({
   // Driver info editing state
   const [driverName, setDriverName] = useState(cons.driver_name || "");
   const [driverContacts, setDriverContacts] = useState(cons.driver_contacts || "");
+  const [plannedArrivalDate, setPlannedArrivalDate] = useState(cons.planned_arrival_date || "");
   
   // PL management state
   const [pickedIds, setPickedIds] = useState(cons.pl_ids || []);
@@ -231,6 +232,7 @@ export default function ConsolidationDetailsModal({
     setCapacityCbm(cons.capacity_cbm || 0);
     setDriverName(cons.driver_name || "");
     setDriverContacts(cons.driver_contacts || "");
+    setPlannedArrivalDate(cons.planned_arrival_date || "");
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
@@ -543,6 +545,8 @@ export default function ConsolidationDetailsModal({
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
       if (driverName !== (cons.driver_name || "")) consUpdate.driverName = driverName;
       if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
+      if (plannedArrivalDate !== (cons.planned_arrival_date || "")) consUpdate.plannedArrivalDate = plannedArrivalDate;
+      if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
@@ -568,6 +572,7 @@ export default function ConsolidationDetailsModal({
         // Update driver info from final state
         setDriverName(freshCons.driver_name || "");
         setDriverContacts(freshCons.driver_contacts || "");
+        setPlannedArrivalDate(freshCons.planned_arrival_date || "");
         
         // Update machine cost and expenses from final state
         setMachineCost(freshCons.machine_cost || 0);
@@ -598,6 +603,7 @@ export default function ConsolidationDetailsModal({
       await onRefresh?.();
       
       setHasChanges(false);
+      setIsEditing(false); // Close edit form on successful save
     } catch (err) {
       console.error('Save failed:', err);
       alert('Ошибка сохранения: ' + (err.message || 'Unknown error'));
@@ -854,6 +860,18 @@ export default function ConsolidationDetailsModal({
                         className="w-full border rounded-lg px-3 py-2 text-sm"
                       />
                     </div>
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Плановая дата прибытия в Бишкек</label>
+                      <input
+                        type="date"
+                        value={plannedArrivalDate}
+                        onChange={(e) => {
+                          setPlannedArrivalDate(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                      />
+                    </div>
                   </div>
                 ) : isEditingDriver ? (
                   /* Inline driver editing mode - shown when driver data is empty */
@@ -874,6 +892,13 @@ export default function ConsolidationDetailsModal({
                         className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                         placeholder="Телефон или другие контакты"
                       />
+                      <input
+                        type="date"
+                        value={plannedArrivalDate}
+                        onChange={(e) => setPlannedArrivalDate(e.target.value)}
+                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                        placeholder="Плановая дата прибытия в Бишкек"
+                      />
                     </div>
                     <div className="flex gap-2">
                       <button
@@ -881,6 +906,7 @@ export default function ConsolidationDetailsModal({
                           await onUpdateCons?.(cons.id, {
                             driverName: driverName,
                             driverContacts: driverContacts,
+                            plannedArrivalDate: plannedArrivalDate,
                           });
                           setIsEditingDriver(false);
                           await onRefresh?.();
@@ -894,6 +920,7 @@ export default function ConsolidationDetailsModal({
                         onClick={() => {
                           setDriverName(cons.driver_name || "");
                           setDriverContacts(cons.driver_contacts || "");
+                          setPlannedArrivalDate(cons.planned_arrival_date || "");
                           setIsEditingDriver(false);
                         }}
                         className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
@@ -925,7 +952,7 @@ export default function ConsolidationDetailsModal({
                 ) : (
                   <div className="space-y-3">
                     {/* Driver info display */}
-                    {(driverName || driverContacts) && (
+                    {(driverName || driverContacts || plannedArrivalDate) && (
                       <div className="bg-white rounded-lg p-3 border">
                         <div className="flex items-center justify-between">
                           <div>
@@ -935,6 +962,11 @@ export default function ConsolidationDetailsModal({
                             )}
                             {driverContacts && (
                               <div className="text-sm text-gray-600">{driverContacts}</div>
+                            )}
+                            {plannedArrivalDate && (
+                              <div className="text-sm text-blue-600 mt-1">
+                                Прибытие в Бишкек: {new Date(plannedArrivalDate).toLocaleDateString('ru-RU')}
+                              </div>
                             )}
                           </div>
                           <button

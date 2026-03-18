@@ -177,6 +177,8 @@ export default function CargoView({
   useEffect(() => {
     if (openPLId) {
       setSelectedId(openPLId);
+      // Refresh PL list to ensure newly created PL from lead conversion appears
+      refreshPLs({ keepSelected: false });
       onConsumeOpenPL?.();
     }
   }, [openPLId, onConsumeOpenPL]);

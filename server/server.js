@@ -9,6 +9,7 @@ import sensible from "@fastify/sensible";
 import multipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import jwtLib from "jsonwebtoken";
 
 import path from "path";
@@ -89,9 +90,59 @@ const sql = postgres(DATABASE_URL, {
   // Плагины
   await app.register(sensible);
 
-  // ✅ CORS: ЯВНО разрешаем методы/заголовки, чтобы прошёл preflight для PUT/PATCH/DELETE
+  // ✅ CORS: Environment-based allowlist for security
+  const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  // Default fallback origins for development
+  const DEFAULT_ORIGINS = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:3000",
+  ];
+
+  const allowedOrigins =
+    ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ORIGINS;
+
   await app.register(cors, {
-    origin: (origin, cb) => cb(null, true), // можно сузить до ['http://localhost:5173', ...]
+    origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, curl, same-origin requests)
+      if (!origin) return cb(null, true);
+
+      // Trim origin to handle trailing spaces
+      const trimmedOrigin = origin.trim();
+
+      // Check if origin is in allowlist (trimmed comparison)
+      if (allowedOrigins.some((o) => o.trim() === trimmedOrigin)) {
+        return cb(null, true);
+      }
+
+      // Auto-allow same-origin requests (when origin matches the server's host)
+      // This handles Render preview deployments without explicit env config
+      const serverHost = process.env.RENDER_EXTERNAL_URL || 
+                        process.env.RAILWAY_STATIC_URL ||
+                        (process.env.NODE_ENV === 'production' ? null : null);
+      if (serverHost && trimmedOrigin === serverHost) {
+        return cb(null, true);
+      }
+
+      // Allow any origin in staging/preview if no explicit allowlist set
+      // This is a pragmatic fallback for preview deployments
+      if (ALLOWED_ORIGINS.length === 0 && 
+          (process.env.NODE_ENV === 'staging' || process.env.RENDER === '1')) {
+        return cb(null, true);
+      }
+
+      // Log blocked origin for debugging
+      app.log.warn(
+        { origin: trimmedOrigin, allowedOrigins, serverHost },
+        "CORS blocked request from disallowed origin"
+      );
+      return cb(new Error("CORS: Origin not allowed"), false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: [
@@ -99,15 +150,45 @@ const sql = postgres(DATABASE_URL, {
       "Authorization",
       "X-Requested-With",
       "Accept",
-      "Origin"
+      "Origin",
+      "X-Source",
     ],
     exposedHeaders: [],
-    maxAge: 86400
+    maxAge: 86400,
+  });
+
+  // ✅ Rate limiting for public endpoints
+  await app.register(rateLimit, {
+    max: 100, // default limit
+    timeWindow: "1 minute",
+    keyGenerator: (req) => req.ip,
+    skipOnError: true, // Don't block requests if rate limiter fails
+    skip: (req) => {
+      // Skip rate limiting for static assets
+      const url = req.raw.url || "";
+      const isStatic = url.startsWith("/assets/") || 
+                       url.startsWith("/uploads/") || 
+                       url.endsWith(".js") || 
+                       url.endsWith(".css") || 
+                       url.endsWith(".png") || 
+                       url.endsWith(".jpg") ||
+                       url === "/favicon.ico";
+      if (isStatic) {
+        console.log(`[RATE LIMIT SKIP] ${url}`);
+      }
+      return isStatic;
+    },
+    errorResponseBuilder: (req, context) => ({
+      statusCode: 429,
+      error: "Too Many Requests",
+      message: `Rate limit exceeded. Try again in ${context.after}`,
+      retryAfter: context.after,
+    }),
   });
 
   await app.register(helmet, {
     contentSecurityPolicy: false,
-    crossOriginResourcePolicy: { policy: "cross-origin" },
+    crossOriginResourcePolicy: false,
     crossOriginEmbedderPolicy: false,
   });
 
@@ -157,6 +238,7 @@ const sql = postgres(DATABASE_URL, {
   });
 
   // Статика
+  console.log(`[STATIC] Configuring uploads root: ${getUploadsRootAbs()}`);
   await app.register(fastifyStatic, {
     root: getUploadsRootAbs(),
     prefix: "/uploads/",
@@ -164,6 +246,94 @@ const sql = postgres(DATABASE_URL, {
   });
 
   const distRoot = path.resolve(__dirname, "../dist");
+  console.log(`[STATIC] Configuring dist root: ${distRoot}`);
+  
+  // Check if dist folder exists
+  const fs = await import("fs");
+  const distExists = fs.existsSync(distRoot);
+  console.log(`[STATIC] Dist folder exists: ${distExists}`);
+  
+  if (!distExists) {
+    console.error(`[STATIC] ❌ CRITICAL: Dist folder not found at ${distRoot}`);
+    console.error(`[STATIC] Current __dirname: ${__dirname}`);
+    console.error(`[STATIC] Process cwd: ${process.cwd()}`);
+    try {
+      const parentDir = path.resolve(__dirname, "..");
+      const parentFiles = fs.readdirSync(parentDir);
+      console.error(`[STATIC] Parent directory contents: ${parentFiles.join(", ")}`);
+    } catch (e) {
+      console.error(`[STATIC] Error reading parent dir: ${e.message}`);
+    }
+  }
+  
+  if (distExists) {
+    try {
+      const files = fs.readdirSync(distRoot);
+      console.log(`[STATIC] Dist folder contents: ${files.join(", ")}`);
+      const assetsPath = path.join(distRoot, "assets");
+      if (fs.existsSync(assetsPath)) {
+        const assets = fs.readdirSync(assetsPath);
+        console.log(`[STATIC] Assets folder contents (${assets.length} files)`);
+      } else {
+        console.error(`[STATIC] ❌ Assets folder not found at ${assetsPath}`);
+      }
+    } catch (err) {
+      console.error(`[STATIC] Error reading dist: ${err.message}`);
+    }
+  }
+  
+  // Explicit static serving for /assets with error handling
+  app.get("/assets/*", async (req, reply) => {
+    const assetPath = req.params["*"];
+    const fullPath = path.join(distRoot, "assets", assetPath);
+    
+    console.log(`[ASSETS] Request: ${assetPath}`);
+    console.log(`[ASSETS] Looking at: ${fullPath}`);
+    
+    try {
+      // Security: ensure we don't serve files outside assets folder
+      const assetsRoot = path.join(distRoot, "assets");
+      if (!fullPath.startsWith(assetsRoot)) {
+        console.log(`[ASSETS] 403: Path traversal attempt`);
+        return reply.status(403).send({ error: "Invalid path" });
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        console.log(`[ASSETS] 404: File not found`);
+        return reply.status(404).send({ error: "Asset not found", path: assetPath });
+      }
+
+      const stat = fs.statSync(fullPath);
+      if (!stat.isFile()) {
+        return reply.status(403).send({ error: "Not a file" });
+      }
+
+      // Set content type based on extension
+      const ext = path.extname(fullPath);
+      const contentTypes = {
+        ".js": "application/javascript",
+        ".mjs": "application/javascript",
+        ".css": "text/css",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".svg": "image/svg+xml",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+      };
+
+      const contentType = contentTypes[ext] || "application/octet-stream";
+      reply.header("Content-Type", contentType);
+      reply.header("Cache-Control", "public, max-age=31536000, immutable");
+
+      console.log(`[ASSETS] 200: Serving ${assetPath} (${contentType})`);
+      return reply.send(fs.createReadStream(fullPath));
+    } catch (err) {
+      console.error(`[ASSETS] 500 Error serving ${assetPath}:`, err.message);
+      return reply.status(500).send({ error: "Failed to serve asset", message: err.message });
+    }
+  });
+  
   await app.register(fastifyStatic, {
     root: distRoot,
     prefix: "/",
@@ -204,6 +374,18 @@ const sql = postgres(DATABASE_URL, {
   
   // Errors
   app.setErrorHandler((error, request, reply) => {
+    // Handle CORS errors gracefully - don't return 500
+    if (error.message?.includes("CORS:")) {
+      request.log.warn(
+        { route: request.url, origin: request.headers.origin },
+        "CORS rejection handled"
+      );
+      return reply.code(403).send({
+        error: "cors_rejected",
+        message: "Origin not allowed",
+      });
+    }
+
     request.log.error(
       {
         tag: "UNHANDLED_ERROR",

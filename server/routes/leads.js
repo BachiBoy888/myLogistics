@@ -6,6 +6,27 @@ import { leads, clients, pl, users } from "../db/schema.js";
  * Регистрируется в server.js: app.register(leadsRoutes, { prefix: "/api" })
  */
 
+// Разрешённые источники лидов
+const ALLOWED_SOURCES = ["website_calculator", "prolife_site", "external_site"];
+
+// Получить источник лида из заголовка или query параметра
+function getLeadSource(req) {
+  // Проверяем X-Source заголовок
+  const headerSource = req.headers["x-source"];
+  if (headerSource && ALLOWED_SOURCES.includes(headerSource)) {
+    return headerSource;
+  }
+
+  // Проверяем query параметр
+  const querySource = req.query?.source;
+  if (querySource && ALLOWED_SOURCES.includes(querySource)) {
+    return querySource;
+  }
+
+  // Fallback для обратной совместимости
+  return "website_calculator";
+}
+
 // Простая формула расчёта стоимости доставки (MVP)
 function calculateEstimate({ weight, volume, deliveryType, originCity, destinationCity }) {
   const w = Number(weight) || 0;
@@ -45,174 +66,210 @@ export default async function leadsRoutes(app) {
   // =========================
 
   // === Расчёт стоимости (публичный) ===
-  app.post("/public/calculate", {
-    schema: {
-      body: {
-        type: "object",
-        properties: {
-          weight: { type: ["number", "string"] },
-          volume: { type: ["number", "string"] },
-          originCity: { type: "string" },
-          destinationCity: { type: "string" },
-          deliveryType: { type: "string", enum: ["air", "road", "express"] },
-          cargoName: { type: ["string", "null"] },
+  app.post(
+    "/public/calculate",
+    {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: "1 minute",
         },
-        required: ["weight", "volume", "deliveryType"],
+      },
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            weight: { type: ["number", "string"] },
+            volume: { type: ["number", "string"] },
+            originCity: { type: "string" },
+            destinationCity: { type: "string" },
+            deliveryType: { type: "string", enum: ["air", "road", "express"] },
+            cargoName: { type: ["string", "null"] },
+          },
+          required: ["weight", "volume", "deliveryType"],
+        },
       },
     },
-  }, async (req, reply) => {
-    try {
-      const { weight, volume, originCity, destinationCity, deliveryType, cargoName } = req.body;
+    async (req, reply) => {
+      try {
+        const { weight, volume, originCity, destinationCity, deliveryType, cargoName } = req.body;
 
-      // Валидация входных данных
-      const w = Number(weight);
-      const v = Number(volume);
-      
-      if (!Number.isFinite(w) || w <= 0) {
-        return reply.badRequest("Вес должен быть положительным числом");
-      }
-      if (!Number.isFinite(v) || v <= 0) {
-        return reply.badRequest("Объём должен быть положительным числом");
-      }
-      if (!["air", "road", "express"].includes(deliveryType)) {
-        return reply.badRequest("Тип доставки должен быть: air, road или express");
-      }
+        // Валидация входных данных
+        const w = Number(weight);
+        const v = Number(volume);
 
-      const estimate = calculateEstimate({
-        weight: w,
-        volume: v,
-        deliveryType,
-        originCity,
-        destinationCity,
-      });
+        if (!Number.isFinite(w) || w <= 0) {
+          return reply.badRequest("Вес должен быть положительным числом");
+        }
+        if (!Number.isFinite(v) || v <= 0) {
+          return reply.badRequest("Объём должен быть положительным числом");
+        }
+        if (!["air", "road", "express"].includes(deliveryType)) {
+          return reply.badRequest("Тип доставки должен быть: air, road или express");
+        }
 
-      return {
-        ...estimate,
-        calculatorPayload: {
+        const estimate = calculateEstimate({
           weight: w,
           volume: v,
-          originCity: originCity || null,
-          destinationCity: destinationCity || null,
           deliveryType,
-          cargoName: cargoName || null,
-        },
-      };
-    } catch (err) {
-      app.log.error({ tag: "CALCULATE_ERROR", err }, "POST /public/calculate failed");
-      return reply.code(500).send({ error: "calculate_failed", message: err?.message || String(err) });
+          originCity,
+          destinationCity,
+        });
+
+        return {
+          ...estimate,
+          calculatorPayload: {
+            weight: w,
+            volume: v,
+            originCity: originCity || null,
+            destinationCity: destinationCity || null,
+            deliveryType,
+            cargoName: cargoName || null,
+          },
+        };
+      } catch (err) {
+        app.log.error({ tag: "CALCULATE_ERROR", err }, "POST /public/calculate failed");
+        return reply.code(500).send({ error: "calculate_failed", message: err?.message || String(err) });
+      }
     }
-  });
+  );
 
   // === Создание лида (публичное) ===
-  app.post("/leads", {
-    schema: {
-      body: {
-        type: "object",
-        properties: {
-          name: { type: "string", minLength: 1 },
-          phone: { type: "string", minLength: 5 },
-          company: { type: ["string", "null"] },
-          email: { type: ["string", "null"] },
-          note: { type: ["string", "null"] },
-          // Calculator fields
-          cargoName: { type: ["string", "null"] },
-          weight: { type: ["number", "string"] },
-          volume: { type: ["number", "string"] },
-          originCity: { type: ["string", "null"] },
-          destinationCity: { type: ["string", "null"] },
-          deliveryType: { type: "string", enum: ["air", "road", "express"] },
-          // Pre-calculated estimate (optional - if not provided, will be calculated)
-          estimatedPrice: { type: ["number", "string", "null"] },
-          estimatedCurrency: { type: ["string", "null"] },
-          estimatedDaysMin: { type: ["integer", "null"] },
-          estimatedDaysMax: { type: ["integer", "null"] },
+  app.post(
+    "/leads",
+    {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "1 minute",
         },
-        required: ["name", "phone", "weight", "volume", "deliveryType"],
+      },
+      schema: {
+        body: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1 },
+            phone: { type: "string", minLength: 5 },
+            company: { type: ["string", "null"] },
+            email: { type: ["string", "null"] },
+            note: { type: ["string", "null"] },
+            // Calculator fields
+            cargoName: { type: ["string", "null"] },
+            weight: { type: ["number", "string"] },
+            volume: { type: ["number", "string"] },
+            originCity: { type: ["string", "null"] },
+            destinationCity: { type: ["string", "null"] },
+            deliveryType: { type: "string", enum: ["air", "road", "express"] },
+            // Pre-calculated estimate (optional - if not provided, will be calculated)
+            estimatedPrice: { type: ["number", "string", "null"] },
+            estimatedCurrency: { type: ["string", "null"] },
+            estimatedDaysMin: { type: ["integer", "null"] },
+            estimatedDaysMax: { type: ["integer", "null"] },
+            // Honeypot field (hidden, should be empty)
+            website: { type: ["string", "null"] },
+          },
+          required: ["name", "phone", "weight", "volume", "deliveryType"],
+        },
       },
     },
-  }, async (req, reply) => {
-    try {
-      const b = req.body;
-      
-      // Валидация
-      const name = String(b.name || "").trim();
-      const phone = String(b.phone || "").trim();
-      
-      if (!name) return reply.badRequest("Имя обязательно");
-      if (!phone || phone.length < 5) return reply.badRequest("Телефон обязателен (минимум 5 символов)");
-      
-      const w = Number(b.weight);
-      const v = Number(b.volume);
-      if (!Number.isFinite(w) || w <= 0) return reply.badRequest("Вес должен быть положительным числом");
-      if (!Number.isFinite(v) || v <= 0) return reply.badRequest("Объём должен быть положительным числом");
-      
-      const deliveryType = b.deliveryType;
-      if (!["air", "road", "express"].includes(deliveryType)) {
-        return reply.badRequest("Тип доставки должен быть: air, road или express");
-      }
+    async (req, reply) => {
+      try {
+        const b = req.body;
 
-      // Расчёт или использование предоставленной оценки
-      let estimate;
-      if (b.estimatedPrice != null) {
-        estimate = {
-          estimatedPrice: Number(b.estimatedPrice),
-          estimatedCurrency: b.estimatedCurrency || "USD",
-          estimatedDaysMin: Number(b.estimatedDaysMin) || 0,
-          estimatedDaysMax: Number(b.estimatedDaysMax) || 0,
+        // 🍯 HONEYPOT: Если поле website заполнено — это бот
+        if (b.website && String(b.website).trim().length > 0) {
+          // Возвращаем фейковый успех, чтобы не раскрывать защиту
+          app.log.warn({ tag: "HONEYPOT_BLOCKED", ip: req.ip, body: b }, "Bot submission blocked by honeypot");
+          return {
+            success: true,
+            leadId: null,
+            message: "Заявка принята. Мы свяжемся с вами.",
+          };
+        }
+
+        // Валидация
+        const name = String(b.name || "").trim();
+        const phone = String(b.phone || "").trim();
+
+        if (!name) return reply.badRequest("Имя обязательно");
+        if (!phone || phone.length < 5) return reply.badRequest("Телефон обязателен (минимум 5 символов)");
+
+        const w = Number(b.weight);
+        const v = Number(b.volume);
+        if (!Number.isFinite(w) || w <= 0) return reply.badRequest("Вес должен быть положительным числом");
+        if (!Number.isFinite(v) || v <= 0) return reply.badRequest("Объём должен быть положительным числом");
+
+        const deliveryType = b.deliveryType;
+        if (!["air", "road", "express"].includes(deliveryType)) {
+          return reply.badRequest("Тип доставки должен быть: air, road или express");
+        }
+
+        // Расчёт или использование предоставленной оценки
+        let estimate;
+        if (b.estimatedPrice != null) {
+          estimate = {
+            estimatedPrice: Number(b.estimatedPrice),
+            estimatedCurrency: b.estimatedCurrency || "USD",
+            estimatedDaysMin: Number(b.estimatedDaysMin) || 0,
+            estimatedDaysMax: Number(b.estimatedDaysMax) || 0,
+          };
+        } else {
+          estimate = calculateEstimate({
+            weight: w,
+            volume: v,
+            deliveryType,
+            originCity: b.originCity,
+            destinationCity: b.destinationCity,
+          });
+        }
+
+        const calculatorSnapshot = {
+          input: {
+            weight: w,
+            volume: v,
+            originCity: b.originCity || null,
+            destinationCity: b.destinationCity || null,
+            deliveryType,
+            cargoName: b.cargoName || null,
+          },
+          result: estimate,
+          calculatedAt: new Date().toISOString(),
         };
-      } else {
-        estimate = calculateEstimate({
-          weight: w,
-          volume: v,
-          deliveryType,
-          originCity: b.originCity,
-          destinationCity: b.destinationCity,
-        });
+
+        // Определяем источник лида
+        const leadSource = getLeadSource(req);
+
+        const [lead] = await db
+          .insert(leads)
+          .values({
+            name,
+            phone,
+            company: b.company || null,
+            email: b.email || null,
+            note: b.note || null,
+            source: leadSource,
+            status: "new",
+            cargoName: b.cargoName || null,
+            weight: w.toFixed(3),
+            volume: v.toFixed(3),
+            originCity: b.originCity || null,
+            destinationCity: b.destinationCity || null,
+            deliveryType,
+            estimatedPrice: estimate.estimatedPrice.toFixed(2),
+            estimatedCurrency: estimate.estimatedCurrency,
+            estimatedDaysMin: estimate.estimatedDaysMin,
+            estimatedDaysMax: estimate.estimatedDaysMax,
+            calculatorSnapshot,
+          })
+          .returning();
+
+        return { success: true, leadId: lead.id, message: "Заявка принята. Мы свяжемся с вами." };
+      } catch (err) {
+        app.log.error({ tag: "CREATE_LEAD_ERROR", err }, "POST /leads failed");
+        return reply.code(500).send({ error: "create_lead_failed", message: err?.message || String(err) });
       }
-
-      const calculatorSnapshot = {
-        input: {
-          weight: w,
-          volume: v,
-          originCity: b.originCity || null,
-          destinationCity: b.destinationCity || null,
-          deliveryType,
-          cargoName: b.cargoName || null,
-        },
-        result: estimate,
-        calculatedAt: new Date().toISOString(),
-      };
-
-      const [lead] = await db
-        .insert(leads)
-        .values({
-          name,
-          phone,
-          company: b.company || null,
-          email: b.email || null,
-          note: b.note || null,
-          source: "website_calculator",
-          status: "new",
-          cargoName: b.cargoName || null,
-          weight: w.toFixed(3),
-          volume: v.toFixed(3),
-          originCity: b.originCity || null,
-          destinationCity: b.destinationCity || null,
-          deliveryType,
-          estimatedPrice: estimate.estimatedPrice.toFixed(2),
-          estimatedCurrency: estimate.estimatedCurrency,
-          estimatedDaysMin: estimate.estimatedDaysMin,
-          estimatedDaysMax: estimate.estimatedDaysMax,
-          calculatorSnapshot,
-        })
-        .returning();
-
-      return { success: true, leadId: lead.id, message: "Заявка принята. Мы свяжемся с вами." };
-    } catch (err) {
-      app.log.error({ tag: "CREATE_LEAD_ERROR", err }, "POST /leads failed");
-      return reply.code(500).send({ error: "create_lead_failed", message: err?.message || String(err) });
     }
-  });
+  );
 
   // =========================
   // Приватные эндпоинты (требуют авторизации)

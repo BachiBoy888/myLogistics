@@ -109,17 +109,36 @@ const sql = postgres(DATABASE_URL, {
 
   await app.register(cors, {
     origin: (origin, cb) => {
-      // Allow requests with no origin (mobile apps, curl, etc.)
+      // Allow requests with no origin (mobile apps, curl, same-origin requests)
       if (!origin) return cb(null, true);
 
-      // Check if origin is in allowlist
-      if (allowedOrigins.includes(origin)) {
+      // Trim origin to handle trailing spaces
+      const trimmedOrigin = origin.trim();
+
+      // Check if origin is in allowlist (trimmed comparison)
+      if (allowedOrigins.some((o) => o.trim() === trimmedOrigin)) {
+        return cb(null, true);
+      }
+
+      // Auto-allow same-origin requests (when origin matches the server's host)
+      // This handles Render preview deployments without explicit env config
+      const serverHost = process.env.RENDER_EXTERNAL_URL || 
+                        process.env.RAILWAY_STATIC_URL ||
+                        (process.env.NODE_ENV === 'production' ? null : null);
+      if (serverHost && trimmedOrigin === serverHost) {
+        return cb(null, true);
+      }
+
+      // Allow any origin in staging/preview if no explicit allowlist set
+      // This is a pragmatic fallback for preview deployments
+      if (ALLOWED_ORIGINS.length === 0 && 
+          (process.env.NODE_ENV === 'staging' || process.env.RENDER === '1')) {
         return cb(null, true);
       }
 
       // Log blocked origin for debugging
       app.log.warn(
-        { origin, allowedOrigins },
+        { origin: trimmedOrigin, allowedOrigins, serverHost },
         "CORS blocked request from disallowed origin"
       );
       return cb(new Error("CORS: Origin not allowed"), false);
@@ -355,6 +374,18 @@ const sql = postgres(DATABASE_URL, {
   
   // Errors
   app.setErrorHandler((error, request, reply) => {
+    // Handle CORS errors gracefully - don't return 500
+    if (error.message?.includes("CORS:")) {
+      request.log.warn(
+        { route: request.url, origin: request.headers.origin },
+        "CORS rejection handled"
+      );
+      return reply.code(403).send({
+        error: "cors_rejected",
+        message: "Origin not allowed",
+      });
+    }
+
     request.log.error(
       {
         tag: "UNHANDLED_ERROR",

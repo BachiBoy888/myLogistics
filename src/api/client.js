@@ -662,9 +662,18 @@ export async function updateLead(id, data) {
   return mutate(`/leads/${id}`, { method: "PATCH", body: data }, ["/leads", `/leads/${id}`]);
 }
 
-// Authenticated: Convert lead to PL
-export async function convertLeadToPL(id) {
-  return mutate(`/leads/${id}/convert-to-pl`, { method: "POST" }, ["/leads", `/leads/${id}`, "/pl"]);
+// Authenticated: Get convert preview
+export async function getConvertPreview(id) {
+  return req(`/leads/${id}/convert-preview`);
+}
+
+// Authenticated: Convert lead to PL (requires explicit clientResolution)
+export async function convertLeadToPL(id, clientResolution) {
+  return mutate(
+    `/leads/${id}/convert-to-pl`, 
+    { method: "POST", body: { clientResolution } }, 
+    ["/leads", `/leads/${id}`, "/pl"]
+  );
 }
 
 // Authenticated: Delete lead

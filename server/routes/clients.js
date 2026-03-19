@@ -36,11 +36,78 @@ export default async function clientsRoutes(app) {
     return rows ?? [];
   });
 
-  // === Список клиентов (всё) ===
+  // === Список клиентов с агрегированными данными ===
   app.get("/clients", async () => {
-    const rows = await db.select().from(clientsTable);
-    // rows.sort((a,b)=> (a.name||"").localeCompare(b.name||"", "ru"));
-    return rows;
+    const rows = await db.execute(sql`
+      SELECT
+        c.id,
+        c.name,
+        c.company,
+        c.phone,
+        c.phone2,
+        c.email,
+        c.notes,
+        c."created_at" as "createdAt",
+        COUNT(p.id)::int as "plCount",
+        COUNT(CASE WHEN p.status != 'closed' THEN 1 END)::int as "activePlCount",
+        CASE
+          WHEN COUNT(CASE WHEN p.status != 'closed' THEN 1 END) > 0 THEN 'active'
+          ELSE 'inactive'
+        END as "activityStatus",
+        MAX(CASE WHEN p.status = 'closed' THEN p."created_at" END) as "lastClosedPlDate"
+      FROM clients c
+      LEFT JOIN pl p ON p.client_id = c.id
+      GROUP BY c.id, c.name, c.company, c.phone, c.phone2, c.email, c.notes, c."created_at"
+      ORDER BY c.name ASC
+    `);
+
+    return rows?.rows ?? [];
+  });
+
+  // === Детали клиента с PL ===
+  app.get("/clients/:id", async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return reply.badRequest("Некорректный id");
+
+    // Получаем клиента
+    const [client] = await db
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.id, id));
+
+    if (!client) return reply.notFound("Клиент не найден");
+
+    // Получаем PL клиента
+    const pls = await db
+      .select({
+        id: plTable.id,
+        plNumber: plTable.plNumber,
+        name: plTable.name,
+        status: plTable.status,
+        weight: plTable.weight,
+        volume: plTable.volume,
+        clientPrice: plTable.clientPrice,
+        createdAt: plTable.createdAt,
+      })
+      .from(plTable)
+      .where(eq(plTable.clientId, id))
+      .orderBy(sql`${plTable.createdAt} DESC`);
+
+    // Вычисляем статус активности
+    const activePlCount = pls.filter(p => p.status !== 'closed').length;
+    const activityStatus = activePlCount > 0 ? 'active' : 'inactive';
+    const lastClosedPlDate = pls
+      .filter(p => p.status === 'closed')
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0]?.createdAt ?? null;
+
+    return {
+      ...client,
+      plCount: pls.length,
+      activePlCount,
+      activityStatus,
+      lastClosedPlDate,
+      pls,
+    };
   });
 
   // === Создание клиента ===

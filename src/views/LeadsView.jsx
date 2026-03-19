@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from "react";
-import { listLeads, getLead, updateLead, convertLeadToPL, deleteLead } from "../api/client.js";
+import { listLeads, getLead, updateLead, convertLeadToPL, deleteLead, getConvertPreview } from "../api/client.js";
 import { 
   Users, Phone, Mail, Building2, MapPin, Package, Calendar, 
   ArrowRight, CheckCircle, X, Trash2, RefreshCw, User, 
@@ -46,6 +46,10 @@ export default function LeadsView({ onOpenPL }) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Convert modal states
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [convertPreview, setConvertPreview] = useState(null);
 
   async function loadLeads(showLoading = true) {
     try {
@@ -97,21 +101,48 @@ export default function LeadsView({ onOpenPL }) {
     setUpdatingStatus(false);
   }
 
-  async function handleConvertToPL() {
+  async function openConvertModal() {
     if (!detailLead) return;
     
     setConverting(true);
     try {
-      const result = await convertLeadToPL(detailLead.id);
+      const preview = await getConvertPreview(detailLead.id);
+      
+      // Check if already converted
+      if (preview.counts?.isAlreadyConverted) {
+        alert("Лид уже был конвертирован ранее");
+        setConverting(false);
+        return;
+      }
+      
+      setConvertPreview(preview);
+      setShowConvertModal(true);
+    } catch (err) {
+      alert("Ошибка получения данных: " + err.message);
+    }
+    setConverting(false);
+  }
+
+  async function handleConvertWithChoice(mode, clientData) {
+    if (!detailLead) return;
+    
+    setConverting(true);
+    try {
+      let clientResolution;
+      if (mode === 'existing') {
+        clientResolution = { mode: 'existing', clientId: clientData.id };
+      } else {
+        clientResolution = { mode: 'new', client: clientData };
+      }
+      
+      const result = await convertLeadToPL(detailLead.id, clientResolution);
       setDetailLead(result.lead);
       setLeads(prev => prev.map(l => l.id === result.lead.id ? { ...l, status: "converted", convertedPlId: result.pl.id } : l));
+      setShowConvertModal(false);
+      setConvertPreview(null);
       alert(`Лид конвертирован в PL ${result.pl.plNumber}`);
     } catch (err) {
-      if (err.message?.includes("ALREADY_CONVERTED")) {
-        alert("Лид уже был конвертирован ранее");
-      } else {
-        alert("Ошибка конвертации: " + err.message);
-      }
+      alert("Ошибка конвертации: " + err.message);
     }
     setConverting(false);
   }
@@ -497,14 +528,14 @@ export default function LeadsView({ onOpenPL }) {
 
                       <div className="border-t border-slate-700 pt-6">
                         <button
-                          onClick={handleConvertToPL}
+                          onClick={openConvertModal}
                           disabled={converting}
                           className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-semibold py-3 rounded-xl transition-colors"
                         >
                           {converting ? (
                             <>
                               <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                              Конвертация...
+                              Загрузка...
                             </>
                           ) : (
                             <>
@@ -514,7 +545,7 @@ export default function LeadsView({ onOpenPL }) {
                           )}
                         </button>
                         <p className="text-xs text-slate-500 mt-2 text-center">
-                          При конвертации будет создан клиент (если не существует) и новый PL
+                          При конвертации будет создан клиент и новый PL
                         </p>
                       </div>
                     </>
@@ -554,6 +585,115 @@ export default function LeadsView({ onOpenPL }) {
               >
                 {deleting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
                 Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Convert Selection Modal */}
+      {showConvertModal && convertPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-700 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-white">Конвертация в PL</h3>
+                <p className="text-sm text-slate-400">Выберите клиента для конвертации</p>
+              </div>
+              <button
+                onClick={() => setShowConvertModal(false)}
+                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Lead info summary */}
+              <div className="bg-slate-900/50 rounded-xl p-4">
+                <div className="text-sm text-slate-400 mb-1">Лид</div>
+                <div className="font-medium text-white">{convertPreview.lead?.name}</div>
+                <div className="text-sm text-slate-300 flex items-center gap-2 mt-1">
+                  <Phone className="w-4 h-4 text-slate-500" />
+                  {convertPreview.lead?.phone}
+                </div>
+              </div>
+
+              {/* Existing Link */}
+              {convertPreview.existingLink && (
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4">
+                  <div className="text-sm text-blue-400 mb-2">Уже связан с клиентом</div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-medium text-white">{convertPreview.existingLink.name}</div>
+                      <div className="text-sm text-slate-400">{convertPreview.existingLink.phone}</div>
+                    </div>
+                    <button
+                      onClick={() => handleConvertWithChoice('existing', { id: convertPreview.existingLink.id })}
+                      disabled={converting}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                    >
+                      Выбрать
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Phone Matches */}
+              {convertPreview.exactPhoneMatches?.length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-sm text-slate-400">
+                    Найдены совпадения по телефону ({convertPreview.exactPhoneMatches.length})
+                  </div>
+                  {convertPreview.exactPhoneMatches.map(client => (
+                    <div key={client.id} className="flex items-center justify-between bg-slate-700/30 rounded-xl p-4">
+                      <div>
+                        <div className="font-medium text-white">{client.name}</div>
+                        <div className="text-sm text-slate-400">{client.phone}</div>
+                      </div>
+                      <button
+                        onClick={() => handleConvertWithChoice('existing', { id: client.id })}
+                        disabled={converting}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white text-sm font-medium rounded-lg transition-colors"
+                      >
+                        Выбрать
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Create New Client */}
+              <div className="border-t border-slate-700 pt-4">
+                <button
+                  onClick={() => handleConvertWithChoice('new', convertPreview.proposedNewClient)}
+                  disabled={converting}
+                  className="w-full py-4 border-2 border-dashed border-slate-600 hover:border-emerald-500 disabled:border-slate-700 text-slate-300 hover:text-emerald-400 disabled:text-slate-500 rounded-xl transition-colors flex flex-col items-center gap-2"
+                >
+                  <span className="font-medium">+ Создать нового клиента</span>
+                  <span className="text-sm opacity-70">
+                    {convertPreview.proposedNewClient?.name} • {convertPreview.proposedNewClient?.phone}
+                  </span>
+                </button>
+              </div>
+
+              {/* Summary counts */}
+              {convertPreview.counts && (
+                <div className="text-xs text-slate-500 text-center">
+                  Всего клиентов: {convertPreview.counts.totalClients} • 
+                  Совпадений: {convertPreview.counts.exactPhoneMatchCount}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-700">
+              <button
+                onClick={() => setShowConvertModal(false)}
+                className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors"
+              >
+                Отмена
               </button>
             </div>
           </div>

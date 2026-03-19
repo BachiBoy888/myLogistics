@@ -196,19 +196,19 @@ export default function LeadsView({ onOpenPL }) {
             <Users className="w-5 h-5 text-white" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-white">Лиды</h1>
-              <button
-                onClick={handleRefresh}
-                disabled={isRefreshing}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
-                title="Обновить"
-              >
-                <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
-              </button>
-            </div>
-            <p className="text-sm text-slate-400">Заявки из калькулятора</p>
-          </div>
+  <div className="flex items-center gap-2">
+    <h1 className="text-xl font-bold text-white">Мои Лиды</h1>
+    <button
+      onClick={handleRefresh}
+      disabled={isRefreshing}
+      className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors disabled:opacity-50"
+      title="Обновить"
+    >
+      <RefreshCw className={`w-4 h-4 ${isRefreshing ? "animate-spin" : ""}`} />
+    </button>
+  </div>
+  <p className="text-sm text-slate-400">Заявки из калькулятора</p>
+</div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -330,10 +330,10 @@ export default function LeadsView({ onOpenPL }) {
                           <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
                             <DeliveryIcon className="w-3 h-3" />
                             {DELIVERY_LABELS[lead.deliveryType] || lead.deliveryType}
-                            {lead.originCity && lead.destinationCity && (
+                            {lead.originCity && (
                               <>
                                 <MapPin className="w-3 h-3 ml-1" />
-                                {lead.originCity} → {lead.destinationCity}
+                                {lead.originCity}
                               </>
                             )}
                           </div>
@@ -440,10 +440,10 @@ export default function LeadsView({ onOpenPL }) {
                         <div className="text-slate-400">
                           {DELIVERY_LABELS[detailLead.deliveryType] || detailLead.deliveryType}
                         </div>
-                        {(detailLead.originCity || detailLead.destinationCity) && (
+                        {(detailLead.originCity) && (
                           <div className="text-slate-400 flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
-                            {detailLead.originCity || "—"} → {detailLead.destinationCity || "—"}
+                            {detailLead.originCity}
                           </div>
                         )}
                       </div>
@@ -510,7 +510,7 @@ export default function LeadsView({ onOpenPL }) {
                         <h3 className="text-sm font-medium text-slate-400 mb-3">Изменить статус</h3>
                         <div className="flex flex-wrap gap-2">
                           {Object.entries(STATUS_CONFIG)
-                            .filter(([key]) => key !== 'converted')
+                            .filter(([key]) => key !== "converted")
                             .map(([key, config]) => (
                             <button
                               key={key}

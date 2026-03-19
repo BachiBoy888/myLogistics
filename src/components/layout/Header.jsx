@@ -8,7 +8,7 @@ export default function Header({ mode, onChangeMode, user, onLogout, onRefresh, 
   const tabs = [
     { key: "cargo", label: "Мои грузы", icon: Package },
     { key: "clients", label: "Мои клиенты", icon: Users },
-    { key: "leads", label: "Лиды", icon: Target },
+    { key: "leads", label: "Мои Лиды", icon: Target },
     { key: "analytics", label: "Аналитика", icon: BarChart3 },
   ];
 

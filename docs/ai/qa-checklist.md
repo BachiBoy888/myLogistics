@@ -1,47 +1,223 @@
-# QA Checklist — myLogistics
+# QA CHECKLIST — MYLOGISTICS (FINAL)
 
-Этот чеклист используется для проверки системы после изменений.
+This checklist is MANDATORY before merging any Pull Request.
 
----
+Goal:
+- system stability
+- data integrity
+- architecture safety
+- correct product behavior
 
-# Общие проверки
-
-После любого изменения необходимо проверить:
-
-1. Приложение открывается.
-2. Основные страницы загружаются.
-3. Нет ошибок в console браузера.
-4. API не возвращает 500 ошибки.
-
----
-
-# Проверки интерфейса
-
-1. Страницы открываются без ошибок.
-2. Кнопки кликаются.
-3. Формы сохраняются.
-4. UI элементы отображаются корректно.
+If any check is not verified:
+→ mark as UNVERIFIED  
+→ DO NOT MERGE
 
 ---
 
-# Проверки данных
+# FINAL VERIFICATION REPORT (REQUIRED)
 
-1. Данные корректно сохраняются в базе.
-2. Данные корректно отображаются после обновления страницы.
-3. Нет ошибок загрузки данных.
+Must be filled before merge:
+
+Backend parse: OK / UNVERIFIED  
+Backend startup: OK / UNVERIFIED  
+API routes: OK / UNVERIFIED  
+Database consistency: OK / UNVERIFIED  
+Transaction safety: OK / UNVERIFIED  
+Frontend network behavior: OK / UNVERIFIED  
+Cargo card rule: OK / UNVERIFIED  
+Tabs request rule: OK / UNVERIFIED  
+Lead conversion: OK / UNVERIFIED  
+Concurrency: OK / UNVERIFIED  
+Data integrity: OK / UNVERIFIED  
+CI status: OK / UNVERIFIED  
+Preview deployment: OK / UNVERIFIED  
 
 ---
 
-# Проверки backend
+# SYSTEM CHECKS
 
-1. API endpoints отвечают корректно.
-2. Нет необработанных ошибок.
-3. Миграции базы данных выполняются успешно.
+## Backend Startup
+
+- [ ] backend starts without errors
+- [ ] no runtime exceptions
+- [ ] routes are registered
 
 ---
 
-# Проверки после деплоя
+## API Routes
 
-1. Preview deployment открывается.
-2. Основные страницы работают.
-3. Нет критических ошибок в логах.
+- [ ] endpoints respond correctly
+- [ ] correct HTTP status codes
+- [ ] no silent failures
+
+---
+
+## Database Consistency
+
+- [ ] migrations applied
+- [ ] schema correct
+- [ ] queries return expected data
+
+---
+
+## Transaction Safety
+
+- [ ] multi-entity operations use transactions
+- [ ] no partial updates possible
+
+---
+
+# FRONTEND RULES
+
+## Network Behavior
+
+- [ ] no unexpected API calls
+- [ ] no N+1 patterns
+
+---
+
+## Cargo Card Rule
+
+Opening cargo card MUST trigger:
+
+GET /api/pl/:id
+
+- [ ] exactly one request
+
+---
+
+## Tabs Rule
+
+- [ ] no additional API calls on tab switch
+- [ ] unless explicitly required
+
+---
+
+## State Consistency
+
+- [ ] UI reloads state after mutation
+- [ ] no optimistic fake state
+
+---
+
+## UI Stability
+
+- [ ] no crashes
+- [ ] no console errors
+
+---
+
+# DOMAIN CHECKS — LEAD CONVERSION (CRITICAL)
+
+## Preview Endpoint
+
+- [ ] returns 200 always
+- [ ] returns lead data
+- [ ] returns suggestions
+- [ ] returns match arrays
+
+---
+
+## Already Converted
+
+- [ ] isAlreadyConverted = true
+- [ ] convertedPlId present
+
+---
+
+## Conversion Logic
+
+### Mode = existing
+
+- [ ] valid clientId → PL created
+- [ ] invalid → 404
+- [ ] missing → 400
+
+### Mode = new
+
+- [ ] new client created
+- [ ] PL created
+- [ ] lead updated
+
+---
+
+## Explicit Behavior
+
+- [ ] no auto client linking
+- [ ] no silent decisions
+
+---
+
+## Phone Matching
+
+- [ ] normalization works
+- [ ] formats match same client
+- [ ] invalid phone handled safely
+
+---
+
+## Concurrency
+
+- [ ] parallel requests handled
+- [ ] no duplicate PLs
+- [ ] second request returns 409
+
+---
+
+## Transaction Integrity
+
+- [ ] no orphan clients
+- [ ] no orphan PLs
+- [ ] rollback on failure
+
+---
+
+## Data Consistency
+
+- [ ] PL always has valid clientId
+- [ ] lead cannot convert twice
+- [ ] no inconsistent states
+
+---
+
+# REGRESSION CHECKS
+
+- [ ] PL creation works
+- [ ] consolidation logic intact
+- [ ] documents unaffected
+- [ ] kanban flow intact
+
+---
+
+# PERFORMANCE
+
+- [ ] no full-table scans
+- [ ] queries optimized
+- [ ] response time acceptable
+
+---
+
+# CI & DEPLOYMENT
+
+## CI
+
+- [ ] build passes
+- [ ] tests pass
+
+## Preview
+
+- [ ] app loads
+- [ ] feature works
+- [ ] no runtime errors
+
+---
+
+# FINAL RULE
+
+If ANY critical check fails:
+
+→ DO NOT MERGE
+
+If ANY item is UNVERIFIED:
+
+→ DO NOT CLAIM COMPLETION

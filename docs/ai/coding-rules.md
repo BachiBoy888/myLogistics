@@ -15,9 +15,27 @@ These rules are mandatory.
 
 If code and these rules appear to conflict, investigate first before changing behavior.
 
----
 
+---------------------------------------------------------------------
+RULE ENFORCEMENT
+---------------------------------------------------------------------
+
+All rules in this document are ACTIVE during task execution.
+
+Agents MUST:
+
+- apply these rules during implementation
+- not treat this document as informational
+- treat violations as critical errors
+
+If a rule conflicts with a task:
+
+→ STOP and investigate before proceeding
+
+
+---------------------------------------------------------------------
 # 1. CORE PRINCIPLE
+---------------------------------------------------------------------
 
 Backend is the SINGLE SOURCE OF TRUTH.
 
@@ -27,9 +45,10 @@ All business logic must live in the backend.
 
 Frontend may assist user interaction, but must not decide business outcomes.
 
----
 
+---------------------------------------------------------------------
 # 2. FRONTEND RULES
+---------------------------------------------------------------------
 
 Frontend MUST NOT:
 
@@ -50,9 +69,10 @@ await refreshPLs()
 
 Frontend must always render backend-confirmed state.
 
----
 
+---------------------------------------------------------------------
 # 3. NETWORK RULES
+---------------------------------------------------------------------
 
 Opening a cargo card must trigger a controlled request flow centered on:
 
@@ -66,9 +86,10 @@ Frontend must avoid:
 - repeated fetches for the same resource
 - request patterns that create hidden N+1 behavior
 
----
 
+---------------------------------------------------------------------
 # 4. BACKEND RULES
+---------------------------------------------------------------------
 
 Backend owns all business logic.
 
@@ -84,9 +105,10 @@ Backend routes must not depend on frontend assumptions.
 
 Critical workflows must remain backend-controlled.
 
----
 
+---------------------------------------------------------------------
 # 5. IDENTITY / CONVERSION RULES
+---------------------------------------------------------------------
 
 For lead → client → PL conversion and other identity-sensitive flows:
 
@@ -106,9 +128,10 @@ Phone match is not proof of identity.
 
 Duplicate clients are safer than incorrect client linkage.
 
----
 
+---------------------------------------------------------------------
 # 6. DATABASE / TRANSACTION RULES
+---------------------------------------------------------------------
 
 Any operation that modifies multiple related tables MUST run inside a database transaction.
 
@@ -120,9 +143,10 @@ Examples:
 
 The system must never leave the database in a partially updated state.
 
----
 
+---------------------------------------------------------------------
 # 7. CONCURRENCY RULES
+---------------------------------------------------------------------
 
 When a workflow can be triggered multiple times concurrently, backend must protect against duplicate or conflicting writes.
 
@@ -134,9 +158,10 @@ For critical conversion flows:
 
 No critical flow may rely on “unlikely concurrency”.
 
----
 
+---------------------------------------------------------------------
 # 8. MATCHING RULES
+---------------------------------------------------------------------
 
 When phone matching or similar heuristics are used:
 
@@ -147,9 +172,10 @@ When phone matching or similar heuristics are used:
 
 Matching exists to assist review, not replace explicit confirmation.
 
----
 
+---------------------------------------------------------------------
 # 9. MIGRATION SAFETY
+---------------------------------------------------------------------
 
 Database schema changes must follow safe migration practices:
 
@@ -159,9 +185,10 @@ Database schema changes must follow safe migration practices:
 - migration scripts should be reversible when feasible
 - transitional compatibility paths must be documented
 
----
 
+---------------------------------------------------------------------
 # 10. ARCHITECTURE SAFETY
+---------------------------------------------------------------------
 
 The following are prohibited unless explicitly justified and reviewed:
 
@@ -175,9 +202,10 @@ The following are prohibited unless explicitly justified and reviewed:
 
 Existing features should be extended carefully, not duplicated blindly.
 
----
 
+---------------------------------------------------------------------
 # 11. LEGACY / TRANSITION RULES
+---------------------------------------------------------------------
 
 If a legacy compatibility path still exists:
 
@@ -186,9 +214,10 @@ If a legacy compatibility path still exists:
 - it must not silently become default behavior again
 - new logic must be built on the explicit flow, not on the legacy fallback
 
----
 
+---------------------------------------------------------------------
 # 12. INVESTIGATION-FIRST RULE
+---------------------------------------------------------------------
 
 Bug fixing and sensitive refactoring must follow this sequence:
 
@@ -204,9 +233,10 @@ DO NOT IMPLEMENT A FIX.
 
 Guessing is prohibited.
 
----
 
+---------------------------------------------------------------------
 # 13. ACCEPTANCE CRITERIA REQUIREMENT
+---------------------------------------------------------------------
 
 All implementation prompts must include an Acceptance Criteria section.
 
@@ -214,9 +244,10 @@ Tasks without Acceptance Criteria must not be implemented.
 
 This is mandatory.
 
----
 
+---------------------------------------------------------------------
 # 14. COMPLETION HONESTY RULE
+---------------------------------------------------------------------
 
 Do not claim a task is fully complete unless verification actually happened.
 
@@ -226,12 +257,89 @@ UNVERIFIED
 
 Premature success claims are prohibited.
 
----
 
+---------------------------------------------------------------------
 # 15. FINAL RULE
+---------------------------------------------------------------------
 
 If a problem cannot be reproduced and current behavior cannot be confirmed:
 
 DO NOT IMPLEMENT A FIX.
 
 Investigate further first.
+
+
+---------------------------------------------------------------------
+DOCUMENTATION UPDATE RULE (MANDATORY)
+---------------------------------------------------------------------
+
+Documentation is part of the system and must be updated alongside code changes.
+
+After any implementation task, the agent MUST:
+
+1. Update:
+   - current-product-state.md
+   - system-map.md (ONLY if architecture changed)
+
+2. Scope of updates:
+   - ONLY modify sections affected by the task
+   - DO NOT rewrite entire files
+
+3. Change marking (MANDATORY):
+   Each update must be clearly labeled:
+
+   - Added
+   - Updated
+   - Deprecated
+
+4. Accuracy requirement:
+   - reflect ONLY what was actually implemented
+   - DO NOT assume behavior not present in code
+
+5. Separation rule:
+   - implementation and documentation updates MAY be done in same task
+   - BUT documentation must be based on final implemented state
+
+Failure to update documentation = incomplete task
+
+
+---------------------------------------------------------------------
+SCOPE CONTROL RULE
+---------------------------------------------------------------------
+
+Agents MUST NOT:
+
+- modify unrelated parts of the system
+- refactor beyond task scope
+- introduce improvements not required by the task
+
+All changes must be:
+
+- minimal
+- targeted
+- justified by the task
+
+Over-engineering is prohibited.
+
+
+---------------------------------------------------------------------
+TASK COMPLETION GATE (STRICT)
+---------------------------------------------------------------------
+
+A task is considered COMPLETE only if ALL of the following are satisfied:
+
+1. Implementation is done
+2. Acceptance Criteria are satisfied
+3. Documentation is updated according to DOCUMENTATION UPDATE RULE
+
+If documentation is NOT updated:
+
+→ The task MUST be considered INCOMPLETE
+
+Agents are NOT allowed to:
+
+- skip documentation updates
+- postpone documentation updates
+- claim completion without documentation updates
+
+Failure to comply = task failure

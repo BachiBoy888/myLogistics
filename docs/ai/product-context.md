@@ -1,243 +1,404 @@
-# PRODUCT CONTEXT — MYLOGISTICS
+# PRODUCT CONTEXT — MYLOGISTICS (FINAL)
 
-This document explains the business context and product logic of the myLogistics system.
-It is intended for developers and AI coding agents so they understand **why** the system exists
-and how users interact with it.
+This document defines the business context, product logic, and core principles of the myLogistics system.
 
-This document focuses on **product behavior**, not low‑level technical implementation.
+It is intended for developers and AI coding agents.
 
+This is a PRODUCT-LEVEL document.
+It explains how the system MUST behave and WHY.
 
----------------------------------------------------------------------
-PRODUCT PURPOSE
+---
 
-myLogistics is a logistics operations platform used to manage cargo shipments
-between suppliers, warehouses, and destination countries.
+# PRODUCT OVERVIEW
 
-The system helps logistics teams manage:
+MyLogistics is a logistics operations platform used to manage cargo shipments from initial customer request to final delivery.
 
-- cargo shipments
-- packing lists (PL)
+The system covers the full lifecycle:
+
+Lead → Client → PL → Consolidation → Delivery
+
+The platform helps teams manage:
+
+- incoming customer requests (leads)
+- client identity
+- cargo shipments (PL)
 - shipment consolidations
 - operational documents
-- workflow stages of cargo movement
-- comments and operational notes
+- logistics workflow stages
+- comments and operational coordination
 
+---
 
----------------------------------------------------------------------
-MAIN USERS
+# CORE PRODUCT PHILOSOPHY
 
-Primary users of the system are:
+❗ Correctness > Automation
 
-Logistics Operators
-They manage cargo records and track shipment progress.
+The system MUST prioritize data correctness over convenience.
 
-Operations Managers
-They monitor consolidations and shipment capacity.
+Critical risks:
 
-Document Specialists
-They verify shipping documents such as invoices and packing lists.
+- incorrect client linkage
+- mixed ownership of cargo
+- financial inconsistencies
+- broken shipment tracking
 
-Warehouse Coordinators
-They track cargo readiness for loading.
+Therefore:
 
+- NO implicit decisions
+- NO automatic client linking
+- NO hidden system behavior
+- ALL critical actions must be explicit
 
----------------------------------------------------------------------
-CORE BUSINESS OBJECTS
+System may assist users, but MUST NOT decide for them.
 
+---
 
-Packing List (PL)
+# SYSTEM BOUNDARIES
 
-A PL represents a **single cargo shipment** belonging to a client.
+Backend is the SINGLE SOURCE OF TRUTH.
 
-Typical attributes include:
+Frontend MUST NOT:
+
+- mutate core data without backend confirmation
+- perform optimistic updates for critical operations
+- infer business decisions
+- hide backend inconsistencies
+
+All state transitions must be validated by backend.
+
+---
+
+# MAIN USERS
+
+- Logistics Operators — manage cargo and statuses
+- Operations Managers — manage consolidations and capacity
+- Document Specialists — verify documents
+- Warehouse Coordinators — track readiness for shipment
+
+---
+
+# CORE BUSINESS ENTITIES
+
+## Lead (NEW)
+
+Lead = incoming request before it becomes operational cargo.
+
+Sources:
+
+- website form
+- WhatsApp / phone
+- sales input
+- manual entry
+
+Lead is NOT yet a confirmed client.
+
+---
+
+## Client
+
+Client is the TRUE owner of cargo.
+
+Rules:
+
+- every PL MUST belong to a client
+- client identity MUST be correct
+- duplicate clients are ACCEPTABLE (MVP)
+- incorrect linking is NOT acceptable
+
+---
+
+## Packing List (PL)
+
+PL is the main operational unit.
+
+Represents:
+
+- a cargo shipment
+- financial calculation base
+- logistics tracking entity
+
+Typical attributes:
 
 - client
 - cargo name
 - weight
 - volume
 - number of places
-- logistics status
+- status
 - attached documents
 
-PLs are the **central operational unit** in the system.
+PL can only be created AFTER client is explicitly determined.
 
+---
 
-Consolidation
+## Consolidation
 
-A consolidation groups multiple PLs into a single shipment.
+Consolidation groups multiple PLs into one shipment.
 
-This allows the logistics company to:
+Used for:
 
-- combine cargo from different clients
-- manage container capacity
-- track shared shipment stages
-
-A consolidation typically includes:
-
-- shipment status
-- capacity limits
-- associated PLs
-- operational expenses
-
-
-Documents
-
-Each PL may have associated documents.
-
-Examples include:
-
-- invoice
-- packing list
-- inspection reports
-- customs pre‑declaration
-
-Documents are required for logistics and customs operations.
-
-
----------------------------------------------------------------------
-LOGISTICS WORKFLOW
-
-Cargo moves through multiple operational stages.
-
-Typical stages include:
-
-draft
-awaiting_docs
-awaiting_load
-to_load
-to_customs
-released
-kg_customs
-collect_payment
-closed
-
-These stages represent the real-world logistics process:
-
-1. cargo created
-2. documents collected
-3. cargo prepared for loading
-4. shipment exported
-5. customs processing
-6. delivery and payment completion
-
-The Kanban board visualizes this workflow.
-
-
----------------------------------------------------------------------
-KANBAN WORKFLOW
-
-The main user interface is a **Kanban board**.
-
-Each column represents a cargo stage.
-
-Users move cargo cards between stages using drag‑and‑drop.
-
-Example flow:
-
-User drags a PL to a new stage
-↓
-Frontend sends update request
-↓
-Backend validates status transition
-↓
-Database updates cargo status
-↓
-Frontend refreshes state
-
-
----------------------------------------------------------------------
-CONSOLIDATION LOGIC
-
-Consolidations represent grouped shipments.
-
-Benefits of consolidation:
-
-- shared transport cost
 - container optimization
+- shared transport cost
 - unified shipment tracking
 
-When a consolidation changes status,
-all PLs inside the consolidation typically move to the same stage.
+Attributes:
 
-This ensures consistent shipment tracking.
+- status
+- capacity limits
+- list of PLs
+- operational expenses
 
+---
 
----------------------------------------------------------------------
-DOCUMENT MANAGEMENT
+## Documents
 
-Documents are critical for logistics operations.
+Documents are CRITICAL for logistics operations.
 
-Two main document categories exist:
+Two types:
 
-Required documents
-These are mandatory documents needed for shipment processing.
+### Required documents
 
-Examples:
+Mandatory for shipment processing:
 
 - invoice
 - packing list
 - inspection report
-- customs pre‑declaration
+- customs pre-declaration
 
-Additional documents
-Users may upload extra files such as:
+### Additional documents
+
+Optional:
 
 - photos
 - contracts
-- special instructions
-- internal documents
+- notes
+- internal files
 
+Shipment MUST NOT proceed without required documents (where applicable).
 
----------------------------------------------------------------------
-COMMENTS AND EVENTS
+---
 
-Operators can add comments to PL records.
+# CRITICAL PRODUCT FLOWS
 
-These comments allow teams to:
+## 1. Lead → Client → PL (CRITICAL FLOW)
 
-- document issues
-- leave operational notes
-- coordinate between departments
+This is the MOST sensitive part of the system.
 
-Timeline events track system activity including:
+### Old behavior (REMOVED)
 
-- document uploads
+- auto-matching client by phone
+- implicit client reuse
+
+Result:
+- data corruption
+- mixed clients
+- hard-to-debug issues
+
+---
+
+### New behavior (MANDATORY)
+
+User MUST explicitly choose:
+
+1. Select existing client
+2. Create new client
+
+System may provide:
+
+- phone-based suggestions
+- possible matches
+
+BUT:
+
+- system NEVER auto-selects client
+- system NEVER auto-links entities
+
+---
+
+## Phone Matching
+
+Phone is used ONLY as a hint.
+
+Phones may exist in different formats:
+
+- 0220447446
+- +996220447446
+- 996220447446
+- 220447446
+
+System normalizes phone values for comparison.
+
+BUT:
+
+- matching is NOT reliable
+- MUST NOT be used for automatic decisions
+
+---
+
+## 2. PL Lifecycle (Logistics Workflow)
+
+Cargo moves through real-world logistics stages:
+
+- draft
+- awaiting_docs
+- awaiting_load
+- to_load
+- to_customs
+- released
+- kg_customs
+- collect_payment
+- closed
+
+These stages represent:
+
+- cargo creation
+- document collection
+- warehouse preparation
+- export
+- customs processing
+- delivery and payment
+
+---
+
+## 3. Consolidation Synchronization (CRITICAL RULE)
+
+When a consolidation changes status:
+
+→ ALL PLs inside MUST reflect consistent stage
+
+System MUST ensure:
+
+- no divergence between PL and consolidation
+- consistent shipment tracking
+
+---
+
+# KANBAN WORKFLOW (UI MODEL)
+
+Main interface: Kanban board.
+
+- each column = logistics stage
+- each card = PL
+
+User action:
+
+Drag PL → new column
+
+System flow:
+
+User action  
+↓  
+Frontend sends request  
+↓  
+Backend validates transition  
+↓  
+Database updates status  
+↓  
+Frontend refreshes state
+
+Frontend MUST NOT:
+
+- assume success
+- update state without backend confirmation
+
+---
+
+# DOCUMENT MANAGEMENT RULES
+
+- required documents must be visible
+- missing documents must block progress where needed
+- documents must be linked to correct PL
+- document status must be transparent to user
+
+---
+
+# COMMENTS AND EVENTS
+
+Users can add comments to PL:
+
+Used for:
+
+- issue tracking
+- coordination
+- operational notes
+
+System tracks events:
+
 - status changes
+- document uploads
 - consolidation updates
 - comments
 
+---
 
----------------------------------------------------------------------
-BUSINESS GOAL OF THE SYSTEM
+# UX PRINCIPLES
 
-The goal of myLogistics is to:
+- show suggestions, NOT decisions
+- make critical actions explicit
+- avoid hidden automation
+- prefer clarity over speed
+- prevent silent data corruption
 
-- centralize cargo operations
-- reduce manual tracking
-- improve visibility of shipment progress
-- ensure document completeness
-- simplify logistics workflows
+---
 
-The system acts as the **operational control center**
-for managing cargo shipments and logistics processes.
+# MVP TRADEOFFS
 
+ACCEPTED:
 
----------------------------------------------------------------------
-IMPORTANT PRODUCT PRINCIPLES
+- duplicate clients may exist
+- imperfect phone matching
+- manual resolution of ambiguity
 
-The system must:
+NOT ACCEPTED:
 
-- reflect real logistics workflow
-- maintain accurate cargo state
-- ensure documents are properly attached
-- allow operators to track shipment progress clearly
-- keep consolidations and cargo status synchronized
+- incorrect client linkage
+- silent system decisions
+- hidden data mutations
 
+---
 
----------------------------------------------------------------------
-PURPOSE OF THIS DOCUMENT
+# FUTURE EVOLUTION (PHASE 2+)
 
-This file provides **product-level understanding** of the system.
+- client deduplication / merge
+- stronger identity model (email, company ID)
+- DB-level phone normalization
+- smart suggestions (AI/heuristics)
+- automation AFTER explicit confirmation
 
-Developers and AI agents must understand this context before
-making architectural or feature changes.
+---
+
+# FINAL PRODUCT MISSION
+
+The system is not just moving cargo.
+
+It manages:
+
+- ownership
+- responsibility
+- financial accountability
+- operational correctness
+
+Therefore:
+
+❗ Explicitness > Convenience  
+❗ Correctness > Speed  
+❗ Transparency > Automation
+
+---
+
+# PURPOSE OF THIS DOCUMENT
+
+This file defines how the system MUST behave.
+
+All developers and AI agents MUST follow this logic when:
+
+- implementing features
+- modifying flows
+- designing UX
+- writing backend logic
+
+Violating these principles will lead to:
+
+- data corruption
+- broken logistics processes
+- financial risk

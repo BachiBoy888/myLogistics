@@ -1,290 +1,339 @@
-# SYSTEM MAP — MYLOGISTICS
+# SYSTEM MAP — MYLOGISTICS (FINAL)
 
-This document is a high-level architecture map of the myLogistics system.
+This document is a high-level architecture and navigation map of the myLogistics system.
 
 Its purpose is to help developers and AI coding agents quickly understand:
 
 - where core logic lives
 - how frontend actions map to backend routes
 - how backend routes map to database operations
-- which files are likely involved in a given feature or bug
+- which files are likely involved in a feature or bug
 - how key workflows move through the system
 
 This file is a navigation aid.
-It does not replace direct code inspection.
+It does NOT replace direct code inspection.
 
-If the code and this file ever disagree, the code is the source of truth.
+If code and this file disagree, code is the source of truth.
 
+---
 
----------------------------------------------------------------------
-1. SYSTEM LAYERS
+# 1. SYSTEM OVERVIEW
 
-Frontend
+MyLogistics manages the full operational lifecycle:
+
+Lead → Client → PL → Consolidation → Delivery
+
+The system includes:
+
+- lead intake
+- client resolution
+- PL creation and logistics tracking
+- consolidation management
+- document handling
+- comments and timeline events
+- operational workflow via Kanban UI
+
+---
+
+# 2. SYSTEM LAYERS
+
+## Frontend
 - React
 - Vite
 - Tailwind
 - Kanban UI
-- Cargo card / PL card UI
+- Lead conversion UI
+- Cargo / PL card UI
 - Consolidation UI
+- Documents UI
 
-Backend
+## Backend
 - Fastify routes
 - validation
 - business logic
-- transaction handling
+- transactions
 - file handling
+- phone normalization helpers
 
-Database
+## Database
 - PostgreSQL
 - Drizzle ORM
 - canonical system state
 
-File storage
+## File Storage
 - local filesystem
 - uploads/pl/{plId}/...
 
+---
 
----------------------------------------------------------------------
-2. CORE DOMAIN OBJECTS
+# 3. CORE DOMAIN OBJECTS
 
-PL (Packing List)
-Represents a cargo shipment.
+## Lead
+Incoming customer request before operational cargo exists.
 
-Main properties:
-- id
-- plNumber
-- status
-- clientId
-- name
-- weight
-- volume
-- places
-- calculator fields
-- responsible user fields
+## Client
+The real owner of cargo.
 
-Consolidation
-Represents a grouped shipment containing multiple PLs.
+## PL (Packing List)
+Main operational shipment entity.
 
-Main properties:
-- id
-- consNumber
-- status
-- title
-- capacityKg
-- capacityCbm
-- machineCost
+## Consolidation
+Grouped shipment containing multiple PLs.
 
-Document
-Represents a file attached to a PL.
+## Document
+File attached to a PL.
 
-Main properties:
-- id
-- plId
-- docType
-- name
-- fileName
-- storagePath
-- status
+## Comment
+Operator comment on a PL.
 
-Comment
-Represents an operator comment on a PL.
+## Event
+Timeline history entry for a PL.
 
-Event
-Represents timeline history for a PL.
+---
 
+# 4. PRIMARY DATABASE TABLES
 
----------------------------------------------------------------------
-3. PRIMARY DATABASE TABLES
-
-Core workflow tables
+## Core workflow tables
+- leads
 - clients
 - users
 - pl
 - consolidations
 - consolidationPl
 
-Document tables
+## Document tables
 - plDocuments
 - plDocStatusHistory
 
-Communication / timeline tables
+## Communication / timeline
 - plComments
 - plEvents
 
-History tables
+## History
 - consolidationStatusHistory
 
-Analytics tables
+## Analytics
 - analyticsDailySnapshots
 - analyticsDailyPlStatus
 - analyticsDailyWeightStatus
 
+---
 
----------------------------------------------------------------------
-4. KEY FRONTEND AREAS
+# 5. KEY FRONTEND AREAS
 
 Likely frontend entry points:
 
-Cargo / PL
+## Lead conversion
+- lead detail / conversion modal/page
+- preview request caller
+- conversion submit handler
+
+## Cargo / PL
 - src/views/CargoView.jsx
 - src/components/PLCard.jsx
 
-Documents
+## Documents
 - src/components/pl/DocsList.jsx
 - src/components/ui/DocStatusBadge.jsx
 - src/constants/docs.js
 
-Kanban
+## Kanban
 - KanbanBoard component
 - KanbanPLCard component
 - KanbanConsCard component
 
-API client
+## API client
 - src/api/client.js
 
-If a bug is in PL details, tabs, documents, counters, or calculator:
-start from CargoView.jsx and PLCard.jsx.
+Investigation guidance:
+- lead conversion bug → start from lead conversion UI + preview/convert API calls
+- PL details bug → start from CargoView.jsx / PLCard.jsx
+- drag-and-drop bug → start from KanbanBoard
+- document UI bug → start from DocsList.jsx
 
-If a bug is in drag-and-drop:
-start from KanbanBoard and card drag handlers.
+---
 
-If a bug is in document UI:
-start from DocsList.jsx.
-
-
----------------------------------------------------------------------
-5. KEY BACKEND AREAS
+# 6. KEY BACKEND AREAS
 
 Likely backend entry points:
 
-PL routes
+- server/routes/leads.js
+- server/routes/clients.js
 - server/routes/pl.js
-
-Consolidation routes
 - server/routes/consolidations.js
-
-Storage
 - server/services/storage.js
-
-Schema
+- server/lib/phone.js
 - server/db/schema.js
 
-If a bug is in:
-- PL details → inspect server/routes/pl.js
-- documents → inspect server/routes/pl.js + storage.js
-- consolidation movement → inspect server/routes/consolidations.js
-- schema / relations → inspect server/db/schema.js
+Investigation guidance:
+- lead conversion → inspect leads.js + phone.js + schema.js
+- PL details → inspect pl.js
+- documents → inspect pl.js + storage.js
+- consolidation movement → inspect consolidations.js
+- schema / relations → inspect schema.js
 
+---
 
----------------------------------------------------------------------
-6. API MAP — PL
+# 7. API MAP — LEADS
 
-Main PL routes:
+## GET /api/leads/:id/convert-preview
+Read-only preview endpoint.
 
-GET /api/pl
-List PLs.
+Returns:
+- lead
+- existingLinks
+- exactPhoneMatches[]
+- flags
+- proposedNewClient
 
-GET /api/pl/:id
-Get full PL details, including:
+Behavior:
+- always preview-oriented
+- used to assist user decision
+- must NOT mutate state
+
+## POST /api/leads/:id/convert-to-pl
+Mutation endpoint.
+
+Behavior:
+- requires explicit clientResolution
+- transaction-based
+- must prevent double conversion
+- must update lead and create PL consistently
+
+---
+
+# 8. REQUEST FLOW MAP — LEAD → CLIENT → PL
+
+Frontend flow:
+1. User opens lead
+2. Frontend calls GET /api/leads/:id/convert-preview
+3. Backend:
+   - loads lead
+   - normalizes phone
+   - finds matching clients / links
+   - returns suggestions
+4. User explicitly chooses:
+   - existing client
+   - or create new client
+5. Frontend calls POST /api/leads/:id/convert-to-pl
+6. Backend transaction:
+   - lock lead (FOR UPDATE)
+   - verify not already converted
+   - resolve client explicitly
+   - create PL
+   - update lead
+   - commit
+
+Critical rule:
+- NO automatic client linking in final conversion
+
+---
+
+# 9. CLIENT RESOLUTION MAP
+
+## Explicit modes
+
+### mode = existing
+Use provided clientId.
+
+### mode = new
+Always create new client.
+
+Rules:
+- system may suggest
+- system must NOT decide
+- correctness of client identity is more important than convenience
+
+---
+
+# 10. PHONE MATCHING MAP
+
+Phone matching is used only for:
+
+- preview suggestions
+- temporary legacy fallback (if still supported)
+
+Flow:
+1. normalize lead.phone
+2. generate matching variants
+3. query candidate clients
+
+Rules:
+- matching is suggestion-only
+- NEVER use for automatic final conversion
+- NO full table scan allowed
+
+Canonical normalization target:
+- 996XXXXXXXXX
+
+Invalid phone:
+- normalize → null
+
+---
+
+# 11. API MAP — PL
+
+## Main routes
+- GET /api/pl
+- GET /api/pl/:id
+- POST /api/pl
+- PUT /api/pl/:id
+- DELETE /api/pl/:id
+
+## Related routes
+- GET /api/pl/:plId/events
+- POST /api/pl/:plId/comments
+- GET /api/pl/:id/avatar
+- POST /api/pl/import
+
+GET /api/pl/:id typically returns:
 - PL data
 - client data
 - responsible user data
-- _counts for docs/comments/history
+- counters
 - calculator fields
 
-POST /api/pl
-Create PL.
+---
 
-PUT /api/pl/:id
-Update PL.
-
-DELETE /api/pl/:id
-Delete PL.
-
-Related PL routes:
-
-GET /api/pl/:plId/events
-Get timeline events.
-
-POST /api/pl/:plId/comments
-Create comment.
-
-GET /api/pl/:id/avatar
-Get responsible user avatar.
-
-POST /api/pl/import
-Import PLs from Excel.
-
-
----------------------------------------------------------------------
-7. API MAP — DOCUMENTS
+# 12. API MAP — DOCUMENTS
 
 Documents are nested under PL routes:
 
-GET /api/pl/:plId/docs
-List PL documents.
+- GET /api/pl/:plId/docs
+- POST /api/pl/:plId/docs
+- PATCH /api/pl/:plId/docs/:docId
+- DELETE /api/pl/:plId/docs/:docId
+- GET /api/pl/:plId/docs/:docId/history
+- GET /api/pl/:plId/docs/:docId/preview
+- GET /api/pl/:plId/docs/:docId/download
 
-POST /api/pl/:plId/docs
-Upload document.
+---
 
-PATCH /api/pl/:plId/docs/:docId
-Update document status / note / name.
+# 13. API MAP — CONSOLIDATIONS
 
-DELETE /api/pl/:plId/docs/:docId
-Delete document.
+- GET /api/consolidations
+- GET /api/consolidations/:id
+- POST /api/consolidations
+- PATCH /api/consolidations/:id
+- DELETE /api/consolidations/:id
 
-GET /api/pl/:plId/docs/:docId/history
-Get document status history.
+PL linking routes:
+- POST /api/consolidations/:id/pl
+- DELETE /api/consolidations/:id/pl/:plId
+- POST /api/consolidations/:id/pls
 
-GET /api/pl/:plId/docs/:docId/preview
-Preview document inline.
+Expenses:
+- POST /api/consolidations/:id/expenses
+- DELETE /api/consolidations/:id/expenses/:expenseId
 
-GET /api/pl/:plId/docs/:docId/download
-Download document.
+---
 
-
----------------------------------------------------------------------
-8. API MAP — CONSOLIDATIONS
-
-GET /api/consolidations
-List consolidations.
-
-GET /api/consolidations/:id
-Get consolidation with related PL data.
-
-POST /api/consolidations
-Create consolidation.
-
-PATCH /api/consolidations/:id
-Update consolidation.
-
-DELETE /api/consolidations/:id
-Delete consolidation.
-
-POST /api/consolidations/:id/pl
-Add PL to consolidation.
-
-DELETE /api/consolidations/:id/pl/:plId
-Remove PL from consolidation.
-
-POST /api/consolidations/:id/pls
-Replace / set consolidation PL list.
-
-POST /api/consolidations/:id/expenses
-Add expense.
-
-DELETE /api/consolidations/:id/expenses/:expenseId
-Delete expense.
-
-
----------------------------------------------------------------------
-9. REQUEST FLOW MAP — OPEN CARGO CARD
+# 14. REQUEST FLOW MAP — OPEN CARGO CARD
 
 Frontend flow:
 User opens cargo card
-→ CargoView / PL card open state updates
 → frontend calls GET /api/pl/:id
-→ backend returns PL payload
+→ backend returns full PL payload
 → frontend renders:
   - PL data
   - client data
@@ -293,45 +342,45 @@ User opens cargo card
   - calculator fields
 
 Important rule:
-Opening cargo card should be treated as a controlled network flow.
-Avoid introducing unnecessary parallel requests.
+Opening cargo card must be a controlled network flow.
+Avoid unnecessary parallel requests.
 
+---
 
----------------------------------------------------------------------
-10. REQUEST FLOW MAP — DOCUMENTS
+# 15. REQUEST FLOW MAP — DOCUMENTS
 
 Current flow:
 User opens Documents tab
-→ frontend DocsList requests GET /api/pl/:plId/docs
+→ frontend requests GET /api/pl/:plId/docs
 → backend returns document array
-→ DocsList renders documents
+→ frontend renders documents
 
 Upload flow:
 User selects file
-→ frontend POST /api/pl/:plId/docs
+→ POST /api/pl/:plId/docs
 → backend saves file to uploads/pl/{plId}/...
 → backend writes metadata to plDocuments
-→ frontend refreshes document list
+→ frontend refreshes list
 
 Preview flow:
 User clicks preview
-→ frontend loads GET /api/pl/:plId/docs/:docId/preview
+→ GET /api/pl/:plId/docs/:docId/preview
 → backend streams file inline
 
 Download flow:
 User clicks download
-→ frontend loads GET /api/pl/:plId/docs/:docId/download
+→ GET /api/pl/:plId/docs/:docId/download
 → backend returns attachment response
 
 Delete flow:
 User clicks delete
-→ frontend DELETE /api/pl/:plId/docs/:docId
-→ backend deletes metadata / document record
-→ frontend refreshes document list
+→ DELETE /api/pl/:plId/docs/:docId
+→ backend deletes metadata / record
+→ frontend refreshes list
 
+---
 
----------------------------------------------------------------------
-11. REQUEST FLOW MAP — KANBAN PL MOVE
+# 16. REQUEST FLOW MAP — KANBAN PL MOVE
 
 Frontend flow:
 User drags PL card
@@ -349,35 +398,28 @@ Kanban card
 → src/api/client.js
 → backend PL update route
 
+---
 
----------------------------------------------------------------------
-12. REQUEST FLOW MAP — KANBAN CONSOLIDATION MOVE
+# 17. REQUEST FLOW MAP — KANBAN CONSOLIDATION MOVE
 
 Frontend flow:
 User drags consolidation card
-→ drag data set in consolidation card
 → drop handled in KanbanBoard
-→ CargoView move handler calls API.updateCons(consId, { status: newStatus })
-→ backend PATCH /api/consolidations/:id
+→ frontend sends PATCH /api/consolidations/:id
 → backend transaction runs
 → consolidation status updated
-→ all linked PL statuses synchronized
-→ status history recorded
+→ linked PL statuses synchronized
+→ history recorded
 → frontend refreshes list
 
-Likely investigation path:
-Kanban consolidation card
-→ KanbanBoard handleDrop()
-→ CargoView consolidation move handler
-→ src/api/client.js
-→ server/routes/consolidations.js
-→ server/db/schema.js
+Critical rule:
+Consolidation and contained PLs must remain consistent.
 
+---
 
----------------------------------------------------------------------
-13. DOCUMENT MODEL MAP
+# 18. DOCUMENT MODEL MAP
 
-Required documents
+## Required documents
 - invoice
 - packing_list
 - inspection
@@ -385,52 +427,85 @@ Required documents
 
 Behavior:
 - singleton per PL
-- upload uses replace / upsert behavior
+- replace / upsert behavior
 - verification workflow applies
 
-Additional documents
-- doc_type = additional
+## Additional documents
+- docType = additional
 - name required
 - multiple allowed
 - no verification workflow
 
-UI map:
-Required documents are typically rendered from DOC_TYPES.
-Additional documents are rendered as a separate list or grouped section.
-
-Backend map:
+Backend:
 - file saved on disk
 - metadata stored in plDocuments
-- status history stored in plDocStatusHistory when applicable
+- status history stored in plDocStatusHistory
 
+---
 
----------------------------------------------------------------------
-14. CALCULATOR MAP
+# 19. PL LIFECYCLE MAP
 
-Calculator fields live on the PL side.
+Typical PL statuses:
+- draft
+- awaiting_docs
+- awaiting_load
+- to_load
+- to_customs
+- released
+- kg_customs
+- collect_payment
+- closed
 
-Typical values include:
+PL belongs to:
+- exactly one client
+- optionally one consolidation
+
+---
+
+# 20. CONSOLIDATION MAP
+
+Consolidation groups multiple PLs into one shipment.
+
+Typical attributes:
+- id
+- consNumber
+- status
+- title
+- capacityKg
+- capacityCbm
+- machineCost
+
+Critical rule:
+status changes may require synchronized PL updates.
+
+---
+
+# 21. CALCULATOR MAP
+
+Calculator fields usually live on the PL side.
+
+Typical values:
 - leg1Amount
 - leg1AmountUsd
 - leg2ManualAmount
 - leg2UsdPerKg
 - leg2UsdPerM3
 
-If a calculator bug occurs, inspect:
-- PL payload returned by GET /api/pl/:id
+If calculator bug occurs, inspect:
+- GET /api/pl/:id payload
 - PL update route in server/routes/pl.js
-- frontend calculator rendering in PL card / cargo components
-- any derived state in frontend depending on weight, volume, and leg amounts
+- frontend calculator rendering
+- derived frontend state using weight / volume / leg values
 
+---
 
----------------------------------------------------------------------
-15. EVENT / COMMENT / HISTORY MAP
+# 22. EVENT / COMMENT / HISTORY MAP
 
 Comments:
-POST /api/pl/:plId/comments
+- POST /api/pl/:plId/comments
 
 Events:
-GET /api/pl/:plId/events
+- GET /api/pl/:plId/events
 
 Timeline may include:
 - document events
@@ -438,43 +513,46 @@ Timeline may include:
 - status changes
 - consolidation-related events
 
-If a timeline bug occurs:
-inspect
-- PL events route
-- event creation logic in route handlers
-- frontend history / timeline tab rendering
+If timeline bug occurs:
+inspect:
+- events route
+- event creation logic
+- timeline UI rendering
 
+---
 
----------------------------------------------------------------------
-16. INVESTIGATION STARTING POINTS
+# 23. INVESTIGATION STARTING POINTS
 
 If the issue is about...
+
+- lead conversion → inspect leads preview/convert routes + phone normalization + lead conversion UI
 - cargo card data → start with GET /api/pl/:id
-- counters → inspect GET /api/pl/:id payload and tab rendering
+- counters → inspect GET /api/pl/:id payload + tab rendering
 - documents → inspect DocsList.jsx + /api/pl/:plId/docs routes
-- document preview/download → inspect document routes + storage.js
+- preview/download → inspect document routes + storage.js
 - PL status movement → inspect CargoView + PL update route
 - consolidation sync → inspect PATCH /api/consolidations/:id + transaction logic
 - comments/history → inspect /api/pl/:plId/comments and /api/pl/:plId/events
 - calculator values → inspect PL payload + PL update + calculator UI
 
+---
 
----------------------------------------------------------------------
-17. ARCHITECTURE GUARDRAILS
+# 24. ARCHITECTURE GUARDRAILS
 
 Always remember:
 
-- Backend is the single source of truth.
-- Frontend must not invent final state.
-- Avoid N+1 calls.
-- Avoid frontend workarounds for backend issues.
-- Multi-table changes must use transactions.
-- Existing features should be extended, not duplicated.
-- If behavior is unclear, inspect code before acting.
+- Backend is the single source of truth
+- Frontend must not invent final state
+- Avoid N+1 calls
+- Avoid frontend workarounds for backend issues
+- Multi-table changes must use transactions
+- Lead conversion must remain explicit
+- Phone matching is suggestion-only
+- If behavior is unclear, inspect code before acting
 
+---
 
----------------------------------------------------------------------
-18. PURPOSE OF THIS FILE
+# 25. PURPOSE OF THIS FILE
 
 This file exists to reduce hallucinations and speed up code investigation.
 
@@ -486,4 +564,4 @@ It should help an AI coding agent answer:
 - which database tables are likely involved?
 - what is the expected request flow?
 
-This file is a navigation map, not a substitute for reading the code.
+This is a navigation map, not a substitute for reading the code.

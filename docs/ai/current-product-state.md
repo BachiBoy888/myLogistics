@@ -1,485 +1,181 @@
-# CURRENT PRODUCT STATE — MYLOGISTICS
+# Current Product State — MyLogistics (Updated)
 
-This document describes the **actual current implementation** of the myLogistics system
-based on direct inspection of the codebase.
+## Overview
 
-The purpose of this file is to give developers and AI coding agents an accurate picture
-of the system behavior, API surface, and data model.
+System supports logistics workflow for cargo (PL), consolidations, and now **lead → client → PL conversion**.
 
-This document must reflect **confirmed behavior from code**, not assumptions.
+Backend is the single source of truth.
 
+---
 
----------------------------------------------------------------------
-SYSTEM OVERVIEW
+## Core Domain Entities
 
-myLogistics is a logistics operations platform used to manage:
+### Lead
+- Represents incoming customer request / potential cargo
+- Fields:
+  - id
+  - name
+  - phone
+  - company
+  - email
+  - status
+  - clientId (nullable)
+  - convertedPlId (nullable)
 
-- cargo shipments
-- packing lists (PL)
-- shipment consolidations
-- logistics workflow stages
-- operational documents
-- comments and timeline events
+### Client
+- Represents actual customer entity
+- Used as owner of PL
 
-The system consists of:
+### PL (Packing List)
+- Main operational unit
+- Always belongs to a client
 
-Frontend
-React + Vite + Tailwind
+### Consolidation
+- Groups multiple PLs
 
-Backend
-Fastify REST API
+---
 
-Database
-PostgreSQL with Drizzle ORM
+## Lead → Client → PL Flow
 
+### Key Principle
 
----------------------------------------------------------------------
-PL API ROUTES (/api/pl)
+❗ Client MUST be selected explicitly during conversion  
+❗ No automatic matching by name or phone in final conversion
 
-Core PL routes:
+---
 
-GET /api/pl
-List all packing lists including client data.
+## Lead Conversion Flow
 
-GET /api/pl/:id
-Return full PL information including:
+### 1. Preview (read-only)
 
-- all PL fields
-- client information
-- responsible user information
-- counters for documents, comments, and history
-- calculator fields
+GET /api/leads/:id/convert-preview
 
+Returns:
+- lead data
+- existing linked client (if any)
+- exact phone matches (array)
+- flags:
+  - isAlreadyConverted
+  - hasExistingClientLink
+- proposedNewClient
 
-Returned structure includes:
+Rules:
+- Always returns 200
+- No mutations
+- No errors for already converted leads
 
-PL core fields:
-- id
-- plNumber
-- name
-- weight
-- volume
-- places
-- incoterm
-- pickupAddress
-- status
+---
 
-Client data:
-- id
-- name
-- phone
-- company
+### 2. Final Conversion
 
-Responsible user data:
-- name
-- is_active
+POST /api/leads/:id/convert-to-pl
 
-Tab counters:
-_counts:
-- docs
-- comments
-- history
+Request:
 
-Calculator fields:
-- leg1Amount
-- leg1AmountUsd
-- leg2ManualAmount
-- leg2UsdPerKg
-- leg2UsdPerM3
+mode = "existing" | "new"
 
+Behavior:
 
-POST /api/pl
-Create a new PL.
+- mode="existing":
+  → use selected client
 
-Automatically generates PL number using format:
+- mode="new":
+  → ALWAYS create new client  
+  → NEVER reuse existing even if phone matches
 
-PL-YYYY-{id}
+---
 
+## Phone Normalization (MVP)
 
-PUT /api/pl/:id
-Full PL update.
+Used ONLY for matching, not storage.
 
-Supports calculator field updates.
+Canonical format:
+996XXXXXXXXX
 
+Examples:
+- 0220447446 → 996220447446
+- +996220447446 → 996220447446
+- 996220447446 → 996220447446
+- 220447446 → 996220447446
 
-DELETE /api/pl/:id
-Delete a packing list.
+Rules:
+- remove non-digits
+- apply KG normalization
+- invalid → null
 
+If normalization fails:
+- no phone matches returned
 
----------------------------------------------------------------------
-DOCUMENT SYSTEM
+---
 
-Documents are attached to packing lists.
+## Exact Phone Matching
 
-Routes:
+- Based on normalized equality
+- Returns array (0..N)
+- Never assumes uniqueness
 
-GET /api/pl/:plId/docs
-List all documents attached to the PL.
+⚠️ Matching is for suggestion ONLY  
+⚠️ Never used for automatic linking in final conversion
 
-POST /api/pl/:plId/docs
-Upload a document.
+---
 
-Behavior depends on document type.
+## Transaction & Concurrency
 
-PATCH /api/pl/:plId/docs/:docId
-Update document status, note, or name.
+Conversion MUST be atomic:
 
-DELETE /api/pl/:plId/docs/:docId
-Delete document.
+Inside single transaction:
+1. lock lead (SELECT FOR UPDATE)
+2. check not converted
+3. resolve client
+4. create PL
+5. update lead
 
-GET /api/pl/:plId/docs/:docId/history
-Return document status change history.
+Guarantees:
+- no duplicate PLs
+- no orphan clients
+- no partial state
 
-GET /api/pl/:plId/docs/:docId/preview
-Inline preview of document.
+---
 
-GET /api/pl/:plId/docs/:docId/download
-Download document as attachment.
+## Legacy Behavior (Temporary)
 
+If clientResolution is missing:
+- fallback to old auto-resolution
+- uses normalized phone matching
+- logs DEPRECATED_CONVERSION
 
----------------------------------------------------------------------
-DOCUMENT STORAGE
+This path will be removed.
 
-Files are stored locally on disk.
+---
 
-Storage location:
+## Status Models
 
-./uploads/pl/{plId}/{timestamp}__{filename}
+### Lead Status
+- new
+- in_progress
+- qualified
+- converted
 
-Metadata is stored in the database table:
+### PL Status
+- draft
+- awaiting_docs
+- awaiting_load
+- in_transit
+- arrived
+- closed
 
-plDocuments
+### Consolidation Status
+- draft
+- loaded
+- in_transit
+- delivered
 
-File storage is handled by:
+---
 
-server/services/storage.js
+## Key Rules
 
-Function:
-
-savePLFile()
-
-
----------------------------------------------------------------------
-DOCUMENT TYPES
-
-Two categories of documents exist.
-
-
-Required documents
-
-Only one document allowed per type (singleton).
-
-Database field:
-
-name = NULL
-
-Types:
-
-invoice — Инвойс
-packing_list — Упаковочный лист
-inspection — Осмотр
-pre_declaration — Предварительное информирование
-
-
-Additional documents
-
-Unlimited documents allowed.
-
-Database field:
-
-doc_type = 'additional'
-
-User must provide a custom document name.
-
-
-Upload behavior:
-
-Required documents:
-UPSERT (existing document replaced).
-
-Additional documents:
-INSERT (always new document).
-
-
----------------------------------------------------------------------
-DOCUMENT STATUS WORKFLOW
-
-Status pipeline for required documents:
-
-pending → reviewed → approved
-
-Rejection can occur from any status:
-
-rejected
-
-
----------------------------------------------------------------------
-ADDITIONAL PL ROUTES
-
-GET /api/pl/:plId/events
-
-Returns timeline events including:
-
-- document actions
-- comments
-- status changes
-- consolidation events
-
-
-POST /api/pl/:plId/comments
-
-Add comment to PL.
-
-
-GET /api/pl/:id/avatar
-
-Returns responsible user avatar (lazy loaded).
-
-
-POST /api/pl/import
-
-Import packing lists from Excel.
-
-
----------------------------------------------------------------------
-CONSOLIDATION API ROUTES (/api/consolidations)
-
-GET /api/consolidations
-
-List consolidations.
-
-Optional filter:
-
-?status=
-
-
-GET /api/consolidations/:id
-
-Returns consolidation with:
-
-- PL list
-- PL details
-- expenses
-
-
-POST /api/consolidations
-
-Create consolidation.
-
-Optional:
-
-Attach initial PLs.
-
-
-PATCH /api/consolidations/:id
-
-Update consolidation fields:
-
-- title
-- status
-- capacityKg
-- capacityCbm
-- machineCost
-
-
-DELETE /api/consolidations/:id
-
-Delete consolidation.
-
-
-POST /api/consolidations/:id/pl
-
-Add a PL to consolidation.
-
-
-DELETE /api/consolidations/:id/pl/:plId
-
-Remove PL from consolidation.
-
-
-POST /api/consolidations/:id/pls
-
-Batch replace PLs for consolidation.
-
-
-POST /api/consolidations/:id/expenses
-
-Add consolidation expense.
-
-
-DELETE /api/consolidations/:id/expenses/:expenseId
-
-Delete expense.
-
-
----------------------------------------------------------------------
-CONSOLIDATION STATUS LOGIC
-
-PATCH /api/consolidations/:id executes inside a database transaction.
-
-Transaction steps:
-
-1. If consolidation status changes:
-
-Synchronize ALL PL statuses to the same status.
-
-2. Update consolidation record.
-
-3. Insert status change record into:
-
-consolidationStatusHistory
-
-
-Status pipeline:
-
-to_load
-loaded
-to_customs
-released
-kg_customs
-collect_payment
-delivered
-closed
-
-
----------------------------------------------------------------------
-KANBAN WORKFLOW
-
-The Kanban board represents cargo workflow stages.
-
-Each column corresponds to a cargo status.
-
-Users move items using drag-and-drop.
-
-
-Frontend flow:
-
-Drag start occurs in:
-
-KanbanPLCard.jsx
-KanbanConsCard.jsx
-
-Drag data stored in dataTransfer.
-
-
-Drop handler:
-
-KanbanBoard.jsx → handleDrop()
-
-
-Move handler:
-
-CargoView.jsx → handlePLMove()
-
-
-Frontend API behavior:
-
-Moving a PL:
-
-API.updatePL(plId, { status: newStatus })
-
-
-Moving a consolidation:
-
-API.updateCons(consId, { status: newStatus })
-
-
-After mutation:
-
-Frontend refreshes PL list.
-
-refreshPLs()
-
-
----------------------------------------------------------------------
-DATABASE TABLES
-
-
-Core tables
-
-clients
-Stores customer information.
-
-users
-System users.
-
-pl
-Packing lists (cargo records).
-
-consolidations
-Shipment consolidations.
-
-consolidationPl
-Join table linking PLs and consolidations.
-
-
-Document tables
-
-plDocuments
-Document metadata.
-
-plDocStatusHistory
-Document status audit trail.
-
-
-Communication tables
-
-plComments
-User comments for PLs.
-
-plEvents
-Timeline events.
-
-
-History tables
-
-consolidationStatusHistory
-Audit log for consolidation status changes.
-
-
-Analytics tables
-
-analyticsDailySnapshots
-Daily aggregated metrics.
-
-analyticsDailyPlStatus
-Daily counts of PLs by status.
-
-analyticsDailyWeightStatus
-Daily cargo weight totals by status.
-
-
----------------------------------------------------------------------
-DATA RELATIONSHIPS
-
-clients (1) → (N) pl
-
-users (1) → (N) pl.responsibleUserId
-
-pl (1) → (N) plDocuments
-pl (1) → (N) plComments
-pl (1) → (N) plEvents
-
-pl (1) → (N) consolidationPl → (N) consolidations
-
-
----------------------------------------------------------------------
-ARCHITECTURE SUMMARY
-
-Backend
-Fastify REST API with Drizzle ORM and PostgreSQL.
-
-Frontend
-React + Vite + Tailwind with Kanban drag-and-drop interface.
-
-Documents
-Stored on local filesystem with metadata in database.
-
-Workflow
-PLs move between statuses via Kanban interactions and API updates.
-
-Consolidations
-Group PLs and synchronize status across grouped shipments.
-
-Calculator
-Tracks logistics costs via leg1 and leg2 fields stored in PL.
+- Backend is source of truth
+- No implicit client resolution
+- Conversion requires explicit decision
+- Matching is suggestion, not logic
+- All conversions are transaction-safe

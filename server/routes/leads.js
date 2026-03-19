@@ -1,5 +1,6 @@
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, inArray } from "drizzle-orm";
 import { leads, clients, pl, users } from "../db/schema.js";
+import { normalizePhone, generatePhoneVariants } from "../lib/phone.js";
 
 /**
  * Fastify-плагин с роутами для лидов.
@@ -31,30 +32,71 @@ function getLeadSource(req) {
 function calculateEstimate({ weight, volume, deliveryType, originCity, destinationCity }) {
   const w = Number(weight) || 0;
   const v = Number(volume) || 0;
-  
+
   // Базовые ставки (USD)
   const baseRates = {
     air: { perKg: 8.5, perCbm: 1200, baseDays: 5, varianceDays: 3 },
     road: { perKg: 2.5, perCbm: 350, baseDays: 12, varianceDays: 5 },
     express: { perKg: 12.0, perCbm: 1800, baseDays: 3, varianceDays: 2 },
   };
-  
+
   const rate = baseRates[deliveryType] || baseRates.road;
-  
+
   // Расчёт по весу или объёму (что больше)
   const weightCost = w * rate.perKg;
   const volumeCost = v * rate.perCbm;
   const estimatedPrice = Math.max(weightCost, volumeCost, 50); // Минимум $50
-  
+
   // Дни доставки
   const estimatedDaysMin = rate.baseDays - Math.floor(rate.varianceDays / 2);
   const estimatedDaysMax = rate.baseDays + Math.floor(rate.varianceDays / 2);
-  
+
   return {
     estimatedPrice: Math.round(estimatedPrice * 100) / 100,
     estimatedCurrency: "USD",
     estimatedDaysMin,
     estimatedDaysMax,
+  };
+}
+
+/**
+ * Find existing clients by normalized phone using variant matching
+ * Avoids full table scan by querying with IN clause
+ * @param {Object} db - Drizzle DB instance
+ * @param {string|null} normalizedPhone - Canonical phone format
+ * @returns {Promise<Array>} - Matching clients
+ */
+async function findClientsByNormalizedPhone(db, normalizedPhone) {
+  if (!normalizedPhone) {
+    return [];
+  }
+
+  const variants = generatePhoneVariants(normalizedPhone);
+  if (variants.length === 0) {
+    return [];
+  }
+
+  // Query using IN clause - efficient index lookup
+  const results = await db
+    .select()
+    .from(clients)
+    .where(inArray(clients.phone, variants));
+
+  return results;
+}
+
+/**
+ * Build proposed new client data from lead
+ * @param {Object} lead - Lead object
+ * @returns {Object} - Client creation payload
+ */
+function buildProposedClientFromLead(lead) {
+  return {
+    name: lead.name,
+    phone: lead.phone,
+    company: lead.company || null,
+    email: lead.email || null,
+    normalizedName: lead.name.toLowerCase().trim(),
   };
 }
 
@@ -281,7 +323,7 @@ export default async function leadsRoutes(app) {
   app.get("/leads", { preHandler: app.authGuard }, async (req, reply) => {
     try {
       const { status, limit = 100, offset = 0 } = req.query;
-      
+
       let query = db
         .select({
           lead: leads,
@@ -387,105 +429,326 @@ export default async function leadsRoutes(app) {
     }
   });
 
-  // === Конвертация лида в PL ===
-  app.post("/leads/:id/convert-to-pl", { preHandler: app.authGuard }, async (req, reply) => {
+  // === Preview конвертации лида в PL ===
+  app.get("/leads/:id/convert-preview", { preHandler: app.authGuard }, async (req, reply) => {
     try {
       const id = Number(req.params.id);
-      if (!Number.isInteger(id)) return reply.badRequest("Некорректный id");
-
-      // 1. Получаем лид
-      const [lead] = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
-      if (!lead) return reply.notFound("Лид не найден");
-      if (lead.status === "converted") {
-        return reply.status(409).send({ 
-          error: "ALREADY_CONVERTED", 
-          message: "Лид уже конвертирован",
-          convertedPlId: lead.convertedPlId,
+      if (!Number.isInteger(id)) {
+        return reply.status(400).send({
+          error: "INVALID_ID",
+          message: "Некорректный id",
         });
       }
 
-      // 2. Ищем или создаём клиента
-      let clientId = lead.clientId;
-      if (!clientId) {
-        // Поиск по телефону
-        const [existingClient] = await db
-          .select()
-          .from(clients)
-          .where(eq(clients.phone, lead.phone))
-          .limit(1);
+      // Get lead
+      const [lead] = await db.select().from(leads).where(eq(leads.id, id)).limit(1);
 
-        if (existingClient) {
-          clientId = existingClient.id;
-        } else {
-          // Создаём нового клиента
-          const [newClient] = await db
-            .insert(clients)
-            .values({
-              name: lead.name,
-              phone: lead.phone,
-              company: lead.company || null,
-              email: lead.email || null,
-              normalizedName: lead.name.toLowerCase().trim(),
-            })
-            .returning();
-          clientId = newClient.id;
-        }
+      if (!lead) {
+        return reply.status(404).send({
+          error: "LEAD_NOT_FOUND",
+          message: "Лид не найден",
+        });
       }
 
-      // 3. Создаём PL
-      const plName = lead.cargoName || `Груз от ${lead.name}`;
-      const [createdPl] = await db
-        .insert(pl)
-        .values({
-          name: plName,
-          clientId: clientId,
+      // Check if already converted
+      const isAlreadyConverted = lead.status === "converted" || lead.convertedPlId != null;
+
+      // Normalize phone for matching
+      const normalizedPhone = normalizePhone(lead.phone);
+
+      // Find exact phone matches using normalized comparison
+      // These are SUGGESTIONS based on phone number similarity
+      let exactPhoneMatches = [];
+      if (normalizedPhone) {
+        exactPhoneMatches = await findClientsByNormalizedPhone(db, normalizedPhone);
+      }
+
+      // existingLinks: ONLY the client already linked to this lead via lead.clientId
+      // This is the ACTUAL database relationship, not a suggestion
+      let existingLink = null;
+      if (lead.clientId) {
+        const [linkedClient] = await db
+          .select()
+          .from(clients)
+          .where(eq(clients.id, lead.clientId))
+          .limit(1);
+        existingLink = linkedClient || null;
+      }
+
+      // Proposed new client data
+      const proposedNewClient = buildProposedClientFromLead(lead);
+
+      return {
+        lead: {
+          id: lead.id,
+          name: lead.name,
+          phone: lead.phone,
+          company: lead.company,
+          email: lead.email,
+          cargoName: lead.cargoName,
           weight: lead.weight,
           volume: lead.volume,
-          status: "draft",
-          clientPrice: lead.estimatedPrice || null, // Transfer client price from lead
-          calculator: lead.calculatorSnapshot || {},
-          pickupAddress: lead.originCity || null,
-        })
-        .returning({ id: pl.id, createdAt: pl.createdAt });
+          originCity: lead.originCity,
+          destinationCity: lead.destinationCity,
+          estimatedPrice: lead.estimatedPrice,
+          status: lead.status,
+          convertedPlId: lead.convertedPlId,
+        },
+        existingLink,  // Single linked client or null (semantic: actual DB relationship)
+        exactPhoneMatches,  // Array of suggestions (semantic: phone-based suggestions)
+        counts: {
+          hasExistingLink: existingLink !== null,
+          exactPhoneMatchCount: exactPhoneMatches.length,
+          isAlreadyConverted,
+        },
+        proposedNewClient,
+        normalizedPhone,
+      };
+    } catch (err) {
+      app.log.error({ tag: "CONVERT_PREVIEW_ERROR", err }, "GET /leads/:id/convert-preview failed");
+      return reply.code(500).send({ error: "convert_preview_failed", message: err?.message || String(err) });
+    }
+  });
 
-      // Генерируем PL номер
-      const year = createdPl.createdAt ? new Date(createdPl.createdAt).getFullYear() : new Date().getFullYear();
-      const plNumber = `PL-${year}-${createdPl.id}`;
-      await db.update(pl).set({ plNumber }).where(eq(pl.id, createdPl.id));
+  // === Конвертация лида в PL (transaction-safe) ===
+  app.post("/leads/:id/convert-to-pl", { preHandler: app.authGuard }, async (req, reply) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+      return reply.status(400).send({
+        error: "INVALID_ID",
+        message: "Некорректный id",
+      });
+    }
 
-      // 4. Обновляем лид
-      const [updatedLead] = await db
-        .update(leads)
-        .set({
-          status: "converted",
-          clientId: clientId,
-          convertedPlId: createdPl.id,
-          managerId: req.user?.id || null,
-        })
-        .where(eq(leads.id, id))
-        .returning();
+    // Access user info for logging
+    const userId = req.user?.id;
+    const body = req.body || {};
 
-      // 5. Возвращаем результат с данными
+    // LEGACY BEHAVIOR RULES (transitional backward compatibility):
+    // 1. missing clientResolution property → LEGACY MODE (deprecated, logs warning)
+    // 2. null clientResolution → ERROR: CLIENT_RESOLUTION_REQUIRED
+    // 3. empty object {} → ERROR: CLIENT_RESOLUTION_REQUIRED (no mode specified)
+    // 4. valid mode specified → EXPLICIT MODE (preferred)
+    
+    const hasClientResolutionProp = Object.prototype.hasOwnProperty.call(body, "clientResolution");
+    const clientResolution = body.clientResolution;
+    
+    // Case 2 & 3: null or empty object → require explicit resolution
+    if (hasClientResolutionProp && (!clientResolution || !clientResolution.mode)) {
+      return reply.status(400).send({
+        error: "CLIENT_RESOLUTION_REQUIRED",
+        message: "clientResolution с указанием mode обязателен (existing или new)",
+      });
+    }
+    
+    // isExplicitMode = has valid mode specified
+    const isExplicitMode = clientResolution && (clientResolution.mode === "existing" || clientResolution.mode === "new");
+
+    try {
+      // Use transaction for all DB operations
+      const result = await db.transaction(async (tx) => {
+        // 1. Lock lead for update (concurrency protection)
+        const [lead] = await tx
+          .select()
+          .from(leads)
+          .where(eq(leads.id, id))
+          .for("update")
+          .limit(1);
+
+        if (!lead) {
+          return { error: "LEAD_NOT_FOUND", status: 404, message: "Лид не найден" };
+        }
+
+        // 2. Check if already converted (idempotency protection)
+        if (lead.status === "converted" || lead.convertedPlId != null) {
+          return {
+            error: "LEAD_ALREADY_CONVERTED",
+            status: 409,
+            message: "Лид уже конвертирован",
+            convertedPlId: lead.convertedPlId,
+          };
+        }
+
+        let clientId;
+
+        // === EXPLICIT CLIENT RESOLUTION MODE ===
+        if (isExplicitMode) {
+          if (clientResolution.mode === "existing") {
+            // Use existing client
+            if (!clientResolution.clientId) {
+              return {
+                error: "CLIENT_ID_REQUIRED",
+                status: 400,
+                message: "clientId обязателен при mode=existing",
+              };
+            }
+
+            const [existingClient] = await tx
+              .select()
+              .from(clients)
+              .where(eq(clients.id, clientResolution.clientId))
+              .limit(1);
+
+            if (!existingClient) {
+              return {
+                error: "CLIENT_NOT_FOUND",
+                status: 404,
+                message: "Указанный клиент не найден",
+              };
+            }
+
+            clientId = existingClient.id;
+          } else if (clientResolution.mode === "new") {
+            // Create new client (ALWAYS creates new, even if phone matches)
+            if (!clientResolution.client) {
+              return {
+                error: "CLIENT_PAYLOAD_REQUIRED",
+                status: 400,
+                message: "client обязателен при mode=new",
+              };
+            }
+
+            const clientData = clientResolution.client;
+            if (!clientData.name || String(clientData.name).trim() === "") {
+              return {
+                error: "CLIENT_NAME_REQUIRED",
+                status: 400,
+                message: "Имя клиента обязательно",
+              };
+            }
+
+            const [newClient] = await tx
+              .insert(clients)
+              .values({
+                name: String(clientData.name).trim(),
+                phone: clientData.phone || lead.phone || null,
+                company: clientData.company || lead.company || null,
+                email: clientData.email || lead.email || null,
+                notes: clientData.notes || null,
+                normalizedName: String(clientData.name).toLowerCase().trim(),
+              })
+              .returning();
+
+            clientId = newClient.id;
+          } else {
+            return {
+              error: "INVALID_CLIENT_RESOLUTION_MODE",
+              status: 400,
+              message: "Режим разрешения клиента должен быть 'existing' или 'new'",
+            };
+          }
+        } else {
+          // === LEGACY FALLBACK MODE (DEPRECATED) ===
+          // Only reaches here if clientResolution property is completely missing
+          app.log.warn({
+            tag: "DEPRECATED_CONVERSION",
+            leadId: id,
+            userId,
+            message: "Legacy conversion without clientResolution used",
+          });
+
+          // Use legacy auto-resolution with normalized phone matching
+          if (lead.clientId) {
+            clientId = lead.clientId;
+          } else {
+            // Search by normalized phone
+            const normalizedPhone = normalizePhone(lead.phone);
+            const phoneMatches = normalizedPhone
+              ? await findClientsByNormalizedPhone(tx, normalizedPhone)
+              : [];
+
+            if (phoneMatches.length > 0) {
+              clientId = phoneMatches[0].id;
+            } else {
+              // Create new client
+              const [newClient] = await tx
+                .insert(clients)
+                .values({
+                  name: lead.name,
+                  phone: lead.phone,
+                  company: lead.company || null,
+                  email: lead.email || null,
+                  normalizedName: lead.name.toLowerCase().trim(),
+                })
+                .returning();
+              clientId = newClient.id;
+            }
+          }
+        }
+
+        // 3. Create PL
+        const plName = lead.cargoName || `Груз от ${lead.name}`;
+        const [createdPl] = await tx
+          .insert(pl)
+          .values({
+            name: plName,
+            clientId: clientId,
+            weight: lead.weight,
+            volume: lead.volume,
+            status: "draft",
+            clientPrice: lead.estimatedPrice || null,
+            calculator: lead.calculatorSnapshot || {},
+            pickupAddress: lead.originCity || null,
+          })
+          .returning({ id: pl.id, createdAt: pl.createdAt });
+
+        // Generate PL number
+        const year = createdPl.createdAt ? new Date(createdPl.createdAt).getFullYear() : new Date().getFullYear();
+        const plNumber = `PL-${year}-${createdPl.id}`;
+        await tx.update(pl).set({ plNumber }).where(eq(pl.id, createdPl.id));
+
+        // 4. Update lead
+        const [updatedLead] = await tx
+          .update(leads)
+          .set({
+            status: "converted",
+            clientId: clientId,
+            convertedPlId: createdPl.id,
+            managerId: userId || null,
+          })
+          .where(eq(leads.id, id))
+          .returning();
+
+        return {
+          success: true,
+          lead: updatedLead,
+          pl: {
+            id: createdPl.id,
+            plNumber,
+          },
+          clientId,
+        };
+      });
+
+      // Handle transaction result
+      if (result.error) {
+        return reply.status(result.status).send({
+          error: result.error,
+          message: result.message,
+          ...(result.convertedPlId && { convertedPlId: result.convertedPlId }),
+        });
+      }
+
+      // Fetch full PL data for response
       const [fullPl] = await db
         .select({ p: pl, c: clients })
         .from(pl)
         .leftJoin(clients, eq(pl.clientId, clients.id))
-        .where(eq(pl.id, createdPl.id))
+        .where(eq(pl.id, result.pl.id))
         .limit(1);
 
       return {
         success: true,
         message: "Лид успешно конвертирован в PL",
-        lead: updatedLead,
+        lead: result.lead,
         pl: {
           ...fullPl.p,
-          plNumber,
           client: fullPl.c,
         },
-        clientId,
+        clientId: result.clientId,
       };
     } catch (err) {
-      app.log.error({ tag: "CONVERT_LEAD_ERROR", err }, "POST /leads/:id/convert-to-pl failed");
+      app.log.error({ tag: "CONVERT_LEAD_ERROR", err, leadId: id, userId }, "POST /leads/:id/convert-to-pl failed");
       return reply.code(500).send({ error: "convert_lead_failed", message: err?.message || String(err) });
     }
   });

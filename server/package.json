@@ -16,8 +16,12 @@
     "migrate:local": "dotenv -e .env.local -- drizzle-kit migrate",
     "migrate:staging": "dotenv -e .env.staging -- drizzle-kit migrate",
     "migrate:production": "node ./scripts/migrate-prod-safe.js",
+    "// ====== Testing ======": "",
+    "test": "node --test lib/*.test.js routes/*.test.js",
+    "test:phone": "node --test lib/phone.test.js",
+    "test:leads": "node --test routes/leads.test.js",
     "// ====== Utilities ======": "",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "check": "node --check server.js \u0026\u0026 node --check routes/*.js \u0026\u0026 node --check lib/*.js"
   },
   "keywords": [],
   "author": "",

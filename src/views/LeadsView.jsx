@@ -509,7 +509,9 @@ export default function LeadsView({ onOpenPL }) {
                       <div className="border-t border-slate-700 pt-6">
                         <h3 className="text-sm font-medium text-slate-400 mb-3">Изменить статус</h3>
                         <div className="flex flex-wrap gap-2">
-                          {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                          {Object.entries(STATUS_CONFIG)
+                            .filter(([key]) => key !== 'converted')
+                            .map(([key, config]) => (
                             <button
                               key={key}
                               onClick={() => handleStatusChange(key)}

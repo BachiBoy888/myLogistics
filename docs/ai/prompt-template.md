@@ -1,306 +1,269 @@
-# AI AGENT PROMPT TEMPLATE — MYLOGISTICS
+# AI AGENT PROMPT TEMPLATE — MYLOGISTICS (FINAL)
 
-This template must be used when generating prompts for the coding AI agent.
+This template is MANDATORY for all AI agents working on MyLogistics.
 
-The goal of this template is to:
-- enforce deterministic engineering tasks
-- prevent hallucinations
-- enforce investigation-first workflow
-- protect system architecture
-- prevent frontend workarounds
-- ensure backend remains the single source of truth
+Goal:
+- deterministic engineering execution
+- zero hallucination tolerance
+- backend-driven architecture
+- explicit product behavior
+- safe and verifiable changes
 
----------------------------------------------------------------------
-TASK
+---
 
-Clear description of the engineering objective.
+# TASK
 
-Describe exactly what must be achieved.
+Clearly define the objective.
+
+Include:
+- what must be done
+- expected result
+- constraints
 
 Examples:
-- Implement new feature
-- Investigate bug
-- Refactor architecture
-- Extend API
-- Improve UX behavior without breaking architecture
+- implement feature
+- investigate bug
+- refactor logic
+- extend API
 
----------------------------------------------------------------------
-PROJECT CONTEXT
+---
 
-System: myLogistics
+# PRODUCT CONTEXT (MANDATORY)
 
-Frontend
-- React
-- Vite
-- Tailwind
-- Kanban UI
+System: MyLogistics
 
-Backend
-- Fastify
-- Drizzle ORM
-- PostgreSQL
+Core flow:
+Lead → Client → PL → Consolidation → Delivery
 
-Deployment
-- GitHub Pull Requests
-- GitHub Actions CI
-- Render Preview Deployments
+Critical principles:
 
-Development workflow:
-1. Agent creates branch
-2. Agent implements changes
-3. Pull Request is opened
+- Correctness > Automation
+- NO implicit decisions
+- NO auto client linking
+- Backend = single source of truth
+
+Critical domains:
+
+- Lead conversion (explicit client resolution)
+- PL lifecycle (logistics stages)
+- Consolidation synchronization
+- Document completeness
+
+---
+
+# PROJECT CONTEXT
+
+Frontend:
+- React + Vite + Tailwind
+
+Backend:
+- Fastify + Drizzle ORM + PostgreSQL
+
+Deployment:
+- GitHub PR
+- CI (GitHub Actions)
+- Render preview
+
+Workflow:
+1. Create branch
+2. Implement changes
+3. Open PR
 4. CI must pass
-5. Render creates preview deployment
-6. Manual testing
-7. Merge to main
+5. Preview deployment
+6. Manual verification
+7. Merge
 
----------------------------------------------------------------------
-ARCHITECTURE RULES
+---
 
-Backend is the SINGLE SOURCE OF TRUTH.
+# ARCHITECTURE RULES (STRICT)
 
-Frontend must NOT:
-- perform N+1 API calls
-- mutate arrays as the source of truth
-- perform optimistic updates without backend refresh
-- introduce workarounds for backend inconsistencies
+Backend MUST:
+- own all business logic
+- validate all mutations
+- ensure consistency
+- use transactions when needed
 
-After mutations UI must reload state from backend.
+Frontend MUST NOT:
+- simulate backend state
+- perform business logic
+- mutate state as source of truth
+- hide backend inconsistencies
+- introduce N+1 calls
+
+After ANY mutation:
+→ MUST reload data from backend
+
+---
+
+# INVESTIGATION FIRST (MANDATORY)
+
+You MUST NOT start implementation without investigation.
+
+Steps:
+
+1. Identify relevant files
+2. Trace exact code path
+3. Reproduce behavior
+4. Identify root cause
+5. Confirm root cause
+
+If root cause is NOT confirmed:
+→ DO NOT IMPLEMENT
+
+---
+
+# IMPLEMENTATION RULES
+
+- minimal, targeted changes only
+- preserve existing behavior
+- no hidden logic
+- no architectural violations
+
+Transactions REQUIRED when:
+- multiple entities affected
+- critical state changes occur
+
+---
+
+# DOMAIN RULES (CRITICAL)
+
+## Lead → Client → PL
+
+- MUST require explicit client selection
+- MUST NOT auto-match client
+- MUST use transaction
+- MUST prevent double conversion
+- MUST avoid orphan data
+
+## Phone Matching
+
+- normalization required
+- used ONLY for suggestions
+- NEVER for automatic decisions
+
+## Consolidation
+
+- PL state MUST stay consistent with consolidation
+- NO divergence allowed
+
+---
+
+# OUTPUT FORMAT (STRICT)
+
+Agent MUST return:
+
+1. Exact Code Path  
+(full chain of execution)
+
+2. Current Behavior  
+(what system does now)
+
+3. Root Cause  
+(technical explanation)
+
+4. Is It Bug or Intended Behavior  
+
+5. Proposed Fix  
+(with reasoning)
+
+6. Files Changed  
+
+7. Exact Code Changes  
+
+8. Updated Backend Flow  
+
+9. Risks  
+
+10. Commit Hash  
+
+11. CI Status  
+
+12. Preview Deployment Status  
+
+13. Verification Steps  
+
+---
+
+# ACCEPTANCE CRITERIA (MANDATORY)
+
+ALL must be satisfied:
+
+- [ ] feature works as expected
+- [ ] no regressions
+- [ ] backend remains source of truth
+- [ ] no implicit logic introduced
+- [ ] no duplicate or corrupted data
+- [ ] transactions ensure consistency
+- [ ] edge cases handled
+- [ ] no extra API calls introduced
+- [ ] system builds successfully
+- [ ] backend starts successfully
+
+---
+
+# VERIFICATION
+
+You MUST verify:
+
+- API behavior
+- UI behavior
+- edge cases
+- logs (no errors)
+- data integrity
+
+---
+
+# COMPLETION GATE (STRICT)
+
+You MUST NOT claim completion unless ALL conditions are met:
+
+1. Code parses
+2. Build passes (or explicitly UNVERIFIED)
+3. Backend starts
+4. Routes registered
+5. CI is green OR marked UNVERIFIED
+6. No unverified assumptions
+
+If something is not verified:
+
+You MUST explicitly state:
 
 Example:
+Build: UNVERIFIED  
+CI: UNVERIFIED  
 
-await refreshCons()
-await refreshPLs()
+---
 
-Frontend must never simulate backend state.
+# SEPARATION OF MODES
 
-All business logic must remain on backend.
+## INVESTIGATION MODE
 
-Opening cargo card must trigger:
+- analyze only
+- NO code changes
 
-GET /api/pl/:id
+## IMPLEMENTATION MODE
 
-Only ONE request.
+Only allowed AFTER:
 
-Tabs must NOT trigger additional API calls unless explicitly required by backend.
+- architecture constraints confirmed
+- root cause confirmed
 
----------------------------------------------------------------------
-INVESTIGATION REQUIRED
+---
 
-The agent must NEVER guess.
+# FINAL RULE
 
-Bug fixing must follow this order:
-1. reproduce bug
-2. identify exact code path
-3. identify root cause
-4. confirm root cause
-5. implement fix
+If issue cannot be reproduced:
+→ DO NOT IMPLEMENT FIX
 
-If root cause is not confirmed:
+If behavior is unclear:
+→ ASK or INVESTIGATE MORE
 
-NO FIX.
+---
 
----------------------------------------------------------------------
-ISSUE LIST
+# STYLE
 
-List all problems or improvements clearly.
-
-Example:
-
-Issue 1
-Description of the problem.
-
-Issue 2
-Description of improvement.
-
----------------------------------------------------------------------
-IMPLEMENTATION RULES
-
-The agent must respect the following engineering constraints.
-
-DO NOT:
-- introduce new endpoints without strong reason
-- create frontend workarounds
-- break existing architecture
-- introduce N+1 API calls
-- mutate frontend state as data source
-
-Backend operations touching multiple tables MUST run in transaction.
-
-Example:
-
-db.transaction(async (tx) => {
-  update consolidation
-  update pl
-  insert status history
-})
-
-Never leave system in partially updated state.
-
----------------------------------------------------------------------
-FILES THAT MAY BE INVOLVED
-
-Hints only.
-
-Never assume.
-
-Example:
-
-Frontend
-src/components/kanban/KanbanBoard.jsx
-src/components/cargo/CargoView.jsx
-
-Backend
-server/routes/pl.js
-server/routes/consolidations.js
-
-Database
-server/db/schema.js
-
----------------------------------------------------------------------
-ACCEPTANCE CRITERIA
-
-The task is considered successful only if ALL criteria are met.
-
-Example:
-- Feature works according to specification
-- No additional API calls introduced
-- Backend remains source of truth
-- UI reloads state from backend
-- No console errors
-- CI passes
-- Backend starts successfully
-- All existing functionality remains intact
-
----------------------------------------------------------------------
-VERIFICATION
-
-Manual verification steps.
-
-Example:
-
-1. Open cargo card
-2. Check Network tab
-3. Confirm exactly one request:
-GET /api/pl/:id
-
-4. Verify no additional tab requests
-5. Verify UI renders correctly
-6. Verify backend logs contain no errors
-
----------------------------------------------------------------------
-REQUIRED OUTPUT FORMAT
-
-Agent must return investigation report in the following structure.
-
-1. Exact Code Path
-
-Example:
-
-KanbanBoard.jsx handleDrop()
-↓
-onPLMove(...)
-↓
-CargoView.jsx handlePLMove()
-↓
-PATCH /api/consolidations/:id
-
-2. Root Cause
-
-Precise technical explanation.
-
-3. Intentional Behavior or Bug
-
-Clarify whether behavior was expected.
-
-4. Files Changed
-
-List files modified.
-
-5. Exact Code Fix
-
-Show relevant code modifications.
-
-6. Updated Backend Flow
-
-Explain new system behavior.
-
-7. Commit Hash
-
-8. CI Status
-
-9. Preview Deployment Status
-
-10. Verification Steps
-
----------------------------------------------------------------------
-COMPLETION GATE
-
-The agent must NOT claim task completion prematurely.
-
-You may NOT say:
-- completed
-- ready
-- working
-- fixed
-- pushed successfully
-- done
-- resolved
-
-unless ALL of the following are true:
-
-1. Code parses successfully
-2. Project build passes (if applicable)
-3. Backend startup check passes
-4. Relevant route registration passes
-5. CI status is green OR explicitly marked as "not yet verified"
-6. Any unverified claim is clearly labeled as UNVERIFIED
-
-If any condition is not satisfied:
-The agent must explicitly state which condition is not yet verified.
-
-Example:
-
-Backend parse: OK
-Build: UNVERIFIED
-CI: UNVERIFIED
-
-The agent must NOT claim completion.
-
----------------------------------------------------------------------
-SEPARATION OF MODES
-
-The agent must strictly separate investigation and implementation tasks.
-
-INVESTIGATION MODE
-
-If the task is investigation-only the agent must:
-- read the code
-- explain architecture
-- identify code paths
-- analyze behavior
-
-The agent must NOT:
-- modify files
-- implement fixes
-- claim work completed
-
-IMPLEMENTATION MODE
-
-If the task requires implementation the agent must:
-1. summarize confirmed architecture constraints
-2. confirm root cause
-3. describe implementation plan
-4. implement changes
-5. verify build/startup
-6. produce final report
-
-If architecture constraints are not confirmed:
-Implementation must NOT start.
-
----------------------------------------------------------------------
-FINAL RULE
-
-If the issue cannot be reproduced:
-
-DO NOT IMPLEMENT A FIX.
+- be precise
+- be technical
+- no assumptions
+- no overengineering
+- explain reasoning clearly

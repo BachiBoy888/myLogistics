@@ -1,100 +1,192 @@
+# Kimi Runbook — MyLogistics (Updated)
 
-# KIMI AI AGENT RUNBOOK
+## Purpose
 
-This runbook defines how AI coding agents must operate inside the myLogistics repository.
+Operational guide for running AI agents (e.g., Kimi/OpenClaw) on the MyLogistics codebase.
 
-Agents must follow these instructions before performing any investigation or implementation work.
+Focus:
+- safe execution
+- investigation-first workflow
+- backend-driven architecture
+- explicit conversion logic
 
+---
 
-================================================
-REQUIRED READING ORDER
-================================================
+## Before You Start
 
-Before doing anything, the agent MUST read the following files in this order:
+Agent MUST read:
 
-1. docs/ai/product-context.md
-2. docs/ai/tech-context.md
-3. docs/ai/current-product-state.md
-4. docs/ai/system-map.md
-5. docs/ai/coding-rules.md
-6. docs/ai/qa-checklist.md
-7. docs/ai/prompt-template.md
+- mylogistics_ai_context.md
+- system-map.md
+- tech-context.md
+- current-product-state.md
+- prompt-template.md
+- coding-rules.md
+- qa-checklist.md
 
-These files together define:
+---
 
-- business context
-- system architecture
-- current product state
-- system navigation map
-- coding constraints
-- QA validation process
-- prompt format
+## Core Principles
 
+1. Backend = source of truth
+2. No implicit logic
+3. No silent mutations
+4. All critical flows must be explicit
+5. Multi-step operations must be transactional
 
-================================================
-INVESTIGATION FIRST
-================================================
+---
 
-Unless explicitly told otherwise, every task must start with investigation.
+## Critical Domain: Lead Conversion
 
-The agent must:
+### Non-negotiable rules
 
-1. locate relevant frontend components
-2. locate relevant backend routes
-3. locate related database tables
-4. trace request flow from UI → API → DB
-5. confirm assumptions using real code
+- MUST NOT auto-link client
+- MUST require explicit clientResolution
+- MUST use transaction
+- MUST lock lead (FOR UPDATE)
+- MUST prevent double conversion
+- MUST avoid orphan data
 
-The agent must report findings before implementing changes.
+---
 
+## Standard Agent Workflow
 
-================================================
-COMPLETION GATE
-================================================
+### Step 1 — Investigation (MANDATORY)
 
-You may NOT say:
+- Identify relevant files
+- Read existing implementation
+- Trace data flow
+- Understand current behavior
+- Identify risks:
+  - transaction boundaries
+  - concurrency issues
+  - data integrity
 
-- completed
-- ready
-- working
-- fixed
-- pushed successfully
+Output:
+- current behavior summary
+- exact change points
 
-unless ALL of the following are true:
+---
 
-1. code parses
-2. build passes
-3. relevant backend startup check passes
-4. relevant route registration passes
-5. CI status is green OR explicitly marked as not yet verified
-6. any unverified claim is clearly marked as UNVERIFIED
+### Step 2 — Planning
 
+- propose minimal changes
+- define affected files
+- define validation logic
+- define edge cases
+- define Acceptance Criteria
 
-================================================
-SEPARATION OF MODES
-================================================
+---
 
-If the task is INVESTIGATION ONLY:
+### Step 3 — Implementation
 
-- do not implement
-- do not modify files
-- do not propose code as completed work
+- make small, safe changes
+- preserve existing flows
+- avoid side effects
+- keep logic explicit
 
-If the task is IMPLEMENTATION:
+---
 
-First:
-- summarize confirmed architecture constraints
+### Step 4 — Verification
 
-Then:
-- implement
+- run tests
+- simulate edge cases
+- check logs
+- confirm no regressions
 
+---
 
-================================================
-SOURCE OF TRUTH
-================================================
+## Phone Matching Rules
 
-If documentation and code disagree:
+- MUST use normalization helper
+- Canonical: 996XXXXXXXXX
+- Invalid → null
 
-THE CODE IS THE SOURCE OF TRUTH.
+Matching:
+- suggestion only
+- NEVER used for automatic linking
 
-Documentation is a navigation aid only.
+Performance:
+- NO full-table scan
+- use variant-based queries
+
+---
+
+## API Rules
+
+Preview endpoint:
+- read-only
+- always returns 200
+
+Convert endpoint:
+- mutation
+- requires explicit input
+- must be transactional
+
+---
+
+## Legacy Handling
+
+If legacy behavior exists:
+
+- must log DEPRECATED_CONVERSION
+- must be temporary
+- must have removal plan
+
+---
+
+## Common Mistakes to Avoid
+
+- adding auto-matching logic
+- skipping transaction
+- missing row lock
+- partial writes
+- frontend-based decisions
+- hidden fallbacks
+
+---
+
+## Acceptance Criteria (MANDATORY)
+
+Every task must include:
+
+- correctness
+- no regressions
+- transaction safety
+- concurrency safety
+- explicit behavior
+
+---
+
+## Definition of Done
+
+Task is complete ONLY if:
+
+- all Acceptance Criteria satisfied
+- no architectural violations
+- no implicit logic introduced
+- system remains stable
+
+---
+
+## Escalation Rules
+
+If unsure:
+
+- do NOT guess
+- do NOT invent logic
+- ask or re-investigate
+
+---
+
+## Summary
+
+Agent must act as:
+
+- careful engineer
+- system guardian
+- not code generator
+
+Priority:
+
+correctness > speed > convenience

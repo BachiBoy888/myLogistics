@@ -25,7 +25,7 @@ test("deep QA: login and create 10 clients", async ({ page }) => {
     // Fill the form using properly associated labels
     await modal.getByLabel("Название клиента *").fill(clientName);
     await modal.getByLabel("Компания").fill(`Company ${i}`);
-    await modal.getByLabel("Телефон").fill(`+996555000${i.toString().padStart(2, '0')}`);
+    await modal.getByRole("textbox", { name: "Телефон", exact: true }).fill(`+996555000${i.toString().padStart(2, '0')}`);
 
     // Submit the form
     await modal.getByRole("button", { name: /создать клиента/i }).click();

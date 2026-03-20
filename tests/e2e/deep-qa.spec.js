@@ -18,15 +18,19 @@ test("deep QA: login and create 10 clients", async ({ page }) => {
     // Click "Новый клиент" button
     await page.getByRole("button", { name: /новый клиент/i }).click();
 
-    // Fill the form in the modal
-    await page.getByLabel(/название клиента/i).fill(clientName);
-    await page.getByLabel(/компания/i).fill(`Company ${i}`);
-    await page.getByLabel(/телефон/i).fill(`+996555000${i.toString().padStart(2, '0')}`);
+    // Scope all interactions to the modal dialog
+    const modal = page.getByRole("dialog");
+
+    // Fill the form in the modal using exact labels to avoid ambiguity
+    await modal.getByLabel(/название клиента/i).fill(clientName);
+    await modal.getByLabel(/компания/i).fill(`Company ${i}`);
+    // Use exact: true to match only "Телефон" and not "Телефон 2"
+    await modal.getByLabel("Телефон", { exact: true }).fill(`+996555000${i.toString().padStart(2, '0')}`);
 
     // Submit the form
-    await page.getByRole("button", { name: /создать клиента/i }).click();
+    await modal.getByRole("button", { name: /создать клиента/i }).click();
 
-    // Wait for the client to appear in the list
+    // Wait for the modal to close and client to appear in the list
     await expect(page.locator("body")).toContainText(clientName);
   }
 });

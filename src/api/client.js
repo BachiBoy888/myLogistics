@@ -298,6 +298,11 @@ export async function getClients() {
   const json = await req("/clients");
   return Array.isArray(json) ? json : json.items ?? json.data ?? [];
 }
+
+export async function getClient(id) {
+  return req(`/clients/${id}`);
+}
+
 export async function createClient(data) {
   const res = await mutate("/clients", { method: "POST", body: data }, ["/clients"]);
   return res;

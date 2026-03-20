@@ -278,6 +278,7 @@ export function normalizeCons(s) {
     pl_details: normalizedPlDetails,
     capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
     capacity_kg: Number(s.capacity_kg ?? s.capacityKg ?? 0),
+    planned_arrival_date: s.planned_arrival_date ?? s.plannedArrivalDate ?? "",
     machine_cost: Number(s.machine_cost ?? s.machineCost ?? 0),
     expenses: (s.expenses ?? []).map(e => ({
       id: e.id,

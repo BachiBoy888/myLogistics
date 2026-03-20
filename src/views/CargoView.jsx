@@ -483,6 +483,19 @@ export default function CargoView({
           // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
           
+          // Atomically reconcile local PL state for nested PLs in the moved consolidation
+          // This ensures the board preview is immediately consistent without waiting for refetch
+          setPls(prevPls => {
+            const arr = Array.isArray(prevPls) ? prevPls : [];
+            return arr.map(p => {
+              // Update PLs that are in the moved consolidation
+              if (consItem.pl_ids?.includes(p.id)) {
+                return { ...p, status: newStatus };
+              }
+              return p;
+            });
+          });
+          
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);

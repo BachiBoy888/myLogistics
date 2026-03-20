@@ -20,6 +20,7 @@ const CreateBody = z.object({
   plIds: z.array(z.number().int()).optional(), // у нас pl.id = INTEGER
   capacityKg: z.coerce.number().optional(),
   capacityCbm: z.coerce.number().optional(),
+  plannedArrivalDate: z.string().optional(), // Плановая дата прибытия в Бишкек (YYYY-MM-DD)
 });
 
 const UpdateBody = z.object({
@@ -162,6 +163,7 @@ export default async function consolidationsRoutes(app) {
             status: "loaded",
             capacityKg: body.capacityKg !== undefined ? String(body.capacityKg) : "0",
             capacityCbm: body.capacityCbm !== undefined ? String(body.capacityCbm) : "0",
+            plannedArrivalDate: body.plannedArrivalDate || null,
           })
           .returning();
 

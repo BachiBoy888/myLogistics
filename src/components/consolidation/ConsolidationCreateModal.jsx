@@ -7,6 +7,7 @@ import { X } from "lucide-react";
 export default function ConsolidationCreateModal({ onClose, plsCandidate = [], onCreate }) {
   const [capacityCbm, setCapacityCbm] = useState(0);
   const [capacityKg, setCapacityKg] = useState(0);
+  const [plannedArrivalDate, setPlannedArrivalDate] = useState("");
   const [pickedIds, setPickedIds] = useState([]);
   const [saving, setSaving] = useState(false);
 
@@ -33,6 +34,7 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
       await onCreate({
         capacity_cbm: Number(capacityCbm) || 0,
         capacity_kg: Number(capacityKg) || 0,
+        planned_arrival_date: plannedArrivalDate || null,
         pl_ids: pickedIds,
       });
     } finally {
@@ -56,6 +58,15 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
             <Label>Вместимость транспорта</Label>
             <LabelInput type="number" label="Объём, м³" value={capacityCbm} onChange={setCapacityCbm} />
             <LabelInput type="number" label="Грузоподъёмность, кг" value={capacityKg} onChange={setCapacityKg} />
+            <div>
+              <label className="text-sm text-gray-600 mb-1 block">Плановая дата прибытия в Бишкек</label>
+              <input
+                type="date"
+                value={plannedArrivalDate}
+                onChange={(e) => setPlannedArrivalDate(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
             <div className="text-sm">
               <div>Итого выбрано: <b>{sumV.toFixed(2)} м³</b> • <b>{sumW.toFixed(2)} кг</b></div>
               {(overW || overV) && (

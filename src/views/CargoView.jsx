@@ -483,6 +483,19 @@ export default function CargoView({
           // Backend handles PL status synchronization internally
           await API.updateCons(plId, { status: newStatus });
           
+          // Atomically reconcile local PL state for nested PLs in the moved consolidation
+          // This ensures the board preview is immediately consistent without waiting for refetch
+          setPls(prevPls => {
+            const arr = Array.isArray(prevPls) ? prevPls : [];
+            return arr.map(p => {
+              // Update PLs that are in the moved consolidation
+              if (consItem.pl_ids?.includes(p.id)) {
+                return { ...p, status: newStatus };
+              }
+              return p;
+            });
+          });
+          
           await Promise.all([refreshPLs(), refreshCons()]);
         } catch (err) {
           console.error("Ошибка при перемещении консолидации:", err);
@@ -1017,9 +1030,15 @@ export default function CargoView({
             plsCandidate={Object.values(groupedByStage)
               .flat()
               .filter((p) => ["to_load", "loaded"].includes(p.status))}
-            onCreate={async ({ pl_ids }) => {
+            onCreate={async ({ pl_ids, capacity_cbm, capacity_kg, planned_arrival_date }) => {
               try {
-                await API.createCons({ title: `Консолидация`, plIds: pl_ids.map(Number) });
+                await API.createCons({ 
+                  title: `Консолидация`, 
+                  plIds: pl_ids.map(Number),
+                  capacityCbm: capacity_cbm,
+                  capacityKg: capacity_kg,
+                  plannedArrivalDate: planned_arrival_date,
+                });
                 setShowCreateCons(false);
                 await refreshCons();
               } catch (e) {

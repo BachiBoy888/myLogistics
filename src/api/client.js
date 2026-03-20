@@ -278,6 +278,7 @@ export function normalizeCons(s) {
     pl_details: normalizedPlDetails,
     capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
     capacity_kg: Number(s.capacity_kg ?? s.capacityKg ?? 0),
+    planned_arrival_date: s.planned_arrival_date ?? s.plannedArrivalDate ?? "",
     machine_cost: Number(s.machine_cost ?? s.machineCost ?? 0),
     expenses: (s.expenses ?? []).map(e => ({
       id: e.id,
@@ -710,10 +711,10 @@ export async function getConsolidation(id) {
   // Backend returns { consolidation: {...} } or direct object
   return normalizeCons(json?.consolidation ?? json);
 }
-export async function createConsolidation({ title, plIds = [] } = {}) {
+export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate } = {}) {
   const cons = await mutate(
     "/consolidations",
-    { method: "POST", body: { title, plIds } },
+    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate } },
     ["/consolidations"]
   );
   if (plIds.length) {
@@ -727,7 +728,7 @@ export async function updateConsolidation(id, patch = {}) {
   const json = await mutate(
     `/consolidations/${id}`,
     { method: "PATCH", body: patch },
-    ["/consolidations", `/consolidations/${id}`]
+    ["/consolidations", `/consolidations/${id}`, "/pl"] // Also invalidate PL list since cons move updates PL statuses
   );
   return normalizeCons(json);
 }

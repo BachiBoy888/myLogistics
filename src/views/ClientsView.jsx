@@ -829,10 +829,13 @@ function NewClientModal({ onClose, onCreate }) {
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       onClick={onClose}
+      role="presentation"
     >
       <div 
         className="bg-white rounded-2xl shadow-xl w-full max-w-lg"
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-label="Новый клиент"
       >
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-900">Новый клиент</h3>
@@ -872,10 +875,11 @@ function NewClientModal({ onClose, onCreate }) {
             onChange={(v) => setForm(prev => ({ ...prev, email: v }))}
           />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label htmlFor="new-client-notes" className="block text-sm font-medium text-gray-700 mb-1">
               Примечания
             </label>
             <textarea
+              id="new-client-notes"
               value={form.notes}
               onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"

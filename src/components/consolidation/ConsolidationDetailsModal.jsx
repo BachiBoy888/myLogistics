@@ -965,7 +965,7 @@ export default function ConsolidationDetailsModal({
                             )}
                             {plannedArrivalDate && (
                               <div className="text-sm text-blue-600 mt-1">
-                                Прибытие в Бишкек: {new Date(plannedArrivalDate).toLocaleDateString('ru-RU')}
+                                Планируемая дата приезда: {new Date(plannedArrivalDate).toLocaleDateString('ru-RU')}
                               </div>
                             )}
                           </div>

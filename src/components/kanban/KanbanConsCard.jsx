@@ -2,7 +2,8 @@
 // Карточка консолидации для канбана в стиле Trello
 
 import React, { useState } from "react";
-import { Truck, ChevronDown, ChevronUp, Package } from "lucide-react";
+import { Truck, ChevronDown, ChevronUp, Package, Calendar } from "lucide-react";
+import { getDeadlineIndicator, formatDateRu } from "../../utils/dateDeadline.js";
 
 // Цвета границ в зависимости от статуса
 const statusBorderColors = {
@@ -34,6 +35,10 @@ export default function KanbanConsCard({ cons, onClick, onPLClick, pls, clientNa
   const handleDragEnd = () => {
     setIsDragging(false);
   };
+
+  // Deadline indicator calculation
+  const deadlineInfo = getDeadlineIndicator(cons);
+  const plannedDate = cons.plannedArrivalDate || cons.planned_arrival_date;
 
   return (
     <div
@@ -81,6 +86,19 @@ export default function KanbanConsCard({ cons, onClick, onPLClick, pls, clientNa
         {totalWeight > 0 && <span>{totalWeight} кг</span>}
         {totalVolume > 0 && <span>{totalVolume} м³</span>}
       </div>
+
+      {/* Planned Arrival Date with Deadline Indicator */}
+      {plannedDate && (
+        <div className="flex items-center gap-2 text-xs mb-2">
+          <Calendar className="w-3.5 h-3.5 text-gray-500" />
+          <span className="text-gray-400">Приезд: {formatDateRu(plannedDate)}</span>
+          {deadlineInfo && (
+            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${deadlineInfo.badgeClass}`}>
+              {deadlineInfo.label}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Expanded PL List */}
       {expanded && pls?.length > 0 && (

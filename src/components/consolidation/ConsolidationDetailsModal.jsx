@@ -7,7 +7,8 @@ import {
   ChevronUp, ChevronDown, AlertTriangle, Save, XCircle, Plus, Trash
 } from "lucide-react";
 import { humanConsStatus, badgeColorByConsStatus, humanStatus } from "../../constants/statuses.js";
-import { 
+import { getDeadlineIndicator, formatDateRu } from "../../utils/dateDeadline.js";
+import {  
   syncConsolidationExpenses,
   getConsolidation,
 } from "../../api/client.js";
@@ -964,8 +965,23 @@ export default function ConsolidationDetailsModal({
                               <div className="text-sm text-gray-600">{driverContacts}</div>
                             )}
                             {plannedArrivalDate && (
-                              <div className="text-sm text-blue-600 mt-1">
-                                Планируемая дата приезда: {new Date(plannedArrivalDate).toLocaleDateString('ru-RU')}
+                              <div className="mt-1">
+                                <span className="text-sm text-gray-700">
+                                  Планируемая дата приезда: {formatDateRu(plannedArrivalDate)}
+                                </span>
+                                {/* Deadline indicator - only show if not closed */}
+                                {(() => {
+                                  const indicator = getDeadlineIndicator({
+                                    status: cons.status,
+                                    plannedArrivalDate: plannedArrivalDate
+                                  });
+                                  if (!indicator) return null;
+                                  return (
+                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${indicator.badgeClass}`}>
+                                      {indicator.label}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                             )}
                           </div>

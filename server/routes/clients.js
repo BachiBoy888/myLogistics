@@ -12,6 +12,14 @@ function normalizeName(str = "") {
   return String(str || "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
+// Хелпер для безопасного получения rows из результата Drizzle
+function getRows(result) {
+  if (!result) return [];
+  if (Array.isArray(result)) return result;
+  if (result.rows) return result.rows;
+  return [];
+}
+
 export default async function clientsRoutes(app) {
   const db = app.drizzle;
 
@@ -24,7 +32,7 @@ export default async function clientsRoutes(app) {
     const normalized = q.toLowerCase();
 
     // limit можно регулировать
-    const rows = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT id, name, company, phone, email,
              similarity(normalized_name, lower(unaccent(${normalized}))) AS sim
       FROM clients
@@ -33,12 +41,12 @@ export default async function clientsRoutes(app) {
       LIMIT 15
     `);
 
-    return rows ?? [];
+    return getRows(result);
   });
 
   // === Список клиентов с агрегированными данными ===
   app.get("/clients", async () => {
-    const rows = await db.execute(sql`
+    const result = await db.execute(sql`
       SELECT
         c.id,
         c.name,
@@ -61,7 +69,7 @@ export default async function clientsRoutes(app) {
       ORDER BY c.name ASC
     `);
 
-    return rows?.rows ?? [];
+    return getRows(result);
   });
 
   // === Детали клиента с PL ===
@@ -193,7 +201,8 @@ export default async function clientsRoutes(app) {
     const plCheck = await db.execute(sql`
       SELECT COUNT(*)::int as count FROM pl WHERE client_id = ${id}
     `);
-    const plCount = plCheck?.rows?.[0]?.count ?? 0;
+    const plCheckRows = getRows(plCheck);
+    const plCount = plCheckRows[0]?.count ?? 0;
 
     if (plCount > 0) {
       return reply.status(409).send({

@@ -710,10 +710,10 @@ export async function getConsolidation(id) {
   // Backend returns { consolidation: {...} } or direct object
   return normalizeCons(json?.consolidation ?? json);
 }
-export async function createConsolidation({ title, plIds = [] } = {}) {
+export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate } = {}) {
   const cons = await mutate(
     "/consolidations",
-    { method: "POST", body: { title, plIds } },
+    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate } },
     ["/consolidations"]
   );
   if (plIds.length) {

@@ -1017,9 +1017,15 @@ export default function CargoView({
             plsCandidate={Object.values(groupedByStage)
               .flat()
               .filter((p) => ["to_load", "loaded"].includes(p.status))}
-            onCreate={async ({ pl_ids }) => {
+            onCreate={async ({ pl_ids, capacity_cbm, capacity_kg, planned_arrival_date }) => {
               try {
-                await API.createCons({ title: `Консолидация`, plIds: pl_ids.map(Number) });
+                await API.createCons({ 
+                  title: `Консолидация`, 
+                  plIds: pl_ids.map(Number),
+                  capacityCbm: capacity_cbm,
+                  capacityKg: capacity_kg,
+                  plannedArrivalDate: planned_arrival_date,
+                });
                 setShowCreateCons(false);
                 await refreshCons();
               } catch (e) {

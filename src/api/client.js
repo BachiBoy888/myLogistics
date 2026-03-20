@@ -728,7 +728,7 @@ export async function updateConsolidation(id, patch = {}) {
   const json = await mutate(
     `/consolidations/${id}`,
     { method: "PATCH", body: patch },
-    ["/consolidations", `/consolidations/${id}`]
+    ["/consolidations", `/consolidations/${id}`, "/pl"] // Also invalidate PL list since cons move updates PL statuses
   );
   return normalizeCons(json);
 }

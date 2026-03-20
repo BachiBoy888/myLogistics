@@ -175,7 +175,12 @@ export default function ClientsView({ onOpenPL }) {
 
   const handleCreateClient = async (data) => {
     try {
-      await createClient(data);
+      const newClient = await createClient(data);
+      // Optimistically add to list immediately for better UX
+      if (newClient) {
+        setClients(prev => [...prev, newClient]);
+      }
+      // Then refresh full list from server to ensure consistency
       await loadClients();
       setShowNewModal(false);
     } catch (err) {

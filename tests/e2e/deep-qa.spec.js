@@ -32,6 +32,7 @@ test("deep QA: login and create 10 clients", async ({ page }) => {
 
     // Wait for the modal to close and client to appear in the list
     await expect(modal).toBeHidden();
-    await expect(page.locator("body")).toContainText(clientName);
+    // Wait for the client row to appear in the table (not just anywhere in body)
+    await expect(page.getByRole("cell", { name: clientName })).toBeVisible();
   }
 });

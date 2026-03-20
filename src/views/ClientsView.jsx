@@ -176,12 +176,24 @@ export default function ClientsView({ onOpenPL }) {
   const handleCreateClient = async (data) => {
     try {
       const newClient = await createClient(data);
-      // Optimistically add to list immediately for better UX
-      if (newClient) {
-        setClients(prev => [...prev, newClient]);
-      }
-      // Then refresh full list from server to ensure consistency
+      // Get the ID of the created client for verification
+      const createdId = newClient?.id;
+      
+      // Refresh list from server
       await loadClients();
+      
+      // If the new client isn't in the refreshed list (eventual consistency),
+      // add it optimistically
+      if (createdId) {
+        setClients(prev => {
+          const exists = prev.some(c => c.id === createdId);
+          if (!exists) {
+            return [...prev, newClient];
+          }
+          return prev;
+        });
+      }
+      
       setShowNewModal(false);
     } catch (err) {
       alert("Ошибка создания клиента: " + err.message);

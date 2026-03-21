@@ -346,6 +346,15 @@ export const leads = pgTable(
     source: text("source").notNull().default("website_calculator"),
     status: leadStatusEnum("status").notNull().default("new"),
 
+    // Точка входа лида (форма/калькулятор)
+    leadEntryPoint: text("lead_entry_point"), // 'calculator' | 'contact_form' | 'lab_calculator'
+
+    // UTM метки для аналитики
+    utmSource: text("utm_source"),
+    utmMedium: text("utm_medium"),
+    utmCampaign: text("utm_campaign"),
+    utmContent: text("utm_content"),
+
     // Параметры груза (из калькулятора)
     cargoName: text("cargo_name"),
     weight: numeric("weight", { precision: 12, scale: 3 }),
@@ -372,6 +381,8 @@ export const leads = pgTable(
     managerIdx: index("idx_leads_manager").on(t.managerId),
     clientIdx: index("idx_leads_client").on(t.clientId),
     convertedPlIdx: index("idx_leads_converted_pl").on(t.convertedPlId),
+    leadEntryPointIdx: index("idx_leads_lead_entry_point").on(t.leadEntryPoint),
+    utmSourceIdx: index("idx_leads_utm_source").on(t.utmSource),
   })
 );
 

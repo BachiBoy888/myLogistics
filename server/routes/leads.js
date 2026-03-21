@@ -10,15 +10,23 @@ import { normalizePhone, generatePhoneVariants } from "../lib/phone.js";
 // Разрешённые источники лидов
 const ALLOWED_SOURCES = ["website_calculator", "prolife_site", "external_site"];
 
-// Получить источник лида из заголовка или query параметра
-function getLeadSource(req) {
-  // Проверяем X-Source заголовок
+// Разрешённые точки входа
+const ALLOWED_ENTRY_POINTS = ["calculator", "contact_form", "lab_calculator"];
+
+// Получить источник лида из заголовка, query параметра или тела запроса
+function getLeadSource(req, bodySource) {
+  // Приоритет 1: явно переданный source в body (с валидацией)
+  if (bodySource && ALLOWED_SOURCES.includes(bodySource)) {
+    return bodySource;
+  }
+
+  // Приоритет 2: X-Source заголовок
   const headerSource = req.headers["x-source"];
   if (headerSource && ALLOWED_SOURCES.includes(headerSource)) {
     return headerSource;
   }
 
-  // Проверяем query параметр
+  // Приоритет 3: query параметр
   const querySource = req.query?.source;
   if (querySource && ALLOWED_SOURCES.includes(querySource)) {
     return querySource;
@@ -207,6 +215,14 @@ export default async function leadsRoutes(app) {
             estimatedCurrency: { type: ["string", "null"] },
             estimatedDaysMin: { type: ["integer", "null"] },
             estimatedDaysMax: { type: ["integer", "null"] },
+            // Source and entry point (optional)
+            source: { type: "string", enum: ["website_calculator", "prolife_site", "external_site"] },
+            leadEntryPoint: { type: "string", enum: ["calculator", "contact_form", "lab_calculator"] },
+            // UTM fields (optional)
+            utmSource: { type: ["string", "null"] },
+            utmMedium: { type: ["string", "null"] },
+            utmCampaign: { type: ["string", "null"] },
+            utmContent: { type: ["string", "null"] },
             // Honeypot field (hidden, should be empty)
             website: { type: ["string", "null"] },
           },
@@ -280,8 +296,8 @@ export default async function leadsRoutes(app) {
           calculatedAt: new Date().toISOString(),
         };
 
-        // Определяем источник лида
-        const leadSource = getLeadSource(req);
+        // Определяем источник лида (из body с приоритетом, затем заголовок/query)
+        const leadSource = getLeadSource(req, b.source);
 
         const [lead] = await db
           .insert(leads)
@@ -292,6 +308,11 @@ export default async function leadsRoutes(app) {
             email: b.email || null,
             note: b.note || null,
             source: leadSource,
+            leadEntryPoint: b.leadEntryPoint || null,
+            utmSource: b.utmSource || null,
+            utmMedium: b.utmMedium || null,
+            utmCampaign: b.utmCampaign || null,
+            utmContent: b.utmContent || null,
             status: "new",
             cargoName: b.cargoName || null,
             weight: w.toFixed(3),

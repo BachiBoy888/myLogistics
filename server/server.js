@@ -31,6 +31,7 @@ import fxRoutes from "./routes/fx.js";
 import importRoutes from "./routes/import.js";
 import leadsRoutes from "./routes/leads.js";
 import adminRoutes from "./routes/admin.js";
+import { repairLeadsColumns } from "./db/repairLeadsColumns.js";
 
 // --- вычислим текущую папку (для статики)
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -86,6 +87,16 @@ const sql = postgres(DATABASE_URL, {
     console.log("✅ Runtime schema check passed");
   } catch (err) {
     console.error("❌ Runtime schema fix failed:", err.message);
+  }
+
+  // Runtime repair: ensure lead UTM columns exist (guards against journal drift)
+  try {
+    const repairResult = await repairLeadsColumns(db);
+    if (repairResult.repaired) {
+      console.log(`✅ Repaired missing lead columns: ${repairResult.missing.join(', ')}`);
+    }
+  } catch (err) {
+    console.error("❌ Lead columns repair failed:", err.message);
   }
 
   // Плагины

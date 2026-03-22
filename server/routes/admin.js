@@ -54,8 +54,9 @@ export default async function adminRoutes(app) {
   const IS_PROD = process.env.NODE_ENV === "production" || process.env.RENDER === "1";
 
   // Admin API отключен по умолчанию и в production
+  // Используем .all() чтобы перехватывать ВСЕ методы (GET, POST, etc.)
   if (!ENABLE_ADMIN_API) {
-    app.get("/*", async (req, reply) => {
+    app.all("/*", async (req, reply) => {
       return reply.code(404).send({
         error: "ADMIN_API_DISABLED",
         message: "Admin API is not enabled",
@@ -66,7 +67,7 @@ export default async function adminRoutes(app) {
 
   // Дополнительная защита: не включать в production даже с env
   if (IS_PROD && !process.env.FORCE_ADMIN_API_IN_PROD) {
-    app.get("/*", async (req, reply) => {
+    app.all("/*", async (req, reply) => {
       return reply.code(403).send({
         error: "ADMIN_API_FORBIDDEN_IN_PROD",
         message: "Admin API is not available in production environment",

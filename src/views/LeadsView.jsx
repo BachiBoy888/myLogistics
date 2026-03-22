@@ -27,6 +27,12 @@ const DELIVERY_LABELS = {
   express: "Экспресс",
 };
 
+const ENTRY_POINT_LABELS = {
+  calculator: "Калькулятор",
+  contact_form: "Форма",
+  lab_calculator: "Лаб",
+};
+
 export default function LeadsView({ onOpenPL }) {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -306,6 +312,38 @@ export default function LeadsView({ onOpenPL }) {
                             <div className="text-xs text-slate-400 flex items-center gap-1">
                               <Building2 className="w-3 h-3" />
                               {lead.company}
+                            </div>
+                          )}
+                          {(lead.leadEntryPoint || lead.utmSource) && (
+                            <div className="flex items-center gap-1 mt-1 text-xs text-slate-400">
+                              {lead.leadEntryPoint && (
+                                <span>{ENTRY_POINT_LABELS[lead.leadEntryPoint] || lead.leadEntryPoint}</span>
+                              )}
+                              {lead.leadEntryPoint && lead.utmSource && (
+                                <span className="text-slate-600">·</span>
+                              )}
+                              {lead.utmSource && (
+                                <div className="relative group">
+                                  <span className="truncate max-w-[120px] inline-block cursor-help" title={lead.utmSource}>
+                                    {lead.utmSource}
+                                  </span>
+                                  {(lead.utmMedium || lead.utmCampaign || lead.utmContent) && (
+                                    <div className="hidden group-hover:block absolute left-0 top-full mt-1 z-50 bg-slate-900 border border-slate-700 rounded-lg shadow-lg p-2 min-w-[180px] max-w-[220px]">
+                                      <div className="text-xs text-slate-300 space-y-1">
+                                        {lead.utmMedium && (
+                                          <div><span className="text-slate-500">Medium:</span> {lead.utmMedium}</div>
+                                        )}
+                                        {lead.utmCampaign && (
+                                          <div><span className="text-slate-500">Campaign:</span> {lead.utmCampaign}</div>
+                                        )}
+                                        {lead.utmContent && (
+                                          <div><span className="text-slate-500">Content:</span> {lead.utmContent}</div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           )}
                         </td>

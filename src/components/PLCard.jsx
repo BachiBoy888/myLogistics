@@ -377,7 +377,9 @@ export default function PLCard({
         <div>
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5" />
-            <h2 className="font-semibold text-lg">{pl.pl_number || "Черновик"}</h2>
+            <h2 className="font-semibold text-lg">
+              {pl.custom_pl_label ? `PL-${pl.custom_pl_label}` : (pl.pl_number || "Черновик")}
+            </h2>
             <Chip className={badgeColorByStatus(pl.status)}>{humanStatus(pl.status)}</Chip>
           </div>
           <div className="text-sm text-gray-600 mt-0.5">

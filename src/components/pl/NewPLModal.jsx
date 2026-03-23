@@ -39,6 +39,7 @@ export default function NewPLModal({
   warehouses = [], // [{id, name, address}]
 }) {
   const [title, setTitle] = useState("");
+  const [customPlLabel, setCustomPlLabel] = useState(""); // Пользовательское обозначение PL (без префикса)
   const [client, setClient] = useState(""); // текст, что печатает юзер
   const [selectedClient, setSelectedClient] = useState(null); // {id, name} если выбран из подсказок
   const [incoterm, setIncoterm] = useState("EXW"); // EXW | FOB
@@ -64,6 +65,7 @@ export default function NewPLModal({
   useEffect(() => {
     // сброс при открытии
     setTitle("");
+    setCustomPlLabel("");
     setClient("");
     setSelectedClient(null);
     setIncoterm("EXW");
@@ -181,6 +183,7 @@ export default function NewPLModal({
         client_id: selectedClient?.id ?? null,
 
         title: title.trim(),
+        custom_pl_label: customPlLabel.trim() || null,
         weight_kg: weight ? Number(weight) : null,
         volume_cbm: volume ? Number(volume) : null,
         places: places ? Number(places) : 1,
@@ -220,6 +223,21 @@ export default function NewPLModal({
                 placeholder="Например: Электроника"
                 autoFocus
               />
+            </label>
+
+            <label className="block">
+              <div className="text-sm text-neutral-700 mb-1">Обозначение PL</div>
+              <div className="flex h-11 border rounded-xl overflow-hidden focus-within:border-black">
+                <span className="flex items-center px-3 bg-gray-100 text-gray-600 text-sm border-r">
+                  PL-
+                </span>
+                <input
+                  className="flex-1 px-3 outline-none"
+                  value={customPlLabel}
+                  onChange={(e) => setCustomPlLabel(e.target.value)}
+                  placeholder="Тойота"
+                />
+              </div>
             </label>
 
             <label className="block relative">

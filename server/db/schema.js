@@ -58,6 +58,7 @@ export const pl = pgTable(
   {
     id: serial("id").primaryKey(), // INTEGER PK
     plNumber: text("pl_number"),
+    customPlLabel: text("custom_pl_label"), // Пользовательское обозначение PL (без префикса PL-)
     clientId: integer("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),

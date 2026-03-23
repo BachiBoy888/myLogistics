@@ -123,7 +123,7 @@ export default function KanbanPLCard({
       {/* Top: PL Number + menu */}
       <div className="flex items-start justify-between mb-2">
         <span className="font-semibold text-sm text-gray-100">
-          {pl.pl_number?.replace(/-?\d{4}-?/, '-') || `PL-${pl.id}`}
+          {pl.custom_pl_label ? `PL-${pl.custom_pl_label}` : (pl.pl_number?.replace(/-?\d{4}-?/, '-') || `PL-${pl.id}`)}
         </span>
         <button 
           className="text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-gray-700 rounded"

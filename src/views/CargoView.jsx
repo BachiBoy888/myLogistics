@@ -608,7 +608,7 @@ export default function CargoView({
   }
 
   async function handleCreatePLFromModal(payload) {
-    const { client, client_id, title, volume_cbm, weight_kg, places, incoterm, exw_address, fob_wh_id } = payload;
+    const { client, client_id, title, custom_pl_label, volume_cbm, weight_kg, places, incoterm, exw_address, fob_wh_id } = payload;
     const clientName = (client || "").trim();
     if (!clientName) {
       showError("Введите клиента перед созданием PL");
@@ -645,6 +645,7 @@ export default function CargoView({
     const body = {
       client_id: clientRow.id,
       title: title?.trim() || "",
+      custom_pl_label: custom_pl_label?.trim() || null,
       weight_kg: parseFloat(weight_kg) || null,
       volume_cbm: parseFloat(volume_cbm) || null,
       places: places ? Number(places) : 1,

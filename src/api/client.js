@@ -185,6 +185,7 @@ export function normalizePL(s) {
   return {
     id,
     pl_number,
+    custom_pl_label: s.custom_pl_label ?? s.customPlLabel ?? null,
     client_id: s.client_id ?? s.clientId ?? null,
     client,
     responsible,

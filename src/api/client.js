@@ -270,11 +270,12 @@ export function normalizeCons(s) {
     status: s.status ?? "loaded",
     driver_name: s.driver_name ?? s.driverName ?? "",
     driver_contacts: s.driver_contacts ?? s.driverContacts ?? "",
-    pl_ids: Array.isArray(s.pl_ids)
+    pl_ids: (Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
       ? s.plIds
-      : [],
+      : []
+    ).map(id => toNumericId(id)).filter(Boolean),
     pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
     pl_details: normalizedPlDetails,
     capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
@@ -767,7 +768,7 @@ export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {},
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
   } catch {
     const current = await getConsolidation(id);
-    const currentIds = Array.isArray(current?.pl_ids) ? current.pl_ids.map(Number) : [];
+    const currentIds = Array.isArray(current?.pl_ids) ? current.pl_ids : [];
     const toAdd = target.filter((x) => !currentIds.includes(x));
     const toRemove = currentIds.filter((x) => !target.includes(x));
     for (const pid of toAdd) await addPLToConsolidation(id, pid);

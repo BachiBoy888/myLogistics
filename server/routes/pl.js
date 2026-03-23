@@ -143,6 +143,7 @@ export default async function plRoutes(fastify) {
             calculator: { type: ['object', 'null'] },
             clientPrice: { type: ['number', 'string', 'null'] },
             client_price: { type: ['number', 'string', 'null'] },
+            places: { type: ['number', 'integer', 'null'] },
           },
           required: ['client_id'],
         },
@@ -154,6 +155,11 @@ export default async function plRoutes(fastify) {
         const toNumStr = (v) => {
           if (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) return null;
           return Number(v).toFixed(3);
+        };
+        const toIntMaybe = (v) => {
+          if (v === '' || v === null || v === undefined) return undefined;
+          const n = Number(v);
+          return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
         };
         const toNumMaybe = (v) => (v === '' || v === null || v === undefined ? null : v);
 
@@ -169,6 +175,7 @@ export default async function plRoutes(fastify) {
             weight,
             volume,
             clientId,
+            places: toIntMaybe(b.places) ?? 1,
             incoterm: b.incoterm ?? null,
             pickupAddress: b.pickup_address ?? null,
             shipperName: b.shipper_name ?? null,

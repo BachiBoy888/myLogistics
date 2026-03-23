@@ -709,7 +709,7 @@ export default function ClientsView({ onOpenPL }) {
                             >
                               <div>
                                 <div className="font-medium text-gray-900">
-                                  {pl.custom_pl_label ? `PL-${pl.custom_pl_label}` : (pl.plNumber || `PL-${pl.id}`)} — {pl.name}
+                                  {pl.custom_pl_label ? `PL-${pl.custom_pl_label}` : "PL-"} — {pl.name}
                                 </div>
                                 <div className="text-sm text-gray-500 mt-1">
                                   {pl.weight && `${pl.weight} кг`} 

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { listPLEvents, assignPLResponsible, listUsers, listPLDocs, listPLComments, updatePL } from "../api/client.js";
 import { safeEvents } from "../utils/events.js";
+import { getPLDisplayLabel } from "../utils/plLabel.js";
 
 const TABS = [
   { id: "info", label: "Сведения", icon: Info },
@@ -52,6 +53,7 @@ export default function PLCard({
   // ===== Локальное состояние формы (чтобы не сбрасывалось при вводе)
   const [formData, setFormData] = useState({
     title: pl.title ?? "",
+    custom_pl_label: pl.custom_pl_label ?? "",
     weight_kg: pl.weight_kg ?? "",
     volume_cbm: pl.volume_cbm ?? "",
     places: pl.places ?? 1,
@@ -64,6 +66,7 @@ export default function PLCard({
   useEffect(() => {
     setFormData({
       title: pl.title ?? "",
+      custom_pl_label: pl.custom_pl_label ?? "",
       weight_kg: pl.weight_kg ?? "",
       volume_cbm: pl.volume_cbm ?? "",
       places: pl.places ?? 1,
@@ -319,6 +322,7 @@ export default function PLCard({
     // Сохраняем все изменённые поля
     const updates = {};
     if (formData.title !== pl.title) updates.title = formData.title;
+    if (formData.custom_pl_label !== pl.custom_pl_label) updates.custom_pl_label = formData.custom_pl_label?.trim() || null;
     if (formData.weight_kg !== pl.weight_kg) updates.weight_kg = Number(formData.weight_kg) || 0;
     if (formData.volume_cbm !== pl.volume_cbm) updates.volume_cbm = Number(formData.volume_cbm) || 0;
     if (formData.places !== pl.places) updates.places = Number(formData.places) || 1;
@@ -378,7 +382,7 @@ export default function PLCard({
           <div className="flex items-center gap-2">
             <Package className="w-5 h-5" />
             <h2 className="font-semibold text-lg">
-              {pl.custom_pl_label ? `PL-${pl.custom_pl_label}` : (pl.pl_number || "Черновик")}
+              {getPLDisplayLabel(pl)}
             </h2>
             <Chip className={badgeColorByStatus(pl.status)}>{humanStatus(pl.status)}</Chip>
           </div>
@@ -484,6 +488,22 @@ export default function PLCard({
                     onChange={(v) => handleChange("title", v)}
                     onBlur={() => handleBlur("title", formData.title)}
                   />
+                  <div className="flex flex-col gap-1">
+                    <label className="text-xs text-gray-600">Обозначение PL</label>
+                    <div className="flex h-9 border rounded-lg overflow-hidden focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                      <span className="flex items-center px-2 bg-gray-100 text-gray-600 text-xs border-r">
+                        PL-
+                      </span>
+                      <input
+                        type="text"
+                        className="flex-1 px-2 text-sm outline-none"
+                        value={formData.custom_pl_label}
+                        onChange={(e) => handleChange("custom_pl_label", e.target.value)}
+                        onBlur={() => handleBlur("custom_pl_label", formData.custom_pl_label?.trim() || "")}
+                        placeholder=""
+                      />
+                    </div>
+                  </div>
                   <NumberInput
                     label="Вес, кг"
                     value={formData.weight_kg}

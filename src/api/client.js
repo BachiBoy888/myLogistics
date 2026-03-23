@@ -266,7 +266,7 @@ export function normalizeCons(s) {
   return {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
-    title: s.title ?? s.cons_number ?? s.consNumber ?? "",
+    title: s.title ?? "",
     status: s.status ?? "loaded",
     driver_name: s.driver_name ?? s.driverName ?? "",
     driver_contacts: s.driver_contacts ?? s.driverContacts ?? "",

@@ -8,6 +8,7 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
   const [capacityCbm, setCapacityCbm] = useState(0);
   const [capacityKg, setCapacityKg] = useState(0);
   const [plannedArrivalDate, setPlannedArrivalDate] = useState("");
+  const [title, setTitle] = useState("");
   const [pickedIds, setPickedIds] = useState([]);
   const [saving, setSaving] = useState(false);
 
@@ -32,6 +33,7 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
     try {
       setSaving(true);
       await onCreate({
+        title: title.trim() || null,
         capacity_cbm: Number(capacityCbm) || 0,
         capacity_kg: Number(capacityKg) || 0,
         planned_arrival_date: plannedArrivalDate || null,
@@ -47,7 +49,7 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative w-full sm:max-w-3xl bg-white rounded-t-2xl sm:rounded-2xl shadow-xl p-4 sm:p-6 z-10">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold">Создать консолидацию</h2>
+          <h2 className="text-lg font-semibold">Создать транспорт</h2>
           <button className="p-2 rounded-lg border hover:bg-gray-50" onClick={onClose}>
             <X className="w-4 h-4" />
           </button>
@@ -55,6 +57,15 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1 space-y-3">
+            <Label>Обозначение транспорта</Label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full border rounded-lg px-3 py-2 text-sm"
+              placeholder="CONS-123"
+            />
+
             <Label>Вместимость транспорта</Label>
             <LabelInput type="number" label="Объём, м³" value={capacityCbm} onChange={setCapacityCbm} />
             <LabelInput type="number" label="Грузоподъёмность, кг" value={capacityKg} onChange={setCapacityKg} />
@@ -80,7 +91,7 @@ export default function ConsolidationCreateModal({ onClose, plsCandidate = [], o
               disabled={!pickedIds.length || saving}
               onClick={submit}
             >
-              {saving ? "Сохранение…" : "Сохранить консолидацию"}
+              {saving ? "Сохранение…" : "Сохранить транспорт"}
             </button>
           </div>
 

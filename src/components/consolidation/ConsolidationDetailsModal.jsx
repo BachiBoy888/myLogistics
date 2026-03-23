@@ -153,6 +153,9 @@ export default function ConsolidationDetailsModal({
   const [capacityKg, setCapacityKg] = useState(cons.capacity_kg || 0);
   const [capacityCbm, setCapacityCbm] = useState(cons.capacity_cbm || 0);
   
+  // Title editing state
+  const [title, setTitle] = useState(cons.title || "");
+  
   // Driver info editing state
   const [driverName, setDriverName] = useState(cons.driver_name || "");
   const [driverContacts, setDriverContacts] = useState(cons.driver_contacts || "");
@@ -231,13 +234,14 @@ export default function ConsolidationDetailsModal({
     
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
+    setTitle(cons.title || "");
     setDriverName(cons.driver_name || "");
     setDriverContacts(cons.driver_contacts || "");
     setPlannedArrivalDate(cons.planned_arrival_date || "");
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.driver_name, cons.driver_contacts, cons.machine_cost, cons.expenses, allPLs, saving]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.title, cons.driver_name, cons.driver_contacts, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -542,6 +546,7 @@ export default function ConsolidationDetailsModal({
       
       // Step 1: Update capacity, driver info, and machine cost first (PATCH)
       const consUpdate = {};
+      if (title !== (cons.title || "")) consUpdate.title = title.trim();
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
       if (driverName !== (cons.driver_name || "")) consUpdate.driverName = driverName;
@@ -570,7 +575,8 @@ export default function ConsolidationDetailsModal({
         setCapacityKg(freshCons.capacity_kg || 0);
         setCapacityCbm(freshCons.capacity_cbm || 0);
         
-        // Update driver info from final state
+        // Update title and driver info from final state
+        setTitle(freshCons.title || "");
         setDriverName(freshCons.driver_name || "");
         setDriverContacts(freshCons.driver_contacts || "");
         setPlannedArrivalDate(freshCons.planned_arrival_date || "");
@@ -708,7 +714,7 @@ export default function ConsolidationDetailsModal({
               <Truck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">{cons.number}</h2>
+              <h2 className="text-lg font-semibold">{cons.title || cons.number}</h2>
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${badgeColorByConsStatus(cons.status)}`}>
                   {humanConsStatus(cons.status)}
@@ -811,6 +817,19 @@ export default function ConsolidationDetailsModal({
               <div className="bg-gray-50 rounded-lg p-4 border">
                 {isEditing ? (
                   <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-sm text-gray-600 mb-1 block">Название транспорта</label>
+                      <input
+                        type="text"
+                        value={title}
+                        onChange={(e) => {
+                          setTitle(e.target.value);
+                          markChanged();
+                        }}
+                        className="w-full border rounded-lg px-3 py-2 text-sm"
+                        placeholder="CONS-123"
+                      />
+                    </div>
                     <div className="col-span-2">
                       <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
                       <input

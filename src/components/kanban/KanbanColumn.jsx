@@ -75,7 +75,7 @@ export default function KanbanColumn({
             className="w-full flex items-center justify-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 text-purple-400 hover:text-purple-300 py-2 px-3 rounded-lg text-sm transition-all border border-dashed border-purple-500/30 hover:border-purple-500/50 mb-2"
           >
             <PlusCircle className="w-4 h-4" />
-            Создать консолидацию
+            Создать транспорт
           </button>
         )}
 

@@ -63,7 +63,7 @@ export default function KanbanConsCard({ cons, onClick, onPLClick, pls, clientNa
             <Truck className="w-3.5 h-3.5 text-white" />
           </div>
           <span className="font-semibold text-sm text-blue-300 underline-offset-2 hover:underline">
-            {cons.number?.replace(/-?\d{4}-?/, '-') || `CONS-${cons.id}`}
+            {cons.title || cons.number?.replace(/-?\d{4}-?/, '-') || `CONS-${cons.id}`}
           </span>
         </div>
         <button

@@ -235,7 +235,7 @@ export default function NewPLModal({
                   className="flex-1 px-3 outline-none"
                   value={customPlLabel}
                   onChange={(e) => setCustomPlLabel(e.target.value)}
-                  placeholder="Тойота"
+                  placeholder="123"
                 />
               </div>
             </label>

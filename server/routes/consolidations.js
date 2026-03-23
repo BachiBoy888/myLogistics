@@ -15,12 +15,19 @@ import {
   CONS_PIPELINE,
 } from "../services/cons-validators.js";
 
+const DriverSchema = z.object({
+  name: z.string(),
+  phone: z.string(),
+  vehicleNumber: z.string(),
+});
+
 const CreateBody = z.object({
   title: z.string().optional(),
   plIds: z.array(z.number().int()).optional(), // у нас pl.id = INTEGER
   capacityKg: z.coerce.number().optional(),
   capacityCbm: z.coerce.number().optional(),
   plannedArrivalDate: z.string().optional(), // Плановая дата прибытия в Бишкек (YYYY-MM-DD)
+  drivers: z.array(DriverSchema).optional(),
 });
 
 const UpdateBody = z.object({
@@ -30,8 +37,9 @@ const UpdateBody = z.object({
     .optional(),
   note: z.string().optional(),
   changedBy: z.string().optional(),
-  driverName: z.string().optional(),
-  driverContacts: z.string().optional(),
+  driverName: z.string().optional(), // Legacy - keep for compatibility
+  driverContacts: z.string().optional(), // Legacy - keep for compatibility
+  drivers: z.array(DriverSchema).optional(), // New canonical field
   plannedArrivalDate: z.string().optional(), // Плановая дата прибытия в Бишкек (YYYY-MM-DD)
   capacityKg: z.coerce.number().optional(),
   capacityCbm: z.coerce.number().optional(),
@@ -164,6 +172,7 @@ export default async function consolidationsRoutes(app) {
             capacityKg: body.capacityKg !== undefined ? String(body.capacityKg) : "0",
             capacityCbm: body.capacityCbm !== undefined ? String(body.capacityCbm) : "0",
             plannedArrivalDate: body.plannedArrivalDate || null,
+            drivers: body.drivers || [],
           })
           .returning();
 
@@ -286,8 +295,7 @@ export default async function consolidationsRoutes(app) {
             .set({
               ...(body.title ? { title: body.title } : {}),
               ...(body.status ? { status: body.status } : {}),
-              ...(body.driverName !== undefined ? { driverName: body.driverName } : {}),
-              ...(body.driverContacts !== undefined ? { driverContacts: body.driverContacts } : {}),
+              ...(body.drivers !== undefined ? { drivers: body.drivers } : {}),
               ...(body.plannedArrivalDate !== undefined ? { plannedArrivalDate: body.plannedArrivalDate } : {}),
               ...(body.capacityKg !== undefined ? { capacityKg: String(body.capacityKg) } : {}),
               ...(body.capacityCbm !== undefined ? { capacityCbm: String(body.capacityCbm) } : {}),

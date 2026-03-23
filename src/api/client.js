@@ -263,13 +263,38 @@ export function normalizeCons(s) {
     };
   });
   
+  // Build drivers array with fallback from legacy driverName/driverContacts
+  const rawDrivers = s.drivers ?? s.Drivers ?? null;
+  let normalizedDrivers = [];
+  
+  if (Array.isArray(rawDrivers) && rawDrivers.length > 0) {
+    // Use new drivers array from DB
+    normalizedDrivers = rawDrivers.map(d => ({
+      name: d.name ?? "",
+      phone: d.phone ?? "",
+      vehicleNumber: d.vehicleNumber ?? d.vehicle_number ?? "",
+    }));
+  } else {
+    // Fallback: migrate from legacy single driver fields
+    const legacyName = s.driver_name ?? s.driverName ?? "";
+    const legacyPhone = s.driver_contacts ?? s.driverContacts ?? "";
+    if (legacyName || legacyPhone) {
+      normalizedDrivers = [{
+        name: legacyName,
+        phone: legacyPhone,
+        vehicleNumber: "",
+      }];
+    }
+  }
+
   return {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
     title: s.title ?? "",
     status: s.status ?? "loaded",
-    driver_name: s.driver_name ?? s.driverName ?? "",
-    driver_contacts: s.driver_contacts ?? s.driverContacts ?? "",
+    drivers: normalizedDrivers,
+    driver_name: s.driver_name ?? s.driverName ?? "", // Legacy - keep for compatibility
+    driver_contacts: s.driver_contacts ?? s.driverContacts ?? "", // Legacy
     pl_ids: (Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
@@ -713,10 +738,10 @@ export async function getConsolidation(id) {
   // Backend returns { consolidation: {...} } or direct object
   return normalizeCons(json?.consolidation ?? json);
 }
-export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate } = {}) {
+export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate, drivers } = {}) {
   const cons = await mutate(
     "/consolidations",
-    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate } },
+    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate, drivers } },
     ["/consolidations"]
   );
   if (plIds.length) {

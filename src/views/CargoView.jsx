@@ -1031,7 +1031,7 @@ export default function CargoView({
             plsCandidate={Object.values(groupedByStage)
               .flat()
               .filter((p) => ["to_load", "loaded"].includes(p.status))}
-            onCreate={async ({ title, pl_ids, capacity_cbm, capacity_kg, planned_arrival_date }) => {
+            onCreate={async ({ title, pl_ids, capacity_cbm, capacity_kg, planned_arrival_date, drivers }) => {
               try {
                 await API.createCons({ 
                   title: title || "Транспорт", 
@@ -1039,6 +1039,7 @@ export default function CargoView({
                   capacityCbm: capacity_cbm,
                   capacityKg: capacity_kg,
                   plannedArrivalDate: planned_arrival_date,
+                  drivers: drivers,
                 });
                 setShowCreateCons(false);
                 await refreshCons();

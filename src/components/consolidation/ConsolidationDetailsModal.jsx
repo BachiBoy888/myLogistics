@@ -146,16 +146,18 @@ export default function ConsolidationDetailsModal({
   const [hasChanges, setHasChanges] = useState(false);
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   
-  // Driver inline editing state - true if driver data is empty (immediate edit mode)
-  const [isEditingDriver, setIsEditingDriver] = useState(false);
-  
   // Capacity editing state
   const [capacityKg, setCapacityKg] = useState(cons.capacity_kg || 0);
   const [capacityCbm, setCapacityCbm] = useState(cons.capacity_cbm || 0);
-  
-  // Driver info editing state
-  const [driverName, setDriverName] = useState(cons.driver_name || "");
-  const [driverContacts, setDriverContacts] = useState(cons.driver_contacts || "");
+
+  // Title editing state
+  const [title, setTitle] = useState(cons.title || "");
+
+  // Drivers array editing state - canonical model
+  const [drivers, setDrivers] = useState(cons.drivers || []);
+  const [editingDriverIndex, setEditingDriverIndex] = useState(null); // null = not editing, number = index
+  const [driverForm, setDriverForm] = useState({ name: "", phone: "", vehicleNumber: "" });
+
   const [plannedArrivalDate, setPlannedArrivalDate] = useState(cons.planned_arrival_date || "");
   
   // PL management state
@@ -173,12 +175,6 @@ export default function ConsolidationDetailsModal({
   const [expenses, setExpenses] = useState(cons.expenses || []);
   const [newExpense, setNewExpense] = useState({ type: 'other', comment: '', amount: '' });
   const [showAddExpense, setShowAddExpense] = useState(false);
-
-  // Auto-enable driver edit mode when driver data is empty
-  useEffect(() => {
-    const hasDriverData = (cons.driver_name || "").trim() !== "" || (cons.driver_contacts || "").trim() !== "";
-    setIsEditingDriver(!hasDriverData);
-  }, [cons.driver_name, cons.driver_contacts]);
 
   // Initialize plDetails from cons and allPLs
   useEffect(() => {
@@ -231,13 +227,15 @@ export default function ConsolidationDetailsModal({
     
     setCapacityKg(cons.capacity_kg || 0);
     setCapacityCbm(cons.capacity_cbm || 0);
-    setDriverName(cons.driver_name || "");
-    setDriverContacts(cons.driver_contacts || "");
+    setTitle(cons.title || "");
+    setDrivers(cons.drivers || []);
+    setEditingDriverIndex(null);
+    setDriverForm({ name: "", phone: "", vehicleNumber: "" });
     setPlannedArrivalDate(cons.planned_arrival_date || "");
     setMachineCost(cons.machine_cost || 0);
     setExpenses(cons.expenses || []);
     setHasChanges(false);
-  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.driver_name, cons.driver_contacts, cons.machine_cost, cons.expenses, allPLs, saving]);
+  }, [cons.id, cons.pl_ids, cons.pl_load_orders, cons.pl_details, cons.capacity_kg, cons.capacity_cbm, cons.title, cons.drivers, cons.machine_cost, cons.expenses, allPLs, saving]);
 
   const busyElsewhere = useMemo(() => {
     const s = new Set();
@@ -540,14 +538,15 @@ export default function ConsolidationDetailsModal({
       // Order: 1) capacity/machineCost → 2) expenses → 3) plDetails
       // All writes happen before any UI refresh to prevent flicker
       
-      // Step 1: Update capacity, driver info, and machine cost first (PATCH)
+      // Step 1: Update capacity, title, drivers, and machine cost first (PATCH)
       const consUpdate = {};
+      if (title !== (cons.title || "")) consUpdate.title = title.trim();
       if (capacityKg !== cons.capacity_kg) consUpdate.capacityKg = Number(capacityKg) || 0;
       if (capacityCbm !== cons.capacity_cbm) consUpdate.capacityCbm = Number(capacityCbm) || 0;
-      if (driverName !== (cons.driver_name || "")) consUpdate.driverName = driverName;
-      if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
+      // Compare drivers arrays (canonical model)
+      const driversChanged = JSON.stringify(drivers) !== JSON.stringify(cons.drivers || []);
+      if (driversChanged) consUpdate.drivers = drivers;
       if (plannedArrivalDate !== (cons.planned_arrival_date || "")) consUpdate.plannedArrivalDate = plannedArrivalDate;
-      if (driverContacts !== (cons.driver_contacts || "")) consUpdate.driverContacts = driverContacts;
       if (machineCost !== cons.machine_cost) consUpdate.machineCost = Number(machineCost) || 0;
       
       if (Object.keys(consUpdate).length > 0) {
@@ -570,9 +569,9 @@ export default function ConsolidationDetailsModal({
         setCapacityKg(freshCons.capacity_kg || 0);
         setCapacityCbm(freshCons.capacity_cbm || 0);
         
-        // Update driver info from final state
-        setDriverName(freshCons.driver_name || "");
-        setDriverContacts(freshCons.driver_contacts || "");
+        // Update title and drivers from final state
+        setTitle(freshCons.title || "");
+        setDrivers(freshCons.drivers || []);
         setPlannedArrivalDate(freshCons.planned_arrival_date || "");
         
         // Update machine cost and expenses from final state
@@ -708,7 +707,7 @@ export default function ConsolidationDetailsModal({
               <Truck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">{cons.number}</h2>
+              <h2 className="text-lg font-semibold">{cons.title || cons.number}</h2>
               <div className="flex items-center gap-2">
                 <span className={`text-xs px-2 py-0.5 rounded-full ${badgeColorByConsStatus(cons.status)}`}>
                   {humanConsStatus(cons.status)}
@@ -812,31 +811,133 @@ export default function ConsolidationDetailsModal({
                 {isEditing ? (
                   <div className="grid grid-cols-2 gap-4">
                     <div className="col-span-2">
-                      <label className="text-sm text-gray-600 mb-1 block">Имя водителя</label>
+                      <label className="text-sm text-gray-600 mb-1 block">Название транспорта</label>
                       <input
                         type="text"
-                        value={driverName}
+                        value={title}
                         onChange={(e) => {
-                          setDriverName(e.target.value);
+                          setTitle(e.target.value);
                           markChanged();
                         }}
                         className="w-full border rounded-lg px-3 py-2 text-sm"
-                        placeholder="Введите имя водителя"
+                        placeholder="CONS-123"
                       />
                     </div>
+
+                    {/* Drivers Section - Editing Mode */}
                     <div className="col-span-2">
-                      <label className="text-sm text-gray-600 mb-1 block">Контакты водителя</label>
-                      <input
-                        type="text"
-                        value={driverContacts}
-                        onChange={(e) => {
-                          setDriverContacts(e.target.value);
-                          markChanged();
-                        }}
-                        className="w-full border rounded-lg px-3 py-2 text-sm"
-                        placeholder="Телефон или другие контакты"
-                      />
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm text-gray-600">Водители</label>
+                        <button
+                          onClick={() => {
+                            setEditingDriverIndex(null);
+                            setDriverForm({ name: "", phone: "", vehicleNumber: "" });
+                          }}
+                          className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200"
+                        >
+                          + Добавить водителя
+                        </button>
+                      </div>
+
+                      {/* List of existing drivers */}
+                      {drivers.length > 0 && (
+                        <div className="space-y-2 mb-3">
+                          {drivers.map((driver, idx) => (
+                            <div key={idx} className="bg-white rounded border p-2 flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="font-medium text-sm truncate">{driver.name}</div>
+                                {driver.phone && <div className="text-xs text-gray-500 truncate">{driver.phone}</div>}
+                                {driver.vehicleNumber && <div className="text-xs text-gray-500 truncate">{driver.vehicleNumber}</div>}
+                              </div>
+                              <div className="flex gap-1 ml-2">
+                                <button
+                                  onClick={() => {
+                                    setEditingDriverIndex(idx);
+                                    setDriverForm({ ...driver });
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-blue-600"
+                                  title="Редактировать"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const newDrivers = drivers.filter((_, i) => i !== idx);
+                                    setDrivers(newDrivers);
+                                    markChanged();
+                                  }}
+                                  className="p-1 text-gray-500 hover:text-red-600"
+                                  title="Удалить"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Add/Edit driver form */}
+                      {(editingDriverIndex === null || editingDriverIndex !== null) && driverForm && (
+                        <div className="bg-white rounded border p-3 space-y-2">
+                          <div className="text-xs font-medium text-gray-600">
+                            {editingDriverIndex === null ? "Новый водитель" : "Редактирование водителя"}
+                          </div>
+                          <input
+                            type="text"
+                            value={driverForm.name}
+                            onChange={(e) => setDriverForm({ ...driverForm, name: e.target.value })}
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            placeholder="Имя водителя"
+                          />
+                          <input
+                            type="text"
+                            value={driverForm.phone}
+                            onChange={(e) => setDriverForm({ ...driverForm, phone: e.target.value })}
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            placeholder="Телефон"
+                          />
+                          <input
+                            type="text"
+                            value={driverForm.vehicleNumber}
+                            onChange={(e) => setDriverForm({ ...driverForm, vehicleNumber: e.target.value })}
+                            className="w-full border rounded-lg px-3 py-2 text-sm"
+                            placeholder="Номер машины"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                if (!driverForm.name.trim()) return;
+                                if (editingDriverIndex === null) {
+                                  setDrivers([...drivers, { ...driverForm }]);
+                                } else {
+                                  const newDrivers = [...drivers];
+                                  newDrivers[editingDriverIndex] = { ...driverForm };
+                                  setDrivers(newDrivers);
+                                }
+                                setDriverForm({ name: "", phone: "", vehicleNumber: "" });
+                                setEditingDriverIndex(null);
+                                markChanged();
+                              }}
+                              disabled={!driverForm.name.trim()}
+                              className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              {editingDriverIndex === null ? "Добавить" : "Сохранить"}
+                            </button>
+                            <button
+                              onClick={() => {
+                                setDriverForm({ name: "", phone: "", vehicleNumber: "" });
+                                setEditingDriverIndex(null);
+                              }}
+                              className="border px-3 py-1.5 rounded text-sm hover:bg-gray-100"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
+
                     <div>
                       <label className="text-sm text-gray-600 mb-1 block">Грузоподъёмность (кг)</label>
                       <input
@@ -874,61 +975,61 @@ export default function ConsolidationDetailsModal({
                       />
                     </div>
                   </div>
-                ) : isEditingDriver ? (
-                  /* Inline driver editing mode - shown when driver data is empty */
+                ) : (
                   <div className="space-y-3">
-                    <div className="text-sm font-medium text-gray-700">Водитель</div>
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={driverName}
-                        onChange={(e) => setDriverName(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                        placeholder="Имя водителя"
-                      />
-                      <input
-                        type="text"
-                        value={driverContacts}
-                        onChange={(e) => setDriverContacts(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                        placeholder="Телефон или другие контакты"
-                      />
-                      <input
-                        type="date"
-                        value={plannedArrivalDate}
-                        onChange={(e) => setPlannedArrivalDate(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
-                        placeholder="Плановая дата прибытия в Бишкек"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={async () => {
-                          await onUpdateCons?.(cons.id, {
-                            driverName: driverName,
-                            driverContacts: driverContacts,
-                            plannedArrivalDate: plannedArrivalDate,
-                          });
-                          setIsEditingDriver(false);
-                          await onRefresh?.();
-                        }}
-                        disabled={saving}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
-                      >
-                        {saving ? "Сохранение..." : "Сохранить"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          setDriverName(cons.driver_name || "");
-                          setDriverContacts(cons.driver_contacts || "");
-                          setPlannedArrivalDate(cons.planned_arrival_date || "");
-                          setIsEditingDriver(false);
-                        }}
-                        className="border px-4 py-2 rounded-lg text-sm hover:bg-gray-100"
-                      >
-                        Отмена
-                      </button>
-                    </div>
+                    {/* Drivers display */}
+                    {drivers.length > 0 && (
+                      <div className="space-y-2">
+                        {drivers.map((driver, idx) => (
+                          <div key={idx} className="bg-white rounded-lg p-3 border">
+                            <div className="flex items-center justify-between">
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-medium text-blue-700">
+                                    {idx + 1}
+                                  </div>
+                                  <div className="font-medium text-sm truncate">{driver.name}</div>
+                                </div>
+                                {driver.phone && (
+                                  <div className="text-sm text-gray-600 ml-8">{driver.phone}</div>
+                                )}
+                                {driver.vehicleNumber && (
+                                  <div className="text-xs text-gray-500 ml-8">{driver.vehicleNumber}</div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {plannedArrivalDate && (
+                      <div className="bg-white rounded-lg p-3 border">
+                        <div className="text-xs text-gray-500 mb-1">Плановая дата прибытия</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">{formatDateRu(plannedArrivalDate)}</span>
+                          {(() => {
+                            const indicator = getDeadlineIndicator({
+                              status: cons.status,
+                              plannedArrivalDate: plannedArrivalDate
+                            });
+                            if (!indicator) return null;
+                            return (
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${indicator.badgeClass}`}>
+                                {indicator.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {!drivers.length && !plannedArrivalDate && (
+                      <div className="text-sm text-gray-500 text-center py-2">
+                        Нет данных о водителях
+                      </div>
+                    )}
+
                     <div className="pt-2 border-t border-gray-200">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <CapacityIndicator
@@ -948,69 +1049,6 @@ export default function ConsolidationDetailsModal({
                           unit="м³"
                         />
                       </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {/* Driver info display */}
-                    {(driverName || driverContacts || plannedArrivalDate) && (
-                      <div className="bg-white rounded-lg p-3 border">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="text-xs text-gray-500 mb-1">Водитель</div>
-                            {driverName && (
-                              <div className="font-medium text-sm">{driverName}</div>
-                            )}
-                            {driverContacts && (
-                              <div className="text-sm text-gray-600">{driverContacts}</div>
-                            )}
-                            {plannedArrivalDate && (
-                              <div className="mt-1">
-                                <span className="text-sm text-gray-700">
-                                  Планируемая дата приезда: {formatDateRu(plannedArrivalDate)}
-                                </span>
-                                {/* Deadline indicator - only show if not closed */}
-                                {(() => {
-                                  const indicator = getDeadlineIndicator({
-                                    status: cons.status,
-                                    plannedArrivalDate: plannedArrivalDate
-                                  });
-                                  if (!indicator) return null;
-                                  return (
-                                    <span className={`ml-2 px-2 py-0.5 rounded text-xs font-medium ${indicator.badgeClass}`}>
-                                      {indicator.label}
-                                    </span>
-                                  );
-                                })()}
-                              </div>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => setIsEditingDriver(true)}
-                            className="text-blue-600 hover:text-blue-700 text-sm px-3 py-1 rounded hover:bg-blue-50"
-                          >
-                            Редактировать
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <CapacityIndicator
-                        label="Вес"
-                        current={stats.sumW}
-                        capacity={Number(capacityKg) || 0}
-                        free={stats.freeW}
-                        over={stats.overWeight}
-                        unit="кг"
-                      />
-                      <CapacityIndicator
-                        label="Объём"
-                        current={stats.sumV}
-                        capacity={Number(capacityCbm) || 0}
-                        free={stats.freeV}
-                        over={stats.overVolume}
-                        unit="м³"
-                      />
                     </div>
                   </div>
                 )}

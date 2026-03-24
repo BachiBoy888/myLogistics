@@ -51,6 +51,7 @@ async function hydrateResponsible(db, row) {
   return {
     ...row,
     clientPrice: row.clientPrice ?? row.client_price ?? null,
+    custom_pl_label: row.customPlLabel ?? null,
     responsible_user_id: row.responsibleUserId ?? null,
     responsible_name: responsibleName,
     responsible_avatar: null, // Убран base64 payload
@@ -143,6 +144,8 @@ export default async function plRoutes(fastify) {
             calculator: { type: ['object', 'null'] },
             clientPrice: { type: ['number', 'string', 'null'] },
             client_price: { type: ['number', 'string', 'null'] },
+            places: { type: ['number', 'integer', 'null'] },
+            custom_pl_label: { type: ['string', 'null'] },
           },
           required: ['client_id'],
         },
@@ -154,6 +157,11 @@ export default async function plRoutes(fastify) {
         const toNumStr = (v) => {
           if (v === null || v === undefined || v === '' || Number.isNaN(Number(v))) return null;
           return Number(v).toFixed(3);
+        };
+        const toIntMaybe = (v) => {
+          if (v === '' || v === null || v === undefined) return undefined;
+          const n = Number(v);
+          return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
         };
         const toNumMaybe = (v) => (v === '' || v === null || v === undefined ? null : v);
 
@@ -169,6 +177,8 @@ export default async function plRoutes(fastify) {
             weight,
             volume,
             clientId,
+            places: toIntMaybe(b.places) ?? 1,
+            customPlLabel: b.custom_pl_label?.trim() || null,
             incoterm: b.incoterm ?? null,
             pickupAddress: b.pickup_address ?? null,
             shipperName: b.shipper_name ?? null,
@@ -288,6 +298,7 @@ export default async function plRoutes(fastify) {
         ...(b.status != null && { status: b.status }),
         ...(b.clientPrice != null && { clientPrice: toNumMaybe(b.clientPrice) }),
         ...(b.client_price != null && b.clientPrice == null && { clientPrice: toNumMaybe(b.client_price) }),
+        ...(b.custom_pl_label !== undefined && { customPlLabel: b.custom_pl_label?.trim() || null }),
         // ⬇️ calculator JSONB
         ...(b.calculator != null && { calculator: b.calculator }),
         // ⬇️ Leg 1 fields

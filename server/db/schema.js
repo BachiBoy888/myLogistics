@@ -58,6 +58,7 @@ export const pl = pgTable(
   {
     id: serial("id").primaryKey(), // INTEGER PK
     plNumber: text("pl_number"),
+    customPlLabel: text("custom_pl_label"), // Пользовательское обозначение PL (без префикса PL-)
     clientId: integer("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
@@ -188,8 +189,9 @@ export const consolidations = pgTable(
     consNumber: text("cons_number").notNull(),  // CONS-YYYY-N
     title: text("title"),
     status: consolidationStatusEnum("status").notNull().default("loaded"),
-    driverName: text("driver_name"),           // Имя водителя
-    driverContacts: text("driver_contacts"),   // Контакты водителя
+    driverName: text("driver_name"),           // Legacy: Имя водителя (single driver)
+    driverContacts: text("driver_contacts"),   // Legacy: Контакты водителя
+    drivers: jsonb("drivers").default(sql`'[]'::jsonb`), // Array of {name, phone, vehicleNumber}
     plannedArrivalDate: text("planned_arrival_date"), // Плановая дата прибытия в Бишкек
     capacityKg: numeric("capacity_kg", { precision: 12, scale: 3 }).default("0"),
     capacityCbm: numeric("capacity_cbm", { precision: 12, scale: 3 }).default("0"),

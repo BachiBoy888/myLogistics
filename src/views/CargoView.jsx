@@ -608,7 +608,7 @@ export default function CargoView({
   }
 
   async function handleCreatePLFromModal(payload) {
-    const { client, client_id, title, volume_cbm, weight_kg, incoterm, exw_address, fob_wh_id } = payload;
+    const { client, client_id, title, custom_pl_label, volume_cbm, weight_kg, places, incoterm, exw_address, fob_wh_id } = payload;
     const clientName = (client || "").trim();
     if (!clientName) {
       showError("Введите клиента перед созданием PL");
@@ -645,9 +645,10 @@ export default function CargoView({
     const body = {
       client_id: clientRow.id,
       title: title?.trim() || "",
+      custom_pl_label: custom_pl_label?.trim() || null,
       weight_kg: parseFloat(weight_kg) || null,
       volume_cbm: parseFloat(volume_cbm) || null,
-      places_qty: 0,
+      places: places ? Number(places) : 1,
       pickup_address,
       incoterm,
       fob_warehouse_id: incoterm === "FOB" ? fob_wh_id : null,
@@ -1030,14 +1031,15 @@ export default function CargoView({
             plsCandidate={Object.values(groupedByStage)
               .flat()
               .filter((p) => ["to_load", "loaded"].includes(p.status))}
-            onCreate={async ({ pl_ids, capacity_cbm, capacity_kg, planned_arrival_date }) => {
+            onCreate={async ({ title, pl_ids, capacity_cbm, capacity_kg, planned_arrival_date, drivers }) => {
               try {
                 await API.createCons({ 
-                  title: `Консолидация`, 
+                  title: title || "Транспорт", 
                   plIds: pl_ids.map(Number),
                   capacityCbm: capacity_cbm,
                   capacityKg: capacity_kg,
                   plannedArrivalDate: planned_arrival_date,
+                  drivers: drivers,
                 });
                 setShowCreateCons(false);
                 await refreshCons();

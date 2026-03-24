@@ -185,6 +185,7 @@ export function normalizePL(s) {
   return {
     id,
     pl_number,
+    custom_pl_label: s.custom_pl_label ?? s.customPlLabel ?? null,
     client_id: s.client_id ?? s.clientId ?? null,
     client,
     responsible,
@@ -262,18 +263,44 @@ export function normalizeCons(s) {
     };
   });
   
+  // Build drivers array with fallback from legacy driverName/driverContacts
+  const rawDrivers = s.drivers ?? s.Drivers ?? null;
+  let normalizedDrivers = [];
+  
+  if (Array.isArray(rawDrivers) && rawDrivers.length > 0) {
+    // Use new drivers array from DB
+    normalizedDrivers = rawDrivers.map(d => ({
+      name: d.name ?? "",
+      phone: d.phone ?? "",
+      vehicleNumber: d.vehicleNumber ?? d.vehicle_number ?? "",
+    }));
+  } else {
+    // Fallback: migrate from legacy single driver fields
+    const legacyName = s.driver_name ?? s.driverName ?? "";
+    const legacyPhone = s.driver_contacts ?? s.driverContacts ?? "";
+    if (legacyName || legacyPhone) {
+      normalizedDrivers = [{
+        name: legacyName,
+        phone: legacyPhone,
+        vehicleNumber: "",
+      }];
+    }
+  }
+
   return {
     id: s.id ?? s._id ?? null,
     number: s.cons_number ?? s.consNumber ?? s.number ?? "",
-    title: s.title ?? s.cons_number ?? s.consNumber ?? "",
+    title: s.title ?? "",
     status: s.status ?? "loaded",
-    driver_name: s.driver_name ?? s.driverName ?? "",
-    driver_contacts: s.driver_contacts ?? s.driverContacts ?? "",
-    pl_ids: Array.isArray(s.pl_ids)
+    drivers: normalizedDrivers,
+    driver_name: s.driver_name ?? s.driverName ?? "", // Legacy - keep for compatibility
+    driver_contacts: s.driver_contacts ?? s.driverContacts ?? "", // Legacy
+    pl_ids: (Array.isArray(s.pl_ids)
       ? s.pl_ids
       : Array.isArray(s.plIds)
       ? s.plIds
-      : [],
+      : []
+    ).map(id => toNumericId(id)).filter(Boolean),
     pl_load_orders: s.pl_load_orders ?? s.plLoadOrders ?? {},
     pl_details: normalizedPlDetails,
     capacity_cbm: Number(s.capacity_cbm ?? s.capacityCbm ?? 0),
@@ -711,10 +738,10 @@ export async function getConsolidation(id) {
   // Backend returns { consolidation: {...} } or direct object
   return normalizeCons(json?.consolidation ?? json);
 }
-export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate } = {}) {
+export async function createConsolidation({ title, plIds = [], capacityCbm, capacityKg, plannedArrivalDate, drivers } = {}) {
   const cons = await mutate(
     "/consolidations",
-    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate } },
+    { method: "POST", body: { title, plIds, capacityCbm, capacityKg, plannedArrivalDate, drivers } },
     ["/consolidations"]
   );
   if (plIds.length) {
@@ -766,7 +793,7 @@ export async function setConsolidationPLs(id, targetIds = [], plLoadOrders = {},
     return normalizeCons(res?.consolidation ?? res) || getConsolidation(id);
   } catch {
     const current = await getConsolidation(id);
-    const currentIds = Array.isArray(current?.pl_ids) ? current.pl_ids.map(Number) : [];
+    const currentIds = Array.isArray(current?.pl_ids) ? current.pl_ids : [];
     const toAdd = target.filter((x) => !currentIds.includes(x));
     const toRemove = currentIds.filter((x) => !target.includes(x));
     for (const pid of toAdd) await addPLToConsolidation(id, pid);

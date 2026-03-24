@@ -1052,25 +1052,6 @@ export default function ConsolidationDetailsModal({
                     </div>
                   </div>
                 )}
-                      <CapacityIndicator
-                        label="Вес"
-                        current={stats.sumW}
-                        capacity={Number(capacityKg) || 0}
-                        free={stats.freeW}
-                        over={stats.overWeight}
-                        unit="кг"
-                      />
-                      <CapacityIndicator
-                        label="Объём"
-                        current={stats.sumV}
-                        capacity={Number(capacityCbm) || 0}
-                        free={stats.freeV}
-                        over={stats.overVolume}
-                        unit="м³"
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* PL Lists */}
